@@ -1,32 +1,81 @@
-# If you prefer the allow list template instead of the deny list, see community template:
-# https://github.com/github/gitignore/blob/main/community/Golang/Go.AllowList.gitignore
+# Copyright 2019 Jeremy Edwards
 #
-# Binaries for programs and plugins
-*.exe
-*.exe~
-*.dll
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# Compiled Object files, Static and Dynamic libs (Shared Objects)
+*.o
+*.a
 *.so
-*.dylib
 
-# Test binary, built with `go test -c`
+# Folders
+_obj
+_test
+
+# Architecture specific extensions/prefixes
+*.[568vq]
+[568vq].out
+
+*.cgo1.go
+*.cgo2.c
+_cgo_defun.c
+_cgo_gotypes.go
+_cgo_export.*
+
+_testmain.go
+
+*.exe
 *.test
+*.prof
 
-# Code coverage profiles and other test artifacts
-*.out
-coverage.*
-*.coverprofile
-profile.cov
+build/
+release/
+upload/
 
-# Dependency directories (remove the comment below to include it)
-# vendor/
 
-# Go workspace file
-go.work
-go.work.sum
+package.coverage
+coverage.txt
+*.pem
+release.tar.gz
+testing/testassets.*
+packaging/parts/
+packaging/snap/
+uploaded-files/
+packaging/stage/
+packaging/prime/
+packaging/*.snap
 
-# env file
-.env
+stage/
+prime/
+snap/.snapcraft/
+*.snap
+embedded/bindata_assetfs.go
 
-# Editor/IDE
-# .idea/
-# .vscode/
+bazel-bin
+bazel-genfiles
+bazel-certtool
+bazel-out
+bazel-testlogs
+
+.snapcraft/
+toolchain/
+bin/
+.vscode/
+
+*.key
+*.cert
+
+__debug_bin
+
+temp/
+*.wasm
+*.db
