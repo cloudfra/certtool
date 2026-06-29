@@ -44,6 +44,7 @@ upload/
 
 package.coverage
 coverage.txt
+coverage.xml
 *.pem
 release.tar.gz
 testing/testassets.*
