@@ -68,6 +68,17 @@ type Args struct {
 
 	// KeyType is the type of key to generate.
 	KeyType *KeyType
+
+	// CodeSigning generates a code signing certificate instead of a TLS certificate.
+	// When true, ExtKeyUsageCodeSigning is set, KeyEncipherment is removed, and no
+	// auto-SANs (localhost/127.0.0.1) are added.
+	CodeSigning bool
+	// Target selects a named platform profile when CodeSigning is true.
+	// Valid values: windows7, windows10, windows11, linux (and aliases).
+	// Defaults to "windows10" when empty and CodeSigning is true.
+	Target string
+	// PFXPassword is the password for PKCS#12 output. Empty string = no password.
+	PFXPassword string
 }
 
 func (args *Args) GetKeyType() *KeyType {
@@ -92,6 +103,8 @@ type KeyPair struct {
 	PublicCertificate []byte
 	// PrivateKey of the X.509 key pair.
 	PrivateKey []byte
+	// PFX is the PKCS#12 bundle. Populated for Windows targets when CodeSigning is true.
+	PFX []byte
 }
 
 func fillDefaults(args *Args) {
@@ -113,11 +126,22 @@ func fillDefaults(args *Args) {
 	if args.Province == "" {
 		args.Province = "WA"
 	}
-
 	if args.Validity == 0 {
 		args.Validity = oneYear
 	}
-
+	if args.CodeSigning {
+		if args.Target == "" {
+			args.Target = "windows10"
+		}
+		if args.KeyType == nil {
+			if profile, err := GetProfile(args.Target); err == nil {
+				args.KeyType = &KeyType{
+					Algorithm: profile.KeyType.Algorithm,
+					KeyLength: profile.KeyType.KeyLength,
+				}
+			}
+		}
+	}
 	if args.KeyType == nil {
 		args.KeyType = defaultKeyType()
 	}
@@ -137,6 +161,13 @@ func GenerateKeyPair(args *Args) (*KeyPair, error) {
 }
 
 func createCertificateAndPrivateKeyPEM(args *Args) (*KeyPair, error) {
+	// Validate target early if code signing, before any expensive crypto work
+	if args.CodeSigning {
+		if _, err := GetProfile(args.Target); err != nil {
+			return nil, err
+		}
+	}
+
 	var sigAlg x509.SignatureAlgorithm
 
 	startTimestamp := time.Now()
@@ -153,11 +184,29 @@ func createCertificateAndPrivateKeyPEM(args *Args) (*KeyPair, error) {
 	keyType := args.GetKeyType()
 	switch strings.ToUpper(keyType.Algorithm) {
 	case "RSA":
-		sigAlg = x509.SHA512WithRSA
+		if args.CodeSigning {
+			sigAlg = x509.SHA256WithRSA
+		} else {
+			sigAlg = x509.SHA512WithRSA
+		}
 	case "ECDSA":
-		sigAlg = x509.ECDSAWithSHA512
+		if args.CodeSigning {
+			sigAlg = x509.ECDSAWithSHA256
+		} else {
+			sigAlg = x509.ECDSAWithSHA512
+		}
 	default:
 		return nil, fmt.Errorf("key algorithm, %s, is not valid", keyType.Algorithm)
+	}
+
+	var keyUsage x509.KeyUsage
+	var extKeyUsage []x509.ExtKeyUsage
+	if args.CodeSigning {
+		keyUsage = x509.KeyUsageDigitalSignature
+		extKeyUsage = []x509.ExtKeyUsage{x509.ExtKeyUsageCodeSigning}
+	} else {
+		keyUsage = x509.KeyUsageKeyEncipherment | x509.KeyUsageDigitalSignature
+		extKeyUsage = []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth, x509.ExtKeyUsageClientAuth}
 	}
 
 	certTemplate := x509.Certificate{
@@ -166,8 +215,8 @@ func createCertificateAndPrivateKeyPEM(args *Args) (*KeyPair, error) {
 		Issuer:                pkixName,
 		NotBefore:             startTimestamp,
 		NotAfter:              expirationTimestamp,
-		KeyUsage:              x509.KeyUsageKeyEncipherment | x509.KeyUsageDigitalSignature,
-		ExtKeyUsage:           []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth, x509.ExtKeyUsageClientAuth},
+		KeyUsage:              keyUsage,
+		ExtKeyUsage:           extKeyUsage,
 		BasicConstraintsValid: true,
 		SignatureAlgorithm:    sigAlg,
 		IsCA:                  args.CA,
@@ -177,16 +226,17 @@ func createCertificateAndPrivateKeyPEM(args *Args) (*KeyPair, error) {
 		certTemplate.KeyUsage |= x509.KeyUsageCertSign
 	}
 
-	for _, hostname := range args.Hostnames {
-		if ipAddress := net.ParseIP(hostname); ipAddress != nil {
-			certTemplate.IPAddresses = append(certTemplate.IPAddresses, ipAddress)
-		} else {
-			certTemplate.DNSNames = append(certTemplate.DNSNames, hostname)
+	if !args.CodeSigning {
+		for _, hostname := range args.Hostnames {
+			if ipAddress := net.ParseIP(hostname); ipAddress != nil {
+				certTemplate.IPAddresses = append(certTemplate.IPAddresses, ipAddress)
+			} else {
+				certTemplate.DNSNames = append(certTemplate.DNSNames, hostname)
+			}
 		}
+		certTemplate.DNSNames = append(certTemplate.DNSNames, "localhost")
+		certTemplate.IPAddresses = append(certTemplate.IPAddresses, net.ParseIP("127.0.0.1"))
 	}
-
-	certTemplate.DNSNames = append(certTemplate.DNSNames, "localhost")
-	certTemplate.IPAddresses = append(certTemplate.IPAddresses, net.ParseIP("127.0.0.1"))
 
 	privateKey, err := generatePrivateKeyFromType(*keyType)
 	if err != nil {
@@ -206,7 +256,6 @@ func createCertificateAndPrivateKeyPEM(args *Args) (*KeyPair, error) {
 			if readErr != nil {
 				return nil, readErr
 			}
-
 			parentTemplate = *parentPublicCertificateT
 			parentPrivateKey = parentPrivateKeyT
 		}
@@ -229,10 +278,30 @@ func createCertificateAndPrivateKeyPEM(args *Args) (*KeyPair, error) {
 
 	privateKeyPemBytes := pem.EncodeToMemory(pemPrivateKey)
 
-	return &KeyPair{
+	kp := &KeyPair{
 		PublicCertificate: publicCertificatePemBytes,
 		PrivateKey:        privateKeyPemBytes,
-	}, nil
+	}
+
+	if args.CodeSigning {
+		profile, profileErr := GetProfile(args.Target)
+		if profileErr != nil {
+			return nil, profileErr
+		}
+		if profile.OutputPFX {
+			parsedCert, parseErr := x509.ParseCertificate(cert)
+			if parseErr != nil {
+				return nil, fmt.Errorf("cannot parse generated certificate for PKCS#12: %w", parseErr)
+			}
+			pfxBytes, pfxErr := toPFX(parsedCert, privateKey, args.PFXPassword, profile.LegacyPFX)
+			if pfxErr != nil {
+				return nil, fmt.Errorf("cannot generate PKCS#12: %w", pfxErr)
+			}
+			kp.PFX = pfxBytes
+		}
+	}
+
+	return kp, nil
 }
 
 func argsToPkixName(args *Args, serialNumber string) pkix.Name {
@@ -428,6 +497,14 @@ func WriteKeyPair(kp *KeyPair, publicCertificateFile string, privateKeyFile stri
 		return err
 	}
 	return nil
+}
+
+// WritePFX writes the PKCS#12 bundle from kp to pfxFile with mode 0600.
+func WritePFX(kp *KeyPair, pfxFile string) error {
+	if len(kp.PFX) == 0 {
+		return fmt.Errorf("KeyPair does not contain PKCS#12 data")
+	}
+	return writeFile(pfxFile, kp.PFX, 0600)
 }
 
 func writeFile(fileName string, data []byte, mode os.FileMode) error {

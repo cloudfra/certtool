@@ -80,3 +80,4 @@ __debug_bin
 temp/
 *.wasm
 *.db
+.superpowers/

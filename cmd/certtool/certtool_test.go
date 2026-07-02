@@ -15,8 +15,12 @@
 package main
 
 import (
+	"flag"
+	"os"
+	"path/filepath"
 	"testing"
 
+	"github.com/cloudfra/certtool/pkg/certtool"
 	"github.com/google/go-cmp/cmp"
 )
 
@@ -28,6 +32,142 @@ func TestArgsFromFlags(t *testing.T) {
 	}
 	if args.CA {
 		t.Errorf("args.CA = %t, want false", args.CA)
+	}
+}
+
+func TestCerttoolMain(t *testing.T) {
+	dir := t.TempDir()
+	origPublicCertificate, origPrivateKey := *publicCertificate, *privateKey
+	*publicCertificate = filepath.Join(dir, "app.cert")
+	*privateKey = filepath.Join(dir, "app.key")
+	t.Cleanup(func() {
+		*publicCertificate, *privateKey = origPublicCertificate, origPrivateKey
+	})
+
+	if got := certtoolMain(); got != 0 {
+		t.Errorf("certtoolMain() = %d, want 0", got)
+	}
+	if _, err := os.Stat(*publicCertificate); err != nil {
+		t.Errorf("expected public certificate to be written: %s", err)
+	}
+	if _, err := os.Stat(*privateKey); err != nil {
+		t.Errorf("expected private key to be written: %s", err)
+	}
+}
+
+func TestCerttoolMainInvalidKeyType(t *testing.T) {
+	origKeyType := *keyType
+	*keyType = "not-a-real-key-type"
+	t.Cleanup(func() { *keyType = origKeyType })
+
+	if got := certtoolMain(); got != 1 {
+		t.Errorf("certtoolMain() = %d, want 1 for an invalid --key-type", got)
+	}
+}
+
+func TestCerttoolMainWriteFailure(t *testing.T) {
+	origPublicCertificate := *publicCertificate
+	*publicCertificate = filepath.Join(t.TempDir(), "does-not-exist", "app.cert")
+	t.Cleanup(func() { *publicCertificate = origPublicCertificate })
+
+	if got := certtoolMain(); got != 1 {
+		t.Errorf("certtoolMain() = %d, want 1 when the output directory does not exist", got)
+	}
+}
+
+func TestCerttoolMainTargetWithoutCodeSign(t *testing.T) {
+	dir := t.TempDir()
+	origPublicCertificate, origPrivateKey, origTarget := *publicCertificate, *privateKey, *target
+	*publicCertificate = filepath.Join(dir, "app.cert")
+	*privateKey = filepath.Join(dir, "app.key")
+	*target = "windows10"
+	t.Cleanup(func() {
+		*publicCertificate, *privateKey, *target = origPublicCertificate, origPrivateKey, origTarget
+	})
+
+	if got := certtoolMain(); got != 0 {
+		t.Errorf("certtoolMain() = %d, want 0; --target should only warn, not fail, when --code-sign is unset", got)
+	}
+}
+
+func TestGenerateAndWriteKeyPairError(t *testing.T) {
+	err := generateAndWriteKeyPair(&certtool.Args{CodeSigning: true, Target: "not-a-real-target"})
+	if err == nil {
+		t.Fatal("generateAndWriteKeyPair() = nil, want error for an invalid --target")
+	}
+}
+
+func TestGenerateAndWriteKeyPairPFX(t *testing.T) {
+	origPfxOutput := *pfxOutput
+	*pfxOutput = filepath.Join(t.TempDir(), "codesign.pfx")
+	t.Cleanup(func() { *pfxOutput = origPfxOutput })
+
+	if err := generateAndWriteKeyPair(&certtool.Args{CodeSigning: true, Target: "windows10"}); err != nil {
+		t.Fatalf("generateAndWriteKeyPair() got error, %s", err)
+	}
+	if _, err := os.Stat(*pfxOutput); err != nil {
+		t.Errorf("expected PFX file to be written: %s", err)
+	}
+}
+
+func TestArgsFromFlagsExplicitECDSAOnWindows7(t *testing.T) {
+	origCodeSigning, origKeyType, origTarget := *codeSigning, *keyType, *target
+	t.Cleanup(func() {
+		*codeSigning, *keyType, *target = origCodeSigning, origKeyType, origTarget
+	})
+
+	if err := flag.Set("code-sign", "true"); err != nil {
+		t.Fatalf("flag.Set(code-sign) got error, %s", err)
+	}
+	if err := flag.Set("key-type", "ECDSA-256"); err != nil {
+		t.Fatalf("flag.Set(key-type) got error, %s", err)
+	}
+	*target = "windows7"
+
+	args, err := argsFromFlags()
+	if err != nil {
+		t.Fatalf("got error, %s", err)
+	}
+	if args.KeyType == nil || args.KeyType.Algorithm != "ECDSA" || args.KeyType.KeyLength != 256 {
+		t.Errorf("args.KeyType = %+v, want ECDSA-256", args.KeyType)
+	}
+}
+
+func TestArgsFromFlagsExplicitECDSANoTarget(t *testing.T) {
+	origCodeSigning, origKeyType, origTarget := *codeSigning, *keyType, *target
+	t.Cleanup(func() {
+		*codeSigning, *keyType, *target = origCodeSigning, origKeyType, origTarget
+	})
+
+	if err := flag.Set("code-sign", "true"); err != nil {
+		t.Fatalf("flag.Set(code-sign) got error, %s", err)
+	}
+	if err := flag.Set("key-type", "ECDSA-256"); err != nil {
+		t.Fatalf("flag.Set(key-type) got error, %s", err)
+	}
+	*target = ""
+
+	// No --target set; the ECDSA/Windows-7 warning check should default the
+	// effective target to windows10 rather than warn.
+	args, err := argsFromFlags()
+	if err != nil {
+		t.Fatalf("got error, %s", err)
+	}
+	if args.KeyType == nil || args.KeyType.Algorithm != "ECDSA" || args.KeyType.KeyLength != 256 {
+		t.Errorf("args.KeyType = %+v, want ECDSA-256", args.KeyType)
+	}
+}
+
+func TestArgsFromFlagsParentCertificateError(t *testing.T) {
+	origParentPublicCertificate, origParentPrivateKey := *parentPublicCertificate, *parentPrivateKey
+	*parentPublicCertificate = filepath.Join(t.TempDir(), "missing.cert")
+	*parentPrivateKey = filepath.Join(t.TempDir(), "missing.key")
+	t.Cleanup(func() {
+		*parentPublicCertificate, *parentPrivateKey = origParentPublicCertificate, origParentPrivateKey
+	})
+
+	if _, err := argsFromFlags(); err == nil {
+		t.Fatal("argsFromFlags() = nil, want error for a missing --parent-public-certificate file")
 	}
 }
 
@@ -59,6 +199,26 @@ func TestStringToKeyType(t *testing.T) {
 			}
 			if tc.wantKeyLength != gotKeyLength {
 				t.Errorf("keyLength want: %v, got: %v", tc.wantAlgorithm, gotKeyLength)
+			}
+		})
+	}
+}
+
+func TestStringToKeyTypeErrors(t *testing.T) {
+	testCases := []string{
+		"bogus",          // unknown key type name
+		"RSA-2048-EXTRA", // too many segments
+		"RSA-abc",        // key length is not a number
+		"RSA-9999",       // key length not a supported RSA length
+		"ECDSA-9999",     // key length not a supported ECDSA length
+	}
+
+	for _, tc := range testCases {
+		tc := tc
+		t.Run(tc, func(t *testing.T) {
+			t.Parallel()
+			if _, _, err := StringToKeyType(tc); err == nil {
+				t.Errorf("StringToKeyType(%q) = nil error, want error", tc)
 			}
 		})
 	}

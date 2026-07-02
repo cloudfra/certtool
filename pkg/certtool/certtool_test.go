@@ -32,6 +32,7 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/assert"
+	"software.sslmate.com/src/go-pkcs12"
 )
 
 const (
@@ -661,6 +662,151 @@ func TestPemBlockForKey_errors(t *testing.T) {
 	block, err = pemBlockForKey(&ecdsa.PrivateKey{})
 	assert.Nil(block)
 	assert.Contains(err.Error(), "unknown elliptic curve")
+}
+
+func TestGenerateCodeSigningKeyPair_Windows10(t *testing.T) {
+	if testing.Short() {
+		t.Skip("certificate generation takes a long time")
+	}
+	assert := assert.New(t)
+
+	kp, err := GenerateKeyPair(&Args{
+		CodeSigning: true,
+		Target:      "windows10",
+	})
+	assert.Nil(err)
+	assert.NotNil(kp)
+	assert.NotEmpty(kp.PFX)
+	assert.NotEmpty(kp.PublicCertificate)
+	assert.NotEmpty(kp.PrivateKey)
+
+	pub, _, err := ReadKeyPair(kp.PublicCertificate, kp.PrivateKey)
+	assert.Nil(err)
+	assert.Equal(x509.KeyUsageDigitalSignature, pub.KeyUsage)
+	assert.Equal([]x509.ExtKeyUsage{x509.ExtKeyUsageCodeSigning}, pub.ExtKeyUsage)
+	assert.Empty(pub.DNSNames)
+	assert.Empty(pub.IPAddresses)
+}
+
+func TestGenerateCodeSigningKeyPair_Windows7(t *testing.T) {
+	if testing.Short() {
+		t.Skip("certificate generation takes a long time")
+	}
+	assert := assert.New(t)
+
+	kp, err := GenerateKeyPair(&Args{
+		CodeSigning: true,
+		Target:      "windows7",
+	})
+	assert.Nil(err)
+	assert.NotNil(kp)
+	assert.NotEmpty(kp.PFX)
+
+	pub, _, err := ReadKeyPair(kp.PublicCertificate, kp.PrivateKey)
+	assert.Nil(err)
+	assert.Equal(x509.KeyUsageDigitalSignature, pub.KeyUsage)
+	assert.Equal([]x509.ExtKeyUsage{x509.ExtKeyUsageCodeSigning}, pub.ExtKeyUsage)
+	assert.Empty(pub.DNSNames)
+	assert.Empty(pub.IPAddresses)
+}
+
+func TestGenerateCodeSigningKeyPair_Linux(t *testing.T) {
+	if testing.Short() {
+		t.Skip("certificate generation takes a long time")
+	}
+	assert := assert.New(t)
+
+	kp, err := GenerateKeyPair(&Args{
+		CodeSigning: true,
+		Target:      "linux",
+	})
+	assert.Nil(err)
+	assert.NotNil(kp)
+	assert.Empty(kp.PFX)
+	assert.NotEmpty(kp.PublicCertificate)
+	assert.NotEmpty(kp.PrivateKey)
+
+	pub, _, err := ReadKeyPair(kp.PublicCertificate, kp.PrivateKey)
+	assert.Nil(err)
+	assert.Equal(x509.KeyUsageDigitalSignature, pub.KeyUsage)
+	assert.Equal([]x509.ExtKeyUsage{x509.ExtKeyUsageCodeSigning}, pub.ExtKeyUsage)
+}
+
+func TestGenerateCodeSigningKeyPair_DefaultTarget(t *testing.T) {
+	if testing.Short() {
+		t.Skip("certificate generation takes a long time")
+	}
+	assert := assert.New(t)
+
+	kp, err := GenerateKeyPair(&Args{CodeSigning: true})
+	assert.Nil(err)
+	assert.NotNil(kp)
+	assert.NotEmpty(kp.PFX, "windows10 is the default target and should produce PFX output")
+}
+
+func TestGenerateCodeSigningKeyPair_WithPassword(t *testing.T) {
+	if testing.Short() {
+		t.Skip("certificate generation takes a long time")
+	}
+	assert := assert.New(t)
+
+	kp, err := GenerateKeyPair(&Args{
+		CodeSigning: true,
+		Target:      "windows10",
+		PFXPassword: "hunter2",
+	})
+	assert.Nil(err)
+	assert.NotEmpty(kp.PFX)
+
+	_, _, err = pkcs12.Decode(kp.PFX, "hunter2")
+	assert.Nil(err)
+
+	_, _, err = pkcs12.Decode(kp.PFX, "wrongpassword")
+	assert.NotNil(err, "wrong password should fail")
+}
+
+func TestGenerateCodeSigningKeyPair_InvalidTarget(t *testing.T) {
+	kp, err := GenerateKeyPair(&Args{
+		CodeSigning: true,
+		Target:      "windowsXP",
+	})
+	if kp != nil {
+		t.Error("kp should be nil on invalid target")
+	}
+	if err == nil {
+		t.Error("expected error for unknown target")
+	}
+}
+
+func TestWritePFX(t *testing.T) {
+	if testing.Short() {
+		t.Skip("certificate generation takes a long time")
+	}
+	assert := assert.New(t)
+
+	tmpDir := mustTemp(t)
+	pfxPath := filepath.Join(tmpDir, "codesign.pfx")
+
+	kp, err := GenerateKeyPair(&Args{
+		CodeSigning: true,
+		Target:      "windows10",
+	})
+	assert.Nil(err)
+
+	err = WritePFX(kp, pfxPath)
+	assert.Nil(err)
+	assert.FileExists(pfxPath)
+
+	// Verify mode 0600
+	info, err := os.Stat(pfxPath)
+	assert.Nil(err)
+	assert.Equal(os.FileMode(0600), info.Mode().Perm())
+}
+
+func TestWritePFX_NoPFXData(t *testing.T) {
+	assert := assert.New(t)
+	err := WritePFX(&KeyPair{}, "out.pfx")
+	assert.Contains(err.Error(), "does not contain PKCS#12 data")
 }
 
 func mustTemp(tb testing.TB) string {
