@@ -64,15 +64,15 @@ jobs:
           fail_ci_if_error: true # optional (default = false)
           verbose: true # optional (default = false)
 
-      - name: Upload Coverage Report
-        # https://github.com/actions/upload-code-coverage
-        # https://docs.github.com/en/code-security/how-tos/maintain-quality-code/set-up-code-coverage#step-2-upload-the-coverage-report
-        if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
-        uses: actions/upload-code-coverage@v1
-        with:
-          file: coverage.xml
-          language: Go
-          label: code-coverage/gotest
+      # - name: Upload Coverage Report
+      #   # https://github.com/actions/upload-code-coverage
+      #   # https://docs.github.com/en/code-security/how-tos/maintain-quality-code/set-up-code-coverage#step-2-upload-the-coverage-report
+      #   if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+      #   uses: actions/upload-code-coverage@v1
+      #   with:
+      #     file: coverage.xml
+      #     language: Go
+      #     label: code-coverage/gotest
 
       - name: Build
         run: make all -j$(nproc)
