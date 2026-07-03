@@ -18,6 +18,7 @@ package main
 import (
 	"flag"
 	"fmt"
+	"os"
 	"sort"
 	"strconv"
 	"strings"
@@ -39,36 +40,88 @@ var (
 	province           = flag.String("province", "WA", "Province or state (ST) field of the X.509 certificate subject.")
 
 	hostnames = flag.String("hostnames", "", "Comma-separated list of hostnames and IP addresses to include as Subject Alternative Names (SANs).")
-	keyType   = flag.String("key-type", "RSA-2048", "Key algorithm and length. Supported values: RSA-2048, RSA-4096, ECDSA-224, ECDSA-256, ECDSA-384, ECDSA-521.")
+	keyType   = flag.String("key-type", "RSA-2048", "Key algorithm and length. Supported values: RSA-2048, RSA-4096, ECDSA-224, ECDSA-256, ECDSA-384, ECDSA-521. Default for --code-sign is the profile default.")
 
 	parentPublicCertificate = flag.String("parent-public-certificate", "", "(optional) Parent public certificate. If set, the output certificate will trust the parent.")
 	parentPrivateKey        = flag.String("parent-private-key", "", "(optional) Parent private key. Required if -parent-public-certificate is set, private key for the parent public certificate.")
+
+	codeSigning = flag.Bool("code-sign", false, "Generates a code signing certificate for binary signing instead of a TLS certificate.")
+	target      = flag.String("target", "", "Platform profile for --code-sign. Values: windows7 (win7/windows8/win8), windows10 (win10), windows11 (win11), linux. Default: windows10.")
+	pfxOutput   = flag.String("pfx-output", "codesign.pfx", "Output path for the PKCS#12 (.pfx) file. Used with --code-sign for Windows targets.")
+	pfxPassword = flag.String("pfx-password", "", "Password for the PKCS#12 (.pfx) file. Empty means no password.")
 )
 
 func main() {
-	certtoolMain()
+	os.Exit(certtoolMain())
 }
 
-func certtoolMain() {
+// certtoolMain runs the tool and returns the process exit code.
+func certtoolMain() int {
 	flag.Parse()
 
-	if args, err := argsFromFlags(); err == nil {
-		if _, err := certtool.GenerateAndWriteKeyPair(args, *publicCertificate, *privateKey); err != nil {
-			zap.S().Error(err)
-		}
-	} else {
-		zap.S().Error(err)
+	if *target != "" && !*codeSigning {
+		zap.S().Warn("--target is set but --code-sign is not; --target will be ignored")
 	}
+
+	args, err := argsFromFlags()
+	if err != nil {
+		zap.S().Error(err)
+		return 1
+	}
+
+	if err := generateAndWriteKeyPair(args); err != nil {
+		zap.S().Error(err)
+		return 1
+	}
+
+	return 0
+}
+
+func generateAndWriteKeyPair(args *certtool.Args) error {
+	kp, err := certtool.GenerateKeyPair(args)
+	if err != nil {
+		return err
+	}
+	if len(kp.PFX) > 0 {
+		return certtool.WritePFX(kp, *pfxOutput)
+	}
+	return certtool.WriteKeyPair(kp, *publicCertificate, *privateKey)
 }
 
 func argsFromFlags() (*certtool.Args, error) {
 	var parent *certtool.KeyPair
 
-	algorithm, keyLength, err := StringToKeyType(*keyType)
-	if err != nil {
-		return nil, err
-	}
+	// Detect if --key-type was explicitly set by the user (not just the default value).
+	// flag.Visit only visits flags explicitly set via flag.Parse or flag.Set.
+	var keyTypeExplicitlySet bool
+	flag.Visit(func(f *flag.Flag) {
+		if f.Name == "key-type" {
+			keyTypeExplicitlySet = true
+		}
+	})
 
+	var kt *certtool.KeyType
+	if keyTypeExplicitlySet || !*codeSigning {
+		algorithm, keyLength, err := StringToKeyType(*keyType)
+		if err != nil {
+			return nil, err
+		}
+		kt = &certtool.KeyType{Algorithm: algorithm, KeyLength: keyLength}
+
+		// Warn if the user explicitly chose ECDSA for a Windows 7 target.
+		if *codeSigning && strings.ToUpper(algorithm) == "ECDSA" {
+			effectiveTarget := *target
+			if effectiveTarget == "" {
+				effectiveTarget = "windows10"
+			}
+			if profile, profErr := certtool.GetProfile(effectiveTarget); profErr == nil && profile.LegacyPFX {
+				zap.S().Warn("ECDSA code signing certs are not supported by Windows 7 signtool.exe; proceeding with user-specified key type")
+			}
+		}
+	}
+	// If kt is nil and codeSigning is true, fillDefaults resolves the key type from the profile.
+
+	var err error
 	if *parentPublicCertificate != "" {
 		parent, err = certtool.ReadKeyPairFromFile(*parentPublicCertificate, *parentPrivateKey)
 		if err != nil {
@@ -83,13 +136,12 @@ func argsFromFlags() (*certtool.Args, error) {
 		OrganizationalUnit: *organizationalUnit,
 		Locality:           *locality,
 		Province:           *province,
-
-		Hostnames: ExpandHostnames(*hostnames),
-		KeyType: &certtool.KeyType{
-			Algorithm: algorithm,
-			KeyLength: keyLength,
-		},
-		ParentKeyPair: parent,
+		Hostnames:          ExpandHostnames(*hostnames),
+		KeyType:            kt,
+		ParentKeyPair:      parent,
+		CodeSigning:        *codeSigning,
+		Target:             *target,
+		PFXPassword:        *pfxPassword,
 	}, nil
 }
 
