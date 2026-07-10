@@ -19,6 +19,7 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -188,10 +189,8 @@ func parseKeyTypeName(keyTypeName string, defaultLength int, validValues []int) 
 	if err != nil {
 		return "", 0, fmt.Errorf("key type '%s' does not have a valid %s key length", keyTypeName, algorithm)
 	}
-	for _, validLength := range validValues {
-		if validLength == length {
-			return algorithm, length, nil
-		}
+	if slices.Contains(validValues, length) {
+		return algorithm, length, nil
 	}
 
 	return "", 0, fmt.Errorf("key type '%s' does not have a valid %s key length", keyTypeName, algorithm)
@@ -202,7 +201,7 @@ func ExpandHostnames(hostnameCsv string) []string {
 }
 
 func expandHostnames(hostnames []string) []string {
-	unique := map[string]interface{}{}
+	unique := map[string]any{}
 
 	for _, hn := range hostnames {
 		if hn != "" {
@@ -210,8 +209,7 @@ func expandHostnames(hostnames []string) []string {
 		}
 	}
 
-	all := []string{}
-
+	all := make([]string, 0, len(unique))
 	for hn := range unique {
 		all = append(all, hn)
 	}
