@@ -39,6 +39,8 @@ const (
 	subjectDelimiter                 = "/"
 	partDelimiter                    = "="
 	subjectDelimiterReplacement      = "\u2318"
+	ecdsaAlgorithm                   = "ECDSA"
+	rsaAlgorithm                     = "RSA"
 )
 
 // Args of creating a self-signed X.509 public certificate/private key pair.
@@ -81,6 +83,7 @@ type Args struct {
 	PFXPassword string
 }
 
+// GetKeyType returns the KeyType from the Args, or a default if nil.
 func (args *Args) GetKeyType() *KeyType {
 	if args == nil || args.KeyType == nil {
 		return defaultKeyType()
@@ -149,11 +152,12 @@ func fillDefaults(args *Args) {
 
 func defaultKeyType() *KeyType {
 	return &KeyType{
-		Algorithm: "RSA",
+		Algorithm: rsaAlgorithm,
 		KeyLength: 2048,
 	}
 }
 
+// GenerateKeyPair generates a new X.509 public certificate/private key pair.
 func GenerateKeyPair(args *Args) (*KeyPair, error) {
 	fillDefaults(args)
 
@@ -183,13 +187,13 @@ func createCertificateAndPrivateKeyPEM(args *Args) (*KeyPair, error) {
 
 	keyType := args.GetKeyType()
 	switch strings.ToUpper(keyType.Algorithm) {
-	case "RSA":
+	case rsaAlgorithm:
 		if args.CodeSigning {
 			sigAlg = x509.SHA256WithRSA
 		} else {
 			sigAlg = x509.SHA512WithRSA
 		}
-	case "ECDSA":
+	case ecdsaAlgorithm:
 		if args.CodeSigning {
 			sigAlg = x509.ECDSAWithSHA256
 		} else {
@@ -316,14 +320,14 @@ func argsToPkixName(args *Args, serialNumber string) pkix.Name {
 	}
 }
 
-func generatePrivateKeyFromType(keyType KeyType) (interface{}, error) {
+func generatePrivateKeyFromType(keyType KeyType) (any, error) {
 	switch strings.ToUpper(keyType.Algorithm) {
-	case "RSA":
+	case rsaAlgorithm:
 		if keyType.KeyLength < 2048 {
 			return nil, fmt.Errorf("'%s-%d' key type has a key length below 2048", keyType.Algorithm, keyType.KeyLength)
 		}
 		return rsa.GenerateKey(rand.Reader, keyType.KeyLength)
-	case "ECDSA":
+	case ecdsaAlgorithm:
 		switch keyType.KeyLength {
 		case 224:
 			return ecdsa.GenerateKey(elliptic.P224(), rand.Reader)
@@ -341,7 +345,7 @@ func generatePrivateKeyFromType(keyType KeyType) (interface{}, error) {
 }
 
 // ReadKeyPair takes PEM-encoded public certificate/private key pairs and returns the Go classes for them so they can be used for encryption or signing.
-func ReadKeyPair(publicCertFileData []byte, privateKeyFileData []byte) (*x509.Certificate, interface{}, error) {
+func ReadKeyPair(publicCertFileData []byte, privateKeyFileData []byte) (*x509.Certificate, any, error) {
 	// Verify that we can load the public/private key pair.
 	publicCertPemBlock, remainder := pem.Decode(publicCertFileData)
 	if len(remainder) > 0 {
@@ -358,14 +362,15 @@ func ReadKeyPair(publicCertFileData []byte, privateKeyFileData []byte) (*x509.Ce
 		return nil, nil, fmt.Errorf("private key has a PEM remainder of %d bytes", len(remainder))
 	}
 
-	if privateKeyPemBlock.Type == rsaPrivateKeyPEMType {
+	switch privateKeyPemBlock.Type {
+	case rsaPrivateKeyPEMType:
 		privateKey, err := x509.ParsePKCS1PrivateKey(privateKeyPemBlock.Bytes)
 		if err != nil {
 			return nil, nil, fmt.Errorf("cannot parse PKCS1 encoding for private key, %w", err)
 		}
 
 		return publicCertificate, privateKey, nil
-	} else if privateKeyPemBlock.Type == ecPrivateKeyPEMType {
+	case ecPrivateKeyPEMType:
 		privateKey, err := x509.ParseECPrivateKey(privateKeyPemBlock.Bytes)
 		if err != nil {
 			return nil, nil, fmt.Errorf("cannot parse elliptical curve private key, %w", err)
@@ -377,7 +382,7 @@ func ReadKeyPair(publicCertFileData []byte, privateKeyFileData []byte) (*x509.Ce
 	return nil, nil, fmt.Errorf("cannot parse private key PEM type, %s, is not supported", privateKeyPemBlock.Type)
 }
 
-func publicKey(priv interface{}) interface{} {
+func publicKey(priv any) any {
 	switch k := priv.(type) {
 	case *rsa.PrivateKey:
 		return &k.PublicKey
@@ -388,7 +393,7 @@ func publicKey(priv interface{}) interface{} {
 	}
 }
 
-func pemBlockForKey(privateKey interface{}) (*pem.Block, error) {
+func pemBlockForKey(privateKey any) (*pem.Block, error) {
 	switch k := privateKey.(type) {
 	case *rsa.PrivateKey:
 		return &pem.Block{Type: rsaPrivateKeyPEMType, Bytes: x509.MarshalPKCS1PrivateKey(k)}, nil
@@ -472,6 +477,7 @@ func ReadKeyPairFromFile(publicCertificateFile string, privateKeyFile string) (*
 	}, nil
 }
 
+// GenerateAndWriteKeyPair generates a new key pair and writes it to the specified files.
 func GenerateAndWriteKeyPair(args *Args, publicCertificateFile string, privateKeyFile string) (*KeyPair, error) {
 	if len(publicCertificateFile) == 0 {
 		return nil, fmt.Errorf("public certificate file path must not be empty")
@@ -489,11 +495,12 @@ func GenerateAndWriteKeyPair(args *Args, publicCertificateFile string, privateKe
 	return kp, nil
 }
 
+// WriteKeyPair writes the public certificate and private key to the specified files with mode 0644 and 0600 respectively.
 func WriteKeyPair(kp *KeyPair, publicCertificateFile string, privateKeyFile string) error {
-	if err := writeFile(publicCertificateFile, kp.PublicCertificate, 0644); err != nil {
+	if err := writeFile(publicCertificateFile, kp.PublicCertificate, 0o644); err != nil {
 		return err
 	}
-	if err := writeFile(privateKeyFile, kp.PrivateKey, 0600); err != nil {
+	if err := writeFile(privateKeyFile, kp.PrivateKey, 0o600); err != nil {
 		return err
 	}
 	return nil
@@ -504,7 +511,7 @@ func WritePFX(kp *KeyPair, pfxFile string) error {
 	if len(kp.PFX) == 0 {
 		return fmt.Errorf("KeyPair does not contain PKCS#12 data")
 	}
-	return writeFile(pfxFile, kp.PFX, 0600)
+	return writeFile(pfxFile, kp.PFX, 0o600)
 }
 
 func writeFile(fileName string, data []byte, mode os.FileMode) error {

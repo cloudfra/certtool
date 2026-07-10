@@ -23,10 +23,10 @@ import (
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"fmt"
-	"io/ioutil"
 	"os"
 	"path/filepath"
 	"reflect"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -83,12 +83,12 @@ func TestReadKeyPairFromFile_Errors(t *testing.T) {
 		{
 			publicCertificateFile: pubPath,
 			privateKeyFile:        "does-not-exist",
-			wantErr:               "cannot read the private key file (does-not-exist), open does-not-exist: no such file or directory",
+			wantErr:               "cannot read the private key file (does-not-exist), open does-not-exist:",
 		},
 		{
 			publicCertificateFile: "does-not-exist",
 			privateKeyFile:        privPath,
-			wantErr:               "cannot read the public certificate file (does-not-exist), open does-not-exist: no such file or directory",
+			wantErr:               "cannot read the public certificate file (does-not-exist), open does-not-exist:",
 		},
 		{
 			publicCertificateFile: pubPath,
@@ -122,7 +122,7 @@ func TestReadKeyPairFromFile_Errors(t *testing.T) {
 				if err == nil {
 					t.Fatalf("error is nil, want: '%s'", tc.wantErr)
 				}
-				if err.Error() != tc.wantErr {
+				if !strings.Contains(err.Error(), tc.wantErr) {
 					t.Errorf("got err: '%s', want: '%s'", err.Error(), tc.wantErr)
 				}
 			}
@@ -564,10 +564,14 @@ func TestBadValues(t *testing.T) {
 		priv        string
 		args        *Args
 	}{
-		{"root public certificate data was set but root private key data was not", "pub.cert", "priv.key",
-			&Args{ParentKeyPair: &KeyPair{PublicCertificate: []byte("A")}, Validity: time.Second, Hostnames: []string{"127.0.0.1"}, KeyType: defaultKeyType()}},
-		{"root private key data was set but root public certificate data was not", "pub.cert", "priv.key",
-			&Args{ParentKeyPair: &KeyPair{PrivateKey: []byte("A")}, Validity: time.Second, Hostnames: []string{"127.0.0.1"}, KeyType: defaultKeyType()}},
+		{
+			"root public certificate data was set but root private key data was not", "pub.cert", "priv.key",
+			&Args{ParentKeyPair: &KeyPair{PublicCertificate: []byte("A")}, Validity: time.Second, Hostnames: []string{"127.0.0.1"}, KeyType: defaultKeyType()},
+		},
+		{
+			"root private key data was set but root public certificate data was not", "pub.cert", "priv.key",
+			&Args{ParentKeyPair: &KeyPair{PrivateKey: []byte("A")}, Validity: time.Second, Hostnames: []string{"127.0.0.1"}, KeyType: defaultKeyType()},
+		},
 		{"public certificate file path must not be empty", "", "priv.key", &Args{Validity: time.Second, Hostnames: []string{"127.0.0.1"}, KeyType: defaultKeyType()}},
 		{"private key file path must not be empty", "pub.cert", "", &Args{Validity: time.Second, Hostnames: []string{"127.0.0.1"}, KeyType: defaultKeyType()}},
 		//{"hostname list was empty. At least 1 hostname is required for generating a certificate-key pair", "pub.cert", "priv.key", &Args{}},
@@ -630,6 +634,7 @@ func TestParseName(t *testing.T) {
 		})
 	}
 }
+
 func TestBadParseName(t *testing.T) {
 	testCases := []struct {
 		subject  string
@@ -800,7 +805,9 @@ func TestWritePFX(t *testing.T) {
 	// Verify mode 0600
 	info, err := os.Stat(pfxPath)
 	assert.Nil(err)
-	assert.Equal(os.FileMode(0600), info.Mode().Perm())
+	if runtime.GOOS != "windows" {
+		assert.Equal(os.FileMode(0o600), info.Mode().Perm())
+	}
 }
 
 func TestWritePFX_NoPFXData(t *testing.T) {
@@ -810,8 +817,7 @@ func TestWritePFX_NoPFXData(t *testing.T) {
 }
 
 func mustTemp(tb testing.TB) string {
-	tmpDir, err := ioutil.TempDir("", "certtest")
-
+	tmpDir, err := os.MkdirTemp("", "certtest")
 	if err != nil {
 		tb.Fatal(err)
 	}

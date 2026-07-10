@@ -1,4 +1,8 @@
 # Cert Tool
+<!-- markdownlint-disable-next-line MD033 -->
+<img src="logo.png" alt="Logo" width="64" height="64" />
+
+[![CI](https://github.com/cloudfra/certtool/actions/workflows/deploy.yaml/badge.svg)](https://github.com/cloudfra/certtool/actions/workflows/deploy.yaml) [![Go Reference](https://pkg.go.dev/badge/github.com/cloudfra/certtool.svg)](https://pkg.go.dev/github.com/cloudfra/certtool) [![codecov](https://codecov.io/gh/cloudfra/certtool/graph/badge.svg?token=UVApxhg6z7)](https://codecov.io/gh/cloudfra/certtool)
 
 A simple tool for generating self-signed X.509 certificates and private keys for TLS and code signing, available as a standalone CLI and Go library.
 

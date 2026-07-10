@@ -20,7 +20,7 @@ import (
 	"software.sslmate.com/src/go-pkcs12"
 )
 
-func toPFX(cert *x509.Certificate, privateKey interface{}, password string, legacy bool) ([]byte, error) {
+func toPFX(cert *x509.Certificate, privateKey any, password string, legacy bool) ([]byte, error) {
 	if legacy {
 		return pkcs12.LegacyDES.Encode(privateKey, cert, nil, password)
 	}

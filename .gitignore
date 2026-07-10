@@ -1,4 +1,4 @@
-# Copyright 2019 Jeremy Edwards
+# Copyright 2026 Cloudfra
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -12,73 +12,51 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-# Compiled Object files, Static and Dynamic libs (Shared Objects)
-*.o
-*.a
-*.so
-
-# Folders
-_obj
-_test
-
-# Architecture specific extensions/prefixes
-*.[568vq]
-[568vq].out
-
-*.cgo1.go
-*.cgo2.c
-_cgo_defun.c
-_cgo_gotypes.go
-_cgo_export.*
-
-_testmain.go
-
+# If you prefer the allow list template instead of the deny list, see community template:
+# https://github.com/github/gitignore/blob/main/community/Golang/Go.AllowList.gitignore
+#
+# Binaries for programs and plugins
 *.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+
+# Test binary, built with `go test -c`
 *.test
-*.prof
 
-build/
-release/
-upload/
+# Code coverage profiles and other test artifacts
+*.out
+coverage.*
+*.coverprofile
+profile.cov
 
+# Dependency directories (remove the comment below to include it)
+# vendor/
 
-package.coverage
-coverage.txt
-coverage.xml
-*.pem
-release.tar.gz
-testing/testassets.*
-packaging/parts/
-packaging/snap/
-uploaded-files/
-packaging/stage/
-packaging/prime/
-packaging/*.snap
+# Go workspace file
+go.work
+go.work.sum
 
-stage/
-prime/
-snap/.snapcraft/
-*.snap
-embedded/bindata_assetfs.go
+# env file
+.env
 
-bazel-bin
-bazel-genfiles
-bazel-certtool
-bazel-out
-bazel-testlogs
-
-.snapcraft/
-toolchain/
-bin/
-.vscode/
-
-*.key
-*.cert
+# Editor/IDE
+# .idea/
+# .vscode/
 
 __debug_bin
-
-temp/
-*.wasm
-*.db
-.superpowers/
-*.pfx
+__debug_bin.exe
+# Note: intentionally does not match .terraform.lock.hcl, which should be
+# committed to pin provider versions/hashes for reproducible builds.
+.terraform/
+.terraformrc
+*.coverage
+*.log
+*.pt
+/web.cert
+/web.key
+benchmark.html
+build/
+gha-creds-*.json
+output/

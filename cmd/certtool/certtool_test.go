@@ -24,9 +24,14 @@ import (
 	"github.com/google/go-cmp/cmp"
 )
 
+func BenchmarkExpandHostnames(b *testing.B) {
+	for b.Loop() {
+		expandHostnames([]string{"example.com", "test.com"})
+	}
+}
+
 func TestArgsFromFlags(t *testing.T) {
 	args, err := argsFromFlags()
-
 	if err != nil {
 		t.Fatalf("got error, %s", err)
 	}
