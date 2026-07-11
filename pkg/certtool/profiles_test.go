@@ -27,16 +27,16 @@ func TestGetProfile(t *testing.T) {
 		wantPFX    bool
 		wantLegacy bool
 	}{
-		{input: "windows7", wantAlgo: "RSA", wantLen: 2048, wantPFX: true, wantLegacy: true},
-		{input: "win7", wantAlgo: "RSA", wantLen: 2048, wantPFX: true, wantLegacy: true},
-		{input: "windows8", wantAlgo: "RSA", wantLen: 2048, wantPFX: true, wantLegacy: true},
-		{input: "win8", wantAlgo: "RSA", wantLen: 2048, wantPFX: true, wantLegacy: true},
-		{input: "windows10", wantAlgo: "ECDSA", wantLen: 256, wantPFX: true, wantLegacy: false},
-		{input: "win10", wantAlgo: "ECDSA", wantLen: 256, wantPFX: true, wantLegacy: false},
-		{input: "windows11", wantAlgo: "ECDSA", wantLen: 256, wantPFX: true, wantLegacy: false},
-		{input: "win11", wantAlgo: "ECDSA", wantLen: 256, wantPFX: true, wantLegacy: false},
-		{input: "linux", wantAlgo: "ECDSA", wantLen: 256, wantPFX: false, wantLegacy: false},
-		{input: "WINDOWS10", wantAlgo: "ECDSA", wantLen: 256, wantPFX: true, wantLegacy: false},
+		{input: windows7Target, wantAlgo: rsaAlgorithm, wantLen: 2048, wantPFX: true, wantLegacy: true},
+		{input: "win7", wantAlgo: rsaAlgorithm, wantLen: 2048, wantPFX: true, wantLegacy: true},
+		{input: "windows8", wantAlgo: rsaAlgorithm, wantLen: 2048, wantPFX: true, wantLegacy: true},
+		{input: "win8", wantAlgo: rsaAlgorithm, wantLen: 2048, wantPFX: true, wantLegacy: true},
+		{input: windows10Target, wantAlgo: ecdsaAlgorithm, wantLen: 256, wantPFX: true, wantLegacy: false},
+		{input: "win10", wantAlgo: ecdsaAlgorithm, wantLen: 256, wantPFX: true, wantLegacy: false},
+		{input: windows11Target, wantAlgo: ecdsaAlgorithm, wantLen: 256, wantPFX: true, wantLegacy: false},
+		{input: "win11", wantAlgo: ecdsaAlgorithm, wantLen: 256, wantPFX: true, wantLegacy: false},
+		{input: linuxTarget, wantAlgo: ecdsaAlgorithm, wantLen: 256, wantPFX: false, wantLegacy: false},
+		{input: "WINDOWS10", wantAlgo: ecdsaAlgorithm, wantLen: 256, wantPFX: true, wantLegacy: false},
 	}
 	for _, tc := range testCases {
 		tc := tc
@@ -67,14 +67,14 @@ func TestGetProfile_Unknown(t *testing.T) {
 	if err == nil {
 		t.Error("expected error for unknown target, got nil")
 	}
-	if !strings.Contains(err.Error(), "windows7") {
+	if !strings.Contains(err.Error(), windows7Target) {
 		t.Errorf("error message should list valid targets, got: %s", err.Error())
 	}
 }
 
 func BenchmarkGetProfile(b *testing.B) {
 	for b.Loop() {
-		_, err := GetProfile("windows10")
+		_, err := GetProfile(windows10Target)
 		if err != nil {
 			b.Fatalf("unexpected error: %v", err)
 		}

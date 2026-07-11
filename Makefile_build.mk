@@ -111,21 +111,23 @@ endif
 
 lint-go: build/toolchain/bin/golangci-lint$(EXE) build/toolchain/bin/gofumpt$(EXE) build/toolchain/bin/revive$(EXE)
 	$(GO) fmt ./...
-	build/toolchain/bin/gofumpt$(EXE) -l -w .
-	-build/toolchain/bin/golangci-lint$(EXE) fmt ./...
-	-build/toolchain/bin/golangci-lint$(EXE) run ./...
-	build/toolchain/bin/revive$(EXE) -set_exit_status -exclude=build/... ./...
 	$(GO) mod verify
+	build/toolchain/bin/gofumpt$(EXE) -l -w .
+	build/toolchain/bin/golangci-lint$(EXE) fmt ./...
+	build/toolchain/bin/golangci-lint$(EXE) run ./...
+	build/toolchain/bin/revive$(EXE) -set_exit_status -exclude=build/... ./...
 
 lint-docker: build/toolchain/bin/hadolint$(EXE)
 	$(FIND) cmd -iname 'Dockerfile*' -exec build/toolchain/bin/hadolint$(EXE) {} +
 
 lint-yaml: build/toolchain/bin/actionlint$(EXE) build/toolchain/bin/shellcheck$(EXE)
-	build/toolchain/bin/actionlint$(EXE) -shellcheck=$(REPOSITORY_ROOT)/build/toolchain/bin/shellcheck$(EXE) -ignore 'unknown permission scope "code-quality"'
+	build/toolchain/bin/actionlint$(EXE) -shellcheck=$(REPOSITORY_ROOT)/build/toolchain/bin/shellcheck$(EXE) -config-file $(REPOSITORY_ROOT)/.github/actionlint.yaml
 
 lint-shell: build/toolchain/bin/shellcheck$(EXE)
 	@scripts="$$($(FIND) . -name '*.sh' -not -path './third_party/*' -not -path './build/*')"; \
-	if [ -n "$$scripts" ]; then build/toolchain/bin/shellcheck$(EXE) $$scripts; fi
+	shellcheck_exclude=""; \
+	if [ "$(OS)" = "Windows_NT" ]; then shellcheck_exclude="--exclude=SC1009,SC1017,SC1044,SC1072,SC1073"; fi; \
+	if [ -n "$$scripts" ]; then build/toolchain/bin/shellcheck$(EXE) $$shellcheck_exclude $$scripts; fi
 
 lint-vuln: build/toolchain/bin/govulncheck$(EXE)
 	build/toolchain/bin/govulncheck$(EXE) ./...
@@ -280,4 +282,10 @@ system-info:
 	@echo "Storage Metrics"
 	@df -h
 
-.PHONY: all tools assets protos windows-binaries run lint lint-go lint-terraform lint-docker lint-yaml lint-shell lint-vuln bench test tf-test test-deflake ensure-builder docker-images scan-images images linux-images windows-images upgrade-deps deps clean presubmit system-info release-binaries no-sudo
+sync-upstream:
+	git fetch origin
+	git add -A
+	git commit -m"Save pending changes."
+	git rebase -i origin/main 
+
+.PHONY: all tools assets protos windows-binaries run lint lint-go lint-terraform lint-docker lint-yaml lint-shell lint-vuln bench test tf-test test-deflake ensure-builder docker-images scan-images images linux-images windows-images upgrade-deps deps clean presubmit system-info release-binaries no-sudo sync-upstream

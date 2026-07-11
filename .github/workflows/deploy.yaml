@@ -27,8 +27,6 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  # Set the job key. The key is displayed as the job name
-  # when a job name is not provided
   build-linux:
     name: "Build Linux"
     runs-on: ["self-hosted", "linux", "large"]
@@ -44,52 +42,34 @@ jobs:
       - name: Fix mod cache permissions
         run: |
           chmod -R u+w "$GITHUB_WORKSPACE/build/toolchain" 2>/dev/null || true
-
       - name: Checkout code
         # https://github.com/actions/checkout
         uses: actions/checkout@v7
-
       - name: Setup Go
         # https://github.com/actions/setup-go
         uses: actions/setup-go@v6
         with:
           go-version: stable
           cache: false
-
       - name: System Information
         run: make system-info
-
       # - name: Container Fix
       #   run: git config --system --add safe.directory /__w/
+      - name: Clean
+        run: make clean
+      - name: Download Dependencies
+        run: make deps
+      - name: Install Toolchain
+        run: make tools -j"$(nproc)"
 
-      - name: Prepare Build
-        run: |
-          make clean
-          make deps
-          make lint tools -j"$(nproc)"
-
+      - name: Lint
+        run: make lint
       - name: Test
         run: make test
-
       - name: Test (Deflake)
         run: make test-deflake
-
       - name: Coverage
         run: make coverage.txt coverage.xml
-
-      - name: Benchmark
-        run: make benchmark.html
-      
-      - name: Publish Benchmark (7 Days)
-        # https://github.com/actions/upload-artifact
-        uses: actions/upload-artifact@v7
-        with:
-          name: benchmark-linux.html
-          path: |
-            benchmark.html
-          retention-days: 7
-          if-no-files-found: error
-
       - name: Push Code Coverage
         # https://github.com/codecov/codecov-action
         uses: codecov/codecov-action@v7
@@ -100,7 +80,6 @@ jobs:
           flags: unittests
           fail_ci_if_error: true
           verbose: true
-
       - name: Upload Coverage Report
         # https://github.com/actions/upload-code-coverage
         # https://docs.github.com/en/code-security/how-tos/maintain-quality-code/set-up-code-coverage#step-2-upload-the-coverage-report
@@ -119,6 +98,18 @@ jobs:
           file: coverage.xml
           language: Go
           label: code-coverage/gotest
+
+      - name: Benchmark
+        run: make benchmark.html
+      - name: Publish Benchmark (7 Days)
+        # https://github.com/actions/upload-artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: benchmark-linux.html
+          path: |
+            benchmark.html
+          retention-days: 7
+          if-no-files-found: error
 
       - name: Build Binaries
         run: make all -j"$(nproc)"
@@ -248,24 +239,24 @@ jobs:
           go-version: stable
           cache: false
 
-      - name: Prepare Build
-        run: |
-          make clean
-          make deps
-          make tools -j"$(nproc)"
+      - name: Clean
+        run: make clean
+      - name: Download Dependencies
+        run: make deps
+      - name: Install Toolchain
+        run: make tools -j"$(nproc)"
 
-      - name: Build
-        run: make windows-binaries -j4
-
+      - name: Lint
+        run: make lint
       - name: Test
         run: make test
-
-      - name: Test (Race Test)
+      - name: Test (Deflake)
         run: make GO_TEST_COUNT=5 test-deflake
+      - name: Coverage
+        run: make coverage.txt coverage.xml
 
       - name: Benchmark
         run: make benchmark.html
-      
       - name: Publish Benchmark (7 Days)
         # https://github.com/actions/upload-artifact
         uses: actions/upload-artifact@v7
@@ -275,3 +266,6 @@ jobs:
             benchmark.html
           retention-days: 7
           if-no-files-found: error
+
+      - name: Build
+        run: make windows-binaries -j"$(nproc)"

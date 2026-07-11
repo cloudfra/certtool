@@ -28,7 +28,7 @@ func TestToPFX_Modern(t *testing.T) {
 	}
 	assert := assert.New(t)
 
-	kp, err := GenerateKeyPair(&Args{KeyType: &KeyType{Algorithm: "ECDSA", KeyLength: 256}})
+	kp, err := GenerateKeyPair(&Args{KeyType: &KeyType{Algorithm: ecdsaAlgorithm, KeyLength: 256}})
 	assert.Nil(err)
 
 	cert, privKey, err := ReadKeyPair(kp.PublicCertificate, kp.PrivateKey)
@@ -50,7 +50,7 @@ func TestToPFX_Legacy(t *testing.T) {
 	}
 	assert := assert.New(t)
 
-	kp, err := GenerateKeyPair(&Args{KeyType: &KeyType{Algorithm: "RSA", KeyLength: 2048}})
+	kp, err := GenerateKeyPair(&Args{KeyType: &KeyType{Algorithm: rsaAlgorithm, KeyLength: 2048}})
 	assert.Nil(err)
 
 	cert, privKey, err := ReadKeyPair(kp.PublicCertificate, kp.PrivateKey)
