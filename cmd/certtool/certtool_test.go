@@ -24,6 +24,8 @@ import (
 	"github.com/google/go-cmp/cmp"
 )
 
+const testLocalhost = "localhost"
+
 func BenchmarkExpandHostnames(b *testing.B) {
 	for b.Loop() {
 		expandHostnames([]string{"example.com", "test.com"})
@@ -85,7 +87,7 @@ func TestCerttoolMainTargetWithoutCodeSign(t *testing.T) {
 	origPublicCertificate, origPrivateKey, origTarget := *publicCertificate, *privateKey, *target
 	*publicCertificate = filepath.Join(dir, "app.cert")
 	*privateKey = filepath.Join(dir, "app.key")
-	*target = "windows10"
+	*target = defaultCodeSignTarget
 	t.Cleanup(func() {
 		*publicCertificate, *privateKey, *target = origPublicCertificate, origPrivateKey, origTarget
 	})
@@ -107,7 +109,7 @@ func TestGenerateAndWriteKeyPairPFX(t *testing.T) {
 	*pfxOutput = filepath.Join(t.TempDir(), "codesign.pfx")
 	t.Cleanup(func() { *pfxOutput = origPfxOutput })
 
-	if err := generateAndWriteKeyPair(&certtool.Args{CodeSigning: true, Target: "windows10"}); err != nil {
+	if err := generateAndWriteKeyPair(&certtool.Args{CodeSigning: true, Target: defaultCodeSignTarget}); err != nil {
 		t.Fatalf("generateAndWriteKeyPair() got error, %s", err)
 	}
 	if _, err := os.Stat(*pfxOutput); err != nil {
@@ -133,7 +135,7 @@ func TestArgsFromFlagsExplicitECDSAOnWindows7(t *testing.T) {
 	if err != nil {
 		t.Fatalf("got error, %s", err)
 	}
-	if args.KeyType == nil || args.KeyType.Algorithm != "ECDSA" || args.KeyType.KeyLength != 256 {
+	if args.KeyType == nil || args.KeyType.Algorithm != algorithmECDSA || args.KeyType.KeyLength != 256 {
 		t.Errorf("args.KeyType = %+v, want ECDSA-256", args.KeyType)
 	}
 }
@@ -158,7 +160,7 @@ func TestArgsFromFlagsExplicitECDSANoTarget(t *testing.T) {
 	if err != nil {
 		t.Fatalf("got error, %s", err)
 	}
-	if args.KeyType == nil || args.KeyType.Algorithm != "ECDSA" || args.KeyType.KeyLength != 256 {
+	if args.KeyType == nil || args.KeyType.Algorithm != algorithmECDSA || args.KeyType.KeyLength != 256 {
 		t.Errorf("args.KeyType = %+v, want ECDSA-256", args.KeyType)
 	}
 }
@@ -182,13 +184,13 @@ func TestStringToKeyType(t *testing.T) {
 		wantAlgorithm string
 		wantKeyLength int
 	}{
-		{input: "", wantAlgorithm: "RSA", wantKeyLength: 2048},
-		{input: "RSA", wantAlgorithm: "RSA", wantKeyLength: 2048},
-		{input: "RSA-2048", wantAlgorithm: "RSA", wantKeyLength: 2048},
-		{input: "rsa-4096", wantAlgorithm: "RSA", wantKeyLength: 4096},
-		{input: "ecdsa-384", wantAlgorithm: "ECDSA", wantKeyLength: 384},
-		{input: "ECDSA-521", wantAlgorithm: "ECDSA", wantKeyLength: 521},
-		{input: "ECDSA", wantAlgorithm: "ECDSA", wantKeyLength: 521},
+		{input: "", wantAlgorithm: algorithmRSA, wantKeyLength: 2048},
+		{input: algorithmRSA, wantAlgorithm: algorithmRSA, wantKeyLength: 2048},
+		{input: "RSA-2048", wantAlgorithm: algorithmRSA, wantKeyLength: 2048},
+		{input: "rsa-4096", wantAlgorithm: algorithmRSA, wantKeyLength: 4096},
+		{input: "ecdsa-384", wantAlgorithm: algorithmECDSA, wantKeyLength: 384},
+		{input: "ECDSA-521", wantAlgorithm: algorithmECDSA, wantKeyLength: 521},
+		{input: algorithmECDSA, wantAlgorithm: algorithmECDSA, wantKeyLength: 521},
 	}
 
 	for _, tc := range testCases {
@@ -235,8 +237,8 @@ func TestExpandHostnames(t *testing.T) {
 		want  []string
 	}{
 		{input: "", want: []string{}},
-		{input: "localhost", want: []string{"localhost"}},
-		{input: "localhost,cloudfra,localhost", want: []string{"cloudfra", "localhost"}},
+		{input: testLocalhost, want: []string{testLocalhost}},
+		{input: testLocalhost + ",cloudfra," + testLocalhost, want: []string{"cloudfra", testLocalhost}},
 	}
 
 	for _, tc := range testCases {

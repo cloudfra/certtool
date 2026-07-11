@@ -27,6 +27,7 @@ import (
 	"math/big"
 	"net"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 )
@@ -41,6 +42,7 @@ const (
 	subjectDelimiterReplacement      = "\u2318"
 	ecdsaAlgorithm                   = "ECDSA"
 	rsaAlgorithm                     = "RSA"
+	defaultOrganization              = "Certtool"
 )
 
 // Args of creating a self-signed X.509 public certificate/private key pair.
@@ -115,7 +117,7 @@ func fillDefaults(args *Args) {
 		args.Country = "US"
 	}
 	if args.Organization == "" {
-		args.Organization = "Certtool"
+		args.Organization = defaultOrganization
 	}
 	if args.CommonName == "" {
 		args.CommonName = args.Organization
@@ -134,7 +136,7 @@ func fillDefaults(args *Args) {
 	}
 	if args.CodeSigning {
 		if args.Target == "" {
-			args.Target = "windows10"
+			args.Target = windows10Target
 		}
 		if args.KeyType == nil {
 			if profile, err := GetProfile(args.Target); err == nil {
@@ -251,11 +253,14 @@ func createCertificateAndPrivateKeyPEM(args *Args) (*KeyPair, error) {
 	parentTemplate := certTemplate
 
 	if args.ParentKeyPair != nil {
-		if len(args.ParentKeyPair.PublicCertificate) > 0 && len(args.ParentKeyPair.PrivateKey) == 0 {
+		hasPublicCertificate := len(args.ParentKeyPair.PublicCertificate) > 0
+		hasPrivateKey := len(args.ParentKeyPair.PrivateKey) > 0
+		switch {
+		case hasPublicCertificate && !hasPrivateKey:
 			return nil, fmt.Errorf("root public certificate data was set but root private key data was not")
-		} else if len(args.ParentKeyPair.PublicCertificate) == 0 && len(args.ParentKeyPair.PrivateKey) > 0 {
+		case !hasPublicCertificate && hasPrivateKey:
 			return nil, fmt.Errorf("root private key data was set but root public certificate data was not")
-		} else if len(args.ParentKeyPair.PublicCertificate) > 0 && len(args.ParentKeyPair.PrivateKey) > 0 {
+		case hasPublicCertificate && hasPrivateKey:
 			parentPublicCertificateT, parentPrivateKeyT, readErr := ReadKeyPair(args.ParentKeyPair.PublicCertificate, args.ParentKeyPair.PrivateKey)
 			if readErr != nil {
 				return nil, readErr
@@ -462,11 +467,11 @@ func ReadKeyPairFromFile(publicCertificateFile string, privateKeyFile string) (*
 		return nil, fmt.Errorf("private key was provided without a public certificate")
 	}
 
-	pub, err := os.ReadFile(publicCertificateFile)
+	pub, err := os.ReadFile(filepath.Clean(publicCertificateFile))
 	if err != nil {
 		return nil, fmt.Errorf("cannot read the public certificate file (%s), %w", publicCertificateFile, err)
 	}
-	priv, err := os.ReadFile(privateKeyFile)
+	priv, err := os.ReadFile(filepath.Clean(privateKeyFile))
 	if err != nil {
 		return nil, fmt.Errorf("cannot read the private key file (%s), %w", privateKeyFile, err)
 	}

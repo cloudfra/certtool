@@ -19,6 +19,13 @@ import (
 	"strings"
 )
 
+const (
+	windows7Target  = "windows7"
+	windows10Target = "windows10"
+	windows11Target = "windows11"
+	linuxTarget     = "linux"
+)
+
 // TargetProfile holds cert generation defaults for a named platform target.
 type TargetProfile struct {
 	KeyType   KeyType
@@ -27,36 +34,36 @@ type TargetProfile struct {
 }
 
 var targetProfiles = map[string]TargetProfile{
-	"windows7": {
-		KeyType:   KeyType{Algorithm: "RSA", KeyLength: 2048},
+	windows7Target: {
+		KeyType:   KeyType{Algorithm: rsaAlgorithm, KeyLength: 2048},
 		OutputPFX: true,
 		LegacyPFX: true,
 	},
-	"windows10": {
-		KeyType:   KeyType{Algorithm: "ECDSA", KeyLength: 256},
+	windows10Target: {
+		KeyType:   KeyType{Algorithm: ecdsaAlgorithm, KeyLength: 256},
 		OutputPFX: true,
 		LegacyPFX: false,
 	},
-	"windows11": {
-		KeyType:   KeyType{Algorithm: "ECDSA", KeyLength: 256},
+	windows11Target: {
+		KeyType:   KeyType{Algorithm: ecdsaAlgorithm, KeyLength: 256},
 		OutputPFX: true,
 		LegacyPFX: false,
 	},
-	"linux": {
-		KeyType:   KeyType{Algorithm: "ECDSA", KeyLength: 256},
+	linuxTarget: {
+		KeyType:   KeyType{Algorithm: ecdsaAlgorithm, KeyLength: 256},
 		OutputPFX: false,
 		LegacyPFX: false,
 	},
 }
 
 var profileAliases = map[string]string{
-	"win7":       "windows7",
-	"windows8":   "windows7",
-	"win8":       "windows7",
-	"windows8.1": "windows7",
-	"win8.1":     "windows7",
-	"win10":      "windows10",
-	"win11":      "windows11",
+	"win7":       windows7Target,
+	"windows8":   windows7Target,
+	"win8":       windows7Target,
+	"windows8.1": windows7Target,
+	"win8.1":     windows7Target,
+	"win10":      windows10Target,
+	"win11":      windows11Target,
 }
 
 // GetProfile returns the TargetProfile for the given target name or alias.

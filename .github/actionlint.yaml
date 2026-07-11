@@ -19,3 +19,8 @@ self-hosted-runner:
   labels:
     - large
     - root
+
+paths:
+  "**/*.yaml":
+    ignore:
+      - 'unknown permission scope "code-quality"'

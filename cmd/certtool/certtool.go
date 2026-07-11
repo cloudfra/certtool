@@ -52,6 +52,12 @@ var (
 	pfxPassword = flag.String("pfx-password", "", "Password for the PKCS#12 (.pfx) file. Empty means no password.")
 )
 
+const (
+	algorithmRSA          = "RSA"
+	algorithmECDSA        = "ECDSA"
+	defaultCodeSignTarget = "windows10"
+)
+
 func main() {
 	os.Exit(certtoolMain())
 }
@@ -110,10 +116,10 @@ func argsFromFlags() (*certtool.Args, error) {
 		kt = &certtool.KeyType{Algorithm: algorithm, KeyLength: keyLength}
 
 		// Warn if the user explicitly chose ECDSA for a Windows 7 target.
-		if *codeSigning && strings.ToUpper(algorithm) == "ECDSA" {
+		if *codeSigning && strings.ToUpper(algorithm) == algorithmECDSA {
 			effectiveTarget := *target
 			if effectiveTarget == "" {
-				effectiveTarget = "windows10"
+				effectiveTarget = defaultCodeSignTarget
 			}
 			if profile, profErr := certtool.GetProfile(effectiveTarget); profErr == nil && profile.LegacyPFX {
 				zap.S().Warn("ECDSA code signing certs are not supported by Windows 7 signtool.exe; proceeding with user-specified key type")
@@ -148,12 +154,12 @@ func argsFromFlags() (*certtool.Args, error) {
 
 func StringToKeyType(keyType string) (string, int, error) {
 	if keyType == "" {
-		return "RSA", 2048, nil
+		return algorithmRSA, 2048, nil
 	}
 	switch parseKeyTypeKeyName(keyType) {
-	case "RSA":
+	case algorithmRSA:
 		return parseKeyTypeName(keyType, 2048, []int{2048, 4096})
-	case "ECDSA":
+	case algorithmECDSA:
 		return parseKeyTypeName(keyType, 521, []int{224, 256, 384, 521})
 	}
 	return "", 0, fmt.Errorf("'%s' is not a valid key type", keyType)
@@ -164,7 +170,7 @@ func parseKeyTypeKeyName(keyTypeName string) string {
 	if len(parts) > 0 {
 		return parts[0]
 	}
-	return "RSA"
+	return algorithmRSA
 }
 
 func parseKeyTypeName(keyTypeName string, defaultLength int, validValues []int) (string, int, error) {

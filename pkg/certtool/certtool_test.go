@@ -36,8 +36,14 @@ import (
 )
 
 const (
-	secretMessage = "this is a secret message"
+	secretMessage   = "this is a secret message"
+	testLoopbackIP  = "127.0.0.1"
+	testOrgValue    = "organization"
+	testPubCertFile = "pub.cert"
+	testPrivKeyFile = "priv.key"
 )
+
+var testHostnames = []string{"a.com", "b.com", testLoopbackIP}
 
 func TestPublicKey(t *testing.T) {
 	if testing.Short() {
@@ -53,8 +59,8 @@ func TestPublicKey(t *testing.T) {
 
 func TestReadKeyPairFromFile_Errors(t *testing.T) {
 	tmpDir := mustTemp(t)
-	pubPath := filepath.Join(tmpDir, "pub.cert")
-	privPath := filepath.Join(tmpDir, "priv.key")
+	pubPath := filepath.Join(tmpDir, testPubCertFile)
+	privPath := filepath.Join(tmpDir, testPrivKeyFile)
 	originalKP, err := GenerateAndWriteKeyPair(&Args{}, pubPath, privPath)
 	if err != nil {
 		t.Fatal(err)
@@ -142,7 +148,7 @@ func TestReadKeyPair_BadPublicCert(t *testing.T) {
 func TestCreateCertificateAndPrivateKeyPEMErrors(t *testing.T) {
 	ca, err := createCertificateAndPrivateKeyPEM(&Args{
 		Validity:  time.Hour * 1,
-		Hostnames: []string{"a.com", "b.com", "127.0.0.1"},
+		Hostnames: testHostnames,
 		KeyType:   defaultKeyType(),
 		CA:        true,
 	})
@@ -166,7 +172,7 @@ func TestCreateCertificateAndPrivateKeyPEMErrors(t *testing.T) {
 		{
 			args: &Args{
 				KeyType: &KeyType{
-					Algorithm: "RSA",
+					Algorithm: rsaAlgorithm,
 					KeyLength: 1,
 				},
 			},
@@ -185,7 +191,7 @@ func TestCreateCertificateAndPrivateKeyPEMErrors(t *testing.T) {
 		{
 			args: &Args{
 				KeyType: &KeyType{
-					Algorithm: "ECDSA",
+					Algorithm: ecdsaAlgorithm,
 					KeyLength: 224,
 				},
 				ParentKeyPair: ca,
@@ -312,19 +318,19 @@ func TestArgsToPkixName(t *testing.T) {
 		{
 			Args{
 				Country:            "country",
-				Organization:       "organization",
+				Organization:       testOrgValue,
 				OrganizationalUnit: "organizationUnit",
 				Locality:           "locality",
 				Province:           "province",
-				CommonName:         "organization",
+				CommonName:         testOrgValue,
 			},
 			pkix.Name{
 				Country:            []string{"country"},
-				Organization:       []string{"organization"},
+				Organization:       []string{testOrgValue},
 				OrganizationalUnit: []string{"organizationUnit"},
 				Locality:           []string{"locality"},
 				Province:           []string{"province"},
-				CommonName:         "organization",
+				CommonName:         testOrgValue,
 				SerialNumber:       "1",
 			},
 		},
@@ -349,10 +355,10 @@ func TestCreateCACertificateWithECDSA(t *testing.T) {
 	testCases := []struct {
 		keyType KeyType
 	}{
-		{keyType: KeyType{Algorithm: "ECDSA", KeyLength: 224}},
-		{keyType: KeyType{Algorithm: "ECDSA", KeyLength: 256}},
-		{keyType: KeyType{Algorithm: "ECDSA", KeyLength: 384}},
-		{keyType: KeyType{Algorithm: "ECDSA", KeyLength: 521}},
+		{keyType: KeyType{Algorithm: ecdsaAlgorithm, KeyLength: 224}},
+		{keyType: KeyType{Algorithm: ecdsaAlgorithm, KeyLength: 256}},
+		{keyType: KeyType{Algorithm: ecdsaAlgorithm, KeyLength: 384}},
+		{keyType: KeyType{Algorithm: ecdsaAlgorithm, KeyLength: 521}},
 	}
 
 	for _, tc := range testCases {
@@ -363,7 +369,7 @@ func TestCreateCACertificateWithECDSA(t *testing.T) {
 
 			rootPair, err := createCertificateAndPrivateKeyPEM(&Args{
 				Validity:  time.Hour * 1,
-				Hostnames: []string{"a.com", "b.com", "127.0.0.1"},
+				Hostnames: testHostnames,
 				KeyType:   &tc.keyType,
 				CA:        true,
 			})
@@ -371,7 +377,7 @@ func TestCreateCACertificateWithECDSA(t *testing.T) {
 
 			derivedPair, err := createCertificateAndPrivateKeyPEM(&Args{
 				Validity:      time.Hour * 1,
-				Hostnames:     []string{"a.com", "b.com", "127.0.0.1"},
+				Hostnames:     testHostnames,
 				KeyType:       &tc.keyType,
 				CA:            false,
 				ParentKeyPair: rootPair,
@@ -417,7 +423,7 @@ func TestGenerateKeyPair(t *testing.T) {
 	assert := assert.New(t)
 
 	rootPair, err := GenerateKeyPair(&Args{
-		Hostnames: []string{"a.com", "b.com", "127.0.0.1"},
+		Hostnames: testHostnames,
 	})
 	assert.Nil(err)
 
@@ -451,8 +457,8 @@ func TestFillDefaults(t *testing.T) {
 		want      string
 	}{
 		{fieldName: "args.Country", got: args.Country, want: "US"},
-		{fieldName: "args.Organization", got: args.Organization, want: "Certtool"},
-		{fieldName: "args.CommonName", got: args.CommonName, want: "Certtool"},
+		{fieldName: "args.Organization", got: args.Organization, want: defaultOrganization},
+		{fieldName: "args.CommonName", got: args.CommonName, want: defaultOrganization},
 		{fieldName: "args.OrganizationalUnit", got: args.OrganizationalUnit, want: "None"},
 		{fieldName: "args.Locality", got: args.Locality, want: "Seattle"},
 		{fieldName: "args.Province", got: args.Province, want: "WA"},
@@ -479,7 +485,7 @@ func TestCreateCertificateToBadPath(t *testing.T) {
 	kp, err := GenerateAndWriteKeyPair(
 		&Args{
 			Validity:  time.Hour * 1,
-			Hostnames: []string{"a.com", "b.com", "127.0.0.1"},
+			Hostnames: testHostnames,
 			KeyType:   defaultKeyType(),
 		},
 		"does-not-exist/pub.cert",
@@ -492,7 +498,7 @@ func TestCreateCertificateToBadPath(t *testing.T) {
 	kp, err = GenerateAndWriteKeyPair(
 		&Args{
 			Validity:  time.Hour * 1,
-			Hostnames: []string{"a.com", "b.com", "127.0.0.1"},
+			Hostnames: testHostnames,
 			KeyType:   defaultKeyType(),
 		},
 		publicCertPath,
@@ -517,7 +523,7 @@ func TestCreateCertificate(t *testing.T) {
 
 	kp, err := GenerateAndWriteKeyPair(&Args{
 		Validity:  time.Hour * 1,
-		Hostnames: []string{"a.com", "b.com", "127.0.0.1"},
+		Hostnames: testHostnames,
 		KeyType:   defaultKeyType(),
 	},
 		publicCertPath, privateKeyPath)
@@ -530,10 +536,10 @@ func TestCreateCertificate(t *testing.T) {
 	assert.FileExists(publicCertPath)
 	assert.FileExists(privateKeyPath)
 
-	publicCertFileData, err := os.ReadFile(publicCertPath)
+	publicCertFileData, err := os.ReadFile(filepath.Clean(publicCertPath))
 	assert.Nil(err)
 
-	privateKeyFileData, err := os.ReadFile(privateKeyPath)
+	privateKeyFileData, err := os.ReadFile(filepath.Clean(privateKeyPath))
 	assert.Nil(err)
 
 	// Verify that we can load the public/private key pair.
@@ -565,22 +571,22 @@ func TestBadValues(t *testing.T) {
 		args        *Args
 	}{
 		{
-			"root public certificate data was set but root private key data was not", "pub.cert", "priv.key",
-			&Args{ParentKeyPair: &KeyPair{PublicCertificate: []byte("A")}, Validity: time.Second, Hostnames: []string{"127.0.0.1"}, KeyType: defaultKeyType()},
+			"root public certificate data was set but root private key data was not", testPubCertFile, testPrivKeyFile,
+			&Args{ParentKeyPair: &KeyPair{PublicCertificate: []byte("A")}, Validity: time.Second, Hostnames: []string{testLoopbackIP}, KeyType: defaultKeyType()},
 		},
 		{
-			"root private key data was set but root public certificate data was not", "pub.cert", "priv.key",
-			&Args{ParentKeyPair: &KeyPair{PrivateKey: []byte("A")}, Validity: time.Second, Hostnames: []string{"127.0.0.1"}, KeyType: defaultKeyType()},
+			"root private key data was set but root public certificate data was not", testPubCertFile, testPrivKeyFile,
+			&Args{ParentKeyPair: &KeyPair{PrivateKey: []byte("A")}, Validity: time.Second, Hostnames: []string{testLoopbackIP}, KeyType: defaultKeyType()},
 		},
-		{"public certificate file path must not be empty", "", "priv.key", &Args{Validity: time.Second, Hostnames: []string{"127.0.0.1"}, KeyType: defaultKeyType()}},
-		{"private key file path must not be empty", "pub.cert", "", &Args{Validity: time.Second, Hostnames: []string{"127.0.0.1"}, KeyType: defaultKeyType()}},
-		//{"hostname list was empty. At least 1 hostname is required for generating a certificate-key pair", "pub.cert", "priv.key", &Args{}},
-		{"cannot generate private key, key type '{ECDSA 2047}' is not valid", "pub.cert", "priv.key", &Args{Validity: time.Second, Hostnames: []string{"127.0.0.1"}, KeyType: &KeyType{
-			Algorithm: "ECDSA",
+		{"public certificate file path must not be empty", "", testPrivKeyFile, &Args{Validity: time.Second, Hostnames: []string{testLoopbackIP}, KeyType: defaultKeyType()}},
+		{"private key file path must not be empty", testPubCertFile, "", &Args{Validity: time.Second, Hostnames: []string{testLoopbackIP}, KeyType: defaultKeyType()}},
+		// {"hostname list was empty. At least 1 hostname is required for generating a certificate-key pair", testPubCertFile, testPrivKeyFile, &Args{}},
+		{"cannot generate private key, key type '{ECDSA 2047}' is not valid", testPubCertFile, testPrivKeyFile, &Args{Validity: time.Second, Hostnames: []string{testLoopbackIP}, KeyType: &KeyType{
+			Algorithm: ecdsaAlgorithm,
 			KeyLength: 2047,
 		}}},
-		//{"hostname list was empty. At least 1 hostname is required for generating a certificate-key pair", "pub.cert", "priv.key", &Args{Validity: time.Second, KeyType: defaultKeyType()}},
-		//{"validity duration is required, otherwise the certificate would immediately expire", "pub.cert", "priv.key", &Args{Hostnames: []string{"127.0.0.1"}, KeyType: defaultKeyType()}},
+		// {"hostname list was empty. At least 1 hostname is required for generating a certificate-key pair", testPubCertFile, testPrivKeyFile, &Args{Validity: time.Second, KeyType: defaultKeyType()}},
+		// {"validity duration is required, otherwise the certificate would immediately expire", testPubCertFile, testPrivKeyFile, &Args{Hostnames: []string{testLoopbackIP}, KeyType: defaultKeyType()}},
 	}
 	for _, tc := range testCases {
 		tc := tc
@@ -677,7 +683,7 @@ func TestGenerateCodeSigningKeyPair_Windows10(t *testing.T) {
 
 	kp, err := GenerateKeyPair(&Args{
 		CodeSigning: true,
-		Target:      "windows10",
+		Target:      windows10Target,
 	})
 	assert.Nil(err)
 	assert.NotNil(kp)
@@ -701,7 +707,7 @@ func TestGenerateCodeSigningKeyPair_Windows7(t *testing.T) {
 
 	kp, err := GenerateKeyPair(&Args{
 		CodeSigning: true,
-		Target:      "windows7",
+		Target:      windows7Target,
 	})
 	assert.Nil(err)
 	assert.NotNil(kp)
@@ -723,7 +729,7 @@ func TestGenerateCodeSigningKeyPair_Linux(t *testing.T) {
 
 	kp, err := GenerateKeyPair(&Args{
 		CodeSigning: true,
-		Target:      "linux",
+		Target:      linuxTarget,
 	})
 	assert.Nil(err)
 	assert.NotNil(kp)
@@ -757,7 +763,7 @@ func TestGenerateCodeSigningKeyPair_WithPassword(t *testing.T) {
 
 	kp, err := GenerateKeyPair(&Args{
 		CodeSigning: true,
-		Target:      "windows10",
+		Target:      windows10Target,
 		PFXPassword: "hunter2",
 	})
 	assert.Nil(err)
@@ -794,7 +800,7 @@ func TestWritePFX(t *testing.T) {
 
 	kp, err := GenerateKeyPair(&Args{
 		CodeSigning: true,
-		Target:      "windows10",
+		Target:      windows10Target,
 	})
 	assert.Nil(err)
 
