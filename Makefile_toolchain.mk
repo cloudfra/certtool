@@ -28,6 +28,8 @@ GOVULNCHECK_VERSION = 1.5.0
 SHELLCHECK_VERSION = 0.11.0
 # https://github.com/aquasecurity/trivy/releases
 TRIVY_VERSION = 0.72.0
+# https://github.com/goptics/vizb/releases
+VIZB_VERSION=v0.14.0
 
 ifeq ($(OS),Windows_NT)
 	DOCKERCOMPOSE_PACKAGE = https://github.com/docker/compose/releases/download/v$(DOCKERCOMPOSE_VERSION)/docker-compose-windows-x86_64.exe
@@ -180,7 +182,7 @@ endif
 
 $(VIZB):
 	# https://github.com/goptics/vizb
-	GOBIN=$(TOOLCHAIN_BIN) $(GO_WITH_PROXY) install github.com/goptics/vizb@latest
+	GOBIN=$(TOOLCHAIN_BIN) $(GO_WITH_PROXY) install github.com/goptics/vizb@$(VIZB_VERSION)
 
 build/archives/terraform.zip:
 	mkdir -p $(ARCHIVES_DIR)/
