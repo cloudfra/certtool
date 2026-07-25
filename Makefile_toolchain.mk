@@ -14,27 +14,39 @@
 
 include Makefile_core.mk
 
+# https://github.com/rhysd/actionlint/releases
+ACTIONLINT_VERSION=latest
 # https://github.com/docker/compose/releases
 DOCKERCOMPOSE_VERSION = 5.3.1
 # https://developer.hashicorp.com/terraform/install
-TERRAFORM_VERSION = 1.15.7
+TERRAFORM_VERSION = 1.15.8
 # https://github.com/cloudfra/certtool/releases
-CERTTOOL_VERSION = 0.2.2
+CERTTOOL_VERSION = 0.4.1
 # https://github.com/hadolint/hadolint/releases
 HADOLINT_VERSION = 2.14.0
+# https://github.com/t-yuki/gocover-cobertura/releases
+GOCOVER_COBERTURA_VERSION = latest
+# https://github.com/mvdan/gofumpt/releases
+GOFUMPT_VERSION = latest
+# https://github.com/golangci/golangci-lint/releases
+GOLANGCI_LINT_VERSION = latest
 # https://github.com/golang/vuln/releases
-GOVULNCHECK_VERSION = 1.5.0
+GOVULNCHECK_VERSION = 1.6.0
+# https://github.com/mgechev/revive/releases
+REVIVE_VERSION=latest
 # https://github.com/koalaman/shellcheck/releases
 SHELLCHECK_VERSION = 0.11.0
+# https://github.com/terraform-linters/tflint/releases
+TFLINT_VERSION = latest
 # https://github.com/aquasecurity/trivy/releases
 TRIVY_VERSION = 0.72.0
 # https://github.com/goptics/vizb/releases
-VIZB_VERSION=v0.14.0
+VIZB_VERSION = 0.14.1
 
 ifeq ($(OS),Windows_NT)
 	DOCKERCOMPOSE_PACKAGE = https://github.com/docker/compose/releases/download/v$(DOCKERCOMPOSE_VERSION)/docker-compose-windows-x86_64.exe
 	TERRAFORM_PACKAGE = https://releases.hashicorp.com/terraform/$(TERRAFORM_VERSION)/terraform_$(TERRAFORM_VERSION)_windows_amd64.zip
-	CERTTOOL_PACKAGE = https://github.com/cloudfra/certtool/releases/download/v$(CERTTOOL_VERSION)/certtool-amd64.exe
+	CERTTOOL_PACKAGE = https://github.com/cloudfra/certtool/releases/download/v$(CERTTOOL_VERSION)/certtool-windows_amd64.exe
 	HADOLINT_PACKAGE = https://github.com/hadolint/hadolint/releases/download/v$(HADOLINT_VERSION)/hadolint-windows-x86_64.exe
 	SHELLCHECK_PACKAGE = https://github.com/koalaman/shellcheck/releases/download/v$(SHELLCHECK_VERSION)/shellcheck-v$(SHELLCHECK_VERSION).zip
 	SHELLCHECK_ARCHIVE = build/archives/shellcheck.zip
@@ -47,14 +59,14 @@ else
 		ifeq ($(UNAME_ARCH),arm)
 			DOCKERCOMPOSE_PACKAGE = https://github.com/docker/compose/releases/download/v$(DOCKERCOMPOSE_VERSION)/docker-compose-linux-aarch64
 			TERRAFORM_PACKAGE = https://releases.hashicorp.com/terraform/$(TERRAFORM_VERSION)/terraform_$(TERRAFORM_VERSION)_linux_arm64.zip
-			CERTTOOL_PACKAGE = https://github.com/cloudfra/certtool/releases/download/v$(CERTTOOL_VERSION)/certtool-arm
+			CERTTOOL_PACKAGE = https://github.com/cloudfra/certtool/releases/download/v$(CERTTOOL_VERSION)/certtool-linux_arm64
 			HADOLINT_PACKAGE = https://github.com/hadolint/hadolint/releases/download/v$(HADOLINT_VERSION)/hadolint-linux-arm64
 			SHELLCHECK_PACKAGE = https://github.com/koalaman/shellcheck/releases/download/v$(SHELLCHECK_VERSION)/shellcheck-v$(SHELLCHECK_VERSION).linux.aarch64.tar.xz
 			TRIVY_PACKAGE = https://github.com/aquasecurity/trivy/releases/download/v$(TRIVY_VERSION)/trivy_$(TRIVY_VERSION)_Linux-ARM.tar.gz
 		else
 			DOCKERCOMPOSE_PACKAGE = https://github.com/docker/compose/releases/download/v$(DOCKERCOMPOSE_VERSION)/docker-compose-linux-x86_64
 			TERRAFORM_PACKAGE = https://releases.hashicorp.com/terraform/$(TERRAFORM_VERSION)/terraform_$(TERRAFORM_VERSION)_linux_amd64.zip
-			CERTTOOL_PACKAGE = https://github.com/cloudfra/certtool/releases/download/v$(CERTTOOL_VERSION)/certtool-amd64
+			CERTTOOL_PACKAGE = https://github.com/cloudfra/certtool/releases/download/v$(CERTTOOL_VERSION)/certtool-linux_amd64
 			HADOLINT_PACKAGE = https://github.com/hadolint/hadolint/releases/download/v$(HADOLINT_VERSION)/hadolint-linux-x86_64
 			SHELLCHECK_PACKAGE = https://github.com/koalaman/shellcheck/releases/download/v$(SHELLCHECK_VERSION)/shellcheck-v$(SHELLCHECK_VERSION).linux.x86_64.tar.xz
 			TRIVY_PACKAGE = https://github.com/aquasecurity/trivy/releases/download/v$(TRIVY_VERSION)/trivy_$(TRIVY_VERSION)_Linux-64bit.tar.gz
@@ -65,7 +77,7 @@ else
 	ifeq ($(UNAME_S),Darwin)
 		DOCKERCOMPOSE_PACKAGE = https://github.com/docker/compose/releases/download/v$(DOCKERCOMPOSE_VERSION)/docker-compose-darwin-aarch64
 		TERRAFORM_PACKAGE = https://releases.hashicorp.com/terraform/$(TERRAFORM_VERSION)/terraform_$(TERRAFORM_VERSION)_darwin_arm64.zip
-		CERTTOOL_PACKAGE = https://github.com/cloudfra/certtool/releases/download/v$(CERTTOOL_VERSION)/certtool-arm64-darwin
+		CERTTOOL_PACKAGE = https://github.com/cloudfra/certtool/releases/download/v$(CERTTOOL_VERSION)/certtool-darwin_arm64
 		HADOLINT_PACKAGE = https://github.com/hadolint/hadolint/releases/download/v$(HADOLINT_VERSION)/hadolint-macos-arm64
 		SHELLCHECK_PACKAGE = https://github.com/koalaman/shellcheck/releases/download/v$(SHELLCHECK_VERSION)/shellcheck-v$(SHELLCHECK_VERSION).darwin.aarch64.tar.xz
 		SHELLCHECK_ARCHIVE = build/archives/shellcheck.tar.xz
@@ -92,49 +104,49 @@ VIZB = build/toolchain/bin/vizb$(EXE)
 COMMON_TOOLCHAIN = $(ACTIONLINT) $(CERTTOOL) $(DOCKER_COMPOSE) $(GOCOVER_COBERTURA) $(GOFUMPT) $(GOLANGCI_LINT) $(GOVULNCHECK) $(HADOLINT) $(REVIVE) $(SHELLCHECK) $(TERRAFORM) $(TFLINT) $(TRIVY) $(VIZB)
 
 $(ACTIONLINT):
-	mkdir -p $(dir $@)
-	GOBIN=$(dir $(REPOSITORY_ROOT)/$@) $(GO_WITH_PROXY) install github.com/rhysd/actionlint/cmd/actionlint@latest
+	mkdir -p "$(dir $@)"
+	GOBIN="$(dir $(REPOSITORY_ROOT)/$@)" $(GO_WITH_PROXY) install github.com/rhysd/actionlint/cmd/actionlint@$(ACTIONLINT_VERSION)
 
 $(CERTTOOL):
-	mkdir -p $(dir $@)
-	$(CURL) -Lo $@ $(CERTTOOL_PACKAGE)
-	chmod +x $@
+	mkdir -p "$(dir $@)"
+	$(CURL) -Lo $@ "$(CERTTOOL_PACKAGE)"
+	chmod +x "$(REPOSITORY_ROOT)/$@"
 
 $(DOCKER_COMPOSE):
-	mkdir -p $(dir $@)
-	$(CURL) -Lo $@ $(DOCKERCOMPOSE_PACKAGE)
-	chmod +x $@
+	mkdir -p "$(dir $@)"
+	$(CURL) -Lo $@ "$(DOCKERCOMPOSE_PACKAGE)"
+	chmod +x "$(REPOSITORY_ROOT)/$@"
 
 $(GOCOVER_COBERTURA):
-	mkdir -p $(dir $@)
-	GOBIN=$(dir $(REPOSITORY_ROOT)/$@) $(GO_WITH_PROXY) install github.com/t-yuki/gocover-cobertura@latest
+	mkdir -p "$(dir $@)"
+	GOBIN="$(dir $(REPOSITORY_ROOT)/$@)" $(GO_WITH_PROXY) install github.com/t-yuki/gocover-cobertura@$(GOCOVER_COBERTURA_VERSION)
 
 # Stricter formatting than `go fmt` (gofmt superset).
 $(GOFUMPT):
-	mkdir -p $(dir $@)
-	GOBIN=$(dir $(REPOSITORY_ROOT)/$@) $(GO_WITH_PROXY) install mvdan.cc/gofumpt@latest
+	mkdir -p "$(dir $@)"
+	GOBIN="$(dir $(REPOSITORY_ROOT)/$@)" $(GO_WITH_PROXY) install mvdan.cc/gofumpt@$(GOFUMPT_VERSION)
 
 # golangci-lint's own default config (errcheck, govet, ineffassign,
 # staticcheck, unused) already covers what a standalone staticcheck run
 # would, so it's the only Go correctness linter wired into `lint`.
 $(GOLANGCI_LINT):
-	mkdir -p $(dir $@)
-	GOBIN=$(dir $(REPOSITORY_ROOT)/$@) $(GO_WITH_PROXY) install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@latest
+	mkdir -p "$(dir $@)"
+	GOBIN="$(dir $(REPOSITORY_ROOT)/$@)" $(GO_WITH_PROXY) install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@$(GOLANGCI_LINT_VERSION)
 
 $(GOVULNCHECK):
-	mkdir -p $(dir $@)
-	GOBIN=$(dir $(REPOSITORY_ROOT)/$@) $(GO_WITH_PROXY) install golang.org/x/vuln/cmd/govulncheck@v$(GOVULNCHECK_VERSION)
+	mkdir -p "$(dir $@)"
+	GOBIN="$(dir $(REPOSITORY_ROOT)/$@)" $(GO_WITH_PROXY) install golang.org/x/vuln/cmd/govulncheck@v$(GOVULNCHECK_VERSION)
 
 # Not a Go module, so it's fetched as a prebuilt binary like terraform/docker-compose above.
 $(HADOLINT):
-	mkdir -p $(dir $@)
-	$(CURL) -o $@ -L $(HADOLINT_PACKAGE)
-	chmod +x $@
+	mkdir -p "$(dir $@)"
+	$(CURL) -o $@ -L "$(HADOLINT_PACKAGE)"
+	chmod +x "$(REPOSITORY_ROOT)/$@"
 
 # Style/doc-comment linter; not covered by golangci-lint's default config.
 $(REVIVE):
-	mkdir -p $(dir $@)
-	GOBIN=$(dir $(REPOSITORY_ROOT)/$@) $(GO_WITH_PROXY) install github.com/mgechev/revive@latest
+	mkdir -p "$(dir $@)"
+	GOBIN="$(dir $(REPOSITORY_ROOT)/$@)" $(GO_WITH_PROXY) install github.com/mgechev/revive@$(REVIVE_VERSION)
 
 # Also not a Go module. Unlike hadolint, shellcheck ships as an archive (a
 # .zip with shellcheck.exe on Windows, a .tar.xz with a versioned
@@ -142,59 +154,59 @@ $(REVIVE):
 # straight download. actionlint auto-detects it on PATH (which already
 # includes this toolchain dir), so no separate lint invocation is needed.
 $(SHELLCHECK): $(SHELLCHECK_ARCHIVE)
-	mkdir -p $(dir $@)
-	mkdir -p $(TOOLCHAIN_DIR)/shellcheck-temp/
+	mkdir -p "$(dir $@)"
+	mkdir -p "$(TOOLCHAIN_DIR)/shellcheck-temp/"
 ifeq ($(HOST_OS),windows)
-	(cd $(TOOLCHAIN_DIR)/shellcheck-temp/ && unzip -q -j $(REPOSITORY_ROOT)/$<)
+	(cd "$(TOOLCHAIN_DIR)/shellcheck-temp/" && unzip -q -j "$(REPOSITORY_ROOT)/$<")
 else
-	tar -xJf $< -C $(TOOLCHAIN_DIR)/shellcheck-temp/ --strip-components=1
+	tar -xJf $< -C "$(TOOLCHAIN_DIR)/shellcheck-temp/" --strip-components=1
 endif
-	cp $(TOOLCHAIN_DIR)/shellcheck-temp/shellcheck$(EXE) $(TOOLCHAIN_BIN)/shellcheck$(EXE)
-	chmod +x $(TOOLCHAIN_BIN)/shellcheck$(EXE)
-	rm -rf $(TOOLCHAIN_DIR)/shellcheck-temp/
+	cp "$(TOOLCHAIN_DIR)/shellcheck-temp/shellcheck$(EXE)" "$(TOOLCHAIN_BIN)/shellcheck$(EXE)"
+	chmod +x "$(TOOLCHAIN_BIN)/shellcheck$(EXE)"
+	rm -rf "$(TOOLCHAIN_DIR)/shellcheck-temp/"
 
 $(TERRAFORM): build/archives/terraform.zip
-	mkdir -p $(dir $@)
-	mkdir -p $(TOOLCHAIN_DIR)/terraform-temp/
-	cp $(ARCHIVES_DIR)/terraform.zip $(TOOLCHAIN_DIR)/terraform-temp/
-	(cd $(TOOLCHAIN_DIR)/terraform-temp/ && unzip -q -j terraform.zip)
-	cp $(TOOLCHAIN_DIR)/terraform-temp/terraform$(EXE) $(TOOLCHAIN_BIN)/terraform$(EXE)
-	rm -rf $(TOOLCHAIN_DIR)/terraform-temp/
+	mkdir -p "$(dir $@)"
+	mkdir -p "$(TOOLCHAIN_DIR)/terraform-temp/"
+	cp "$(ARCHIVES_DIR)/terraform.zip" "$(TOOLCHAIN_DIR)/terraform-temp/"
+	(cd "$(TOOLCHAIN_DIR)/terraform-temp/" && unzip -q -j terraform.zip)
+	cp "$(TOOLCHAIN_DIR)/terraform-temp/terraform$(EXE)" "$(TOOLCHAIN_BIN)/terraform$(EXE)"
+	rm -rf "$(TOOLCHAIN_DIR)/terraform-temp/"
 
 $(TFLINT):
-	mkdir -p $(dir $@)
-	GOBIN=$(dir $(REPOSITORY_ROOT)/$@) $(GO_WITH_PROXY) install github.com/terraform-linters/tflint@latest
+	mkdir -p "$(dir $@)"
+	GOBIN="$(dir $(REPOSITORY_ROOT)/$@)" $(GO_WITH_PROXY) install github.com/terraform-linters/tflint@$(TFLINT_VERSION)
 
 # Also not a Go module; ships as an archive like shellcheck, but unlike
 # shellcheck the binary sits at the archive root with no versioned
 # subdirectory, so no --strip-components/-j is needed.
 $(TRIVY): $(TRIVY_ARCHIVE)
-	mkdir -p $(dir $@)
-	mkdir -p $(TOOLCHAIN_DIR)/trivy-temp/
+	mkdir -p "$(dir $@)"
+	mkdir -p "$(TOOLCHAIN_DIR)/trivy-temp/"
 ifeq ($(HOST_OS),windows)
-	(cd $(TOOLCHAIN_DIR)/trivy-temp/ && unzip -q $(REPOSITORY_ROOT)/$<)
+	(cd "$(TOOLCHAIN_DIR)/trivy-temp/" && unzip -q "$(REPOSITORY_ROOT)/$<")
 else
-	tar -xzf $< -C $(TOOLCHAIN_DIR)/trivy-temp/
+	tar -xzf $< -C "$(TOOLCHAIN_DIR)/trivy-temp/"
 endif
-	cp $(TOOLCHAIN_DIR)/trivy-temp/trivy$(EXE) $(TOOLCHAIN_BIN)/trivy$(EXE)
-	chmod +x $(TOOLCHAIN_BIN)/trivy$(EXE)
-	rm -rf $(TOOLCHAIN_DIR)/trivy-temp/
+	cp "$(TOOLCHAIN_DIR)/trivy-temp/trivy$(EXE)" "$(TOOLCHAIN_BIN)/trivy$(EXE)"
+	chmod +x "$(TOOLCHAIN_BIN)/trivy$(EXE)"
+	rm -rf "$(TOOLCHAIN_DIR)/trivy-temp/"
 
 $(VIZB):
 	# https://github.com/goptics/vizb
-	GOBIN=$(TOOLCHAIN_BIN) $(GO_WITH_PROXY) install github.com/goptics/vizb@$(VIZB_VERSION)
+	GOBIN="$(TOOLCHAIN_BIN)" $(GO_WITH_PROXY) install github.com/goptics/vizb@v$(VIZB_VERSION)
 
 build/archives/terraform.zip:
-	mkdir -p $(ARCHIVES_DIR)/
-	$(CURL) -o $(ARCHIVES_DIR)/terraform.zip -L $(TERRAFORM_PACKAGE)
-	touch $@
+	mkdir -p "$(dir $@)"
+	$(CURL) -o "$(ARCHIVES_DIR)/terraform.zip" -L "$(TERRAFORM_PACKAGE)"
+	touch "$(REPOSITORY_ROOT)/$@"
 
 $(SHELLCHECK_ARCHIVE):
-	mkdir -p $(ARCHIVES_DIR)/
-	$(CURL) -o $@ -L $(SHELLCHECK_PACKAGE)
-	touch $@
+	mkdir -p "$(dir $@)"
+	$(CURL) -o $@ -L "$(SHELLCHECK_PACKAGE)"
+	touch "$(REPOSITORY_ROOT)/$@"
 
 $(TRIVY_ARCHIVE):
-	mkdir -p $(ARCHIVES_DIR)/
-	$(CURL) -o $@ -L $(TRIVY_PACKAGE)
-	touch $@
+	mkdir -p "$(dir $@)"
+	$(CURL) -o $@ -L "$(TRIVY_PACKAGE)"
+	touch "$(REPOSITORY_ROOT)/$@"
