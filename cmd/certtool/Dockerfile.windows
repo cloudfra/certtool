@@ -26,7 +26,6 @@ COPY ${BINARY_PATH} /app/certtool.exe
 COPY LICENSE /app/LICENSE
 
 USER ContainerUser
-EXPOSE 80
 ENTRYPOINT ["/app/certtool.exe"]
 
 # Standardized Docker Image Labels
