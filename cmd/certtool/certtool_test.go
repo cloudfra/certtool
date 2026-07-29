@@ -199,7 +199,7 @@ func TestStringToKeyType(t *testing.T) {
 		tc := tc
 		t.Run(tc.input, func(t *testing.T) {
 			t.Parallel()
-			gotAlgorithm, gotKeyLength, err := StringToKeyType(tc.input)
+			gotAlgorithm, gotKeyLength, err := stringToKeyType(tc.input)
 			if err != nil {
 				t.Fatalf("got error, %s", err)
 			}
@@ -223,6 +223,7 @@ func TestSplitStrings(t *testing.T) {
 		{input: "", want: nil},
 		{input: "a,,b", want: []string{"a", "", "b"}},
 		{input: "x,y", want: []string{"x", "y"}},
+		{input: "a, b , c", want: []string{"a", "b", "c"}},
 	}
 
 	for _, tc := range testCases {
@@ -251,10 +252,12 @@ func TestSplitInts(t *testing.T) {
 		{input: "", want: nil},
 		{input: "1,2,3", want: []int{1, 2, 3}},
 		{input: "42", want: []int{42}},
-		{input: "0,-1,100", want: []int{0, -1, 100}},
 		{input: "abc", wantErr: true},
 		{input: "1,two,3", wantErr: true},
 		{input: "1,,3", wantErr: true},
+		{input: "0", wantErr: true},
+		{input: "-1", wantErr: true},
+		{input: "443,-1", wantErr: true},
 	}
 
 	for _, tc := range testCases {
@@ -321,6 +324,26 @@ func TestArgsFromFlagsCommonName(t *testing.T) {
 	}
 }
 
+func TestArgsFromFlagsNegativeValidity(t *testing.T) {
+	origValidity := *validity
+	*validity = -24 * time.Hour
+	t.Cleanup(func() { *validity = origValidity })
+
+	if _, err := argsFromFlags(); err == nil {
+		t.Fatal("argsFromFlags() = nil, want error for negative --validity")
+	}
+}
+
+func TestArgsFromFlagsInvalidPorts(t *testing.T) {
+	origPorts := *ports
+	*ports = "abc"
+	t.Cleanup(func() { *ports = origPorts })
+
+	if _, err := argsFromFlags(); err == nil {
+		t.Fatal("argsFromFlags() = nil, want error for invalid --ports")
+	}
+}
+
 func TestArgsFromFlagsCommonNameDefault(t *testing.T) {
 	args, err := argsFromFlags()
 	if err != nil {
@@ -344,8 +367,8 @@ func TestStringToKeyTypeErrors(t *testing.T) {
 		tc := tc
 		t.Run(tc, func(t *testing.T) {
 			t.Parallel()
-			if _, _, err := StringToKeyType(tc); err == nil {
-				t.Errorf("StringToKeyType(%q) = nil error, want error", tc)
+			if _, _, err := stringToKeyType(tc); err == nil {
+				t.Errorf("stringToKeyType(%q) = nil error, want error", tc)
 			}
 		})
 	}

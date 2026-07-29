@@ -79,7 +79,7 @@ curl -o certtool -O -L https://github.com/cloudfra/certtool/releases/latest/down
 | ------ | ------- | -------- | ------------ | -------- |
 | `windows10` *(default)* | `win10` | ECDSA P-256 | AES-256 | Windows 10/11 `signtool.exe` |
 | `windows11` | `win11` | ECDSA P-256 | AES-256 | Windows 11 `signtool.exe` |
-| `windows7` | `win7`, `windows8`, `win8` | RSA-2048 | 3DES (legacy) | Windows 7/8 `signtool.exe` |
+| `windows7` | `win7`, `windows8`, `win8`, `windows8.1`, `win8.1` | RSA-2048 | 3DES (legacy) | Windows 7/8 `signtool.exe` |
 | `linux` | | ECDSA P-256 | PEM (no PFX) | `osslsigncode` |
 
 ### Flags
@@ -143,7 +143,7 @@ docker pull docker.io/cloudfra/certtool
 
 ## Build
 
-![example workflow](https://github.com/cloudfra/certtool/actions/workflows/deploy.yml/badge.svg) [![Go Report Card](https://goreportcard.com/badge/github.com/cloudfra/certtool)](https://goreportcard.com/report/github.com/cloudfra/certtool) [![Go Reference](https://pkg.go.dev/badge/github.com/cloudfra/certtool.svg)](https://pkg.go.dev/github.com/cloudfra/certtool) [![codecov](https://codecov.io/gh/cloudfra/certtool/branch/main/graph/badge.svg)](https://codecov.io/gh/cloudfra/certtool)
+![example workflow](https://github.com/cloudfra/certtool/actions/workflows/deploy.yaml/badge.svg) [![Go Report Card](https://goreportcard.com/badge/github.com/cloudfra/certtool)](https://goreportcard.com/report/github.com/cloudfra/certtool) [![Go Reference](https://pkg.go.dev/badge/github.com/cloudfra/certtool.svg)](https://pkg.go.dev/github.com/cloudfra/certtool) [![codecov](https://codecov.io/gh/cloudfra/certtool/branch/main/graph/badge.svg)](https://codecov.io/gh/cloudfra/certtool)
 
 Install the [latest stable version of Go](https://golang.org/dl/).
 

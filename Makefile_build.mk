@@ -41,7 +41,7 @@ PLAN9_PLATFORMS = plan9/386 plan9/amd64 plan9/arm/v5 plan9/arm/v6 plan9/arm/v7
 SOLARIS_PLATFORMS = solaris/amd64
 NICHE_PLATFORMS = js/wasm illumos/amd64 aix/ppc64 $(ANDROID_PLATFORMS) $(DARWIN_PLATFORMS) $(IOS_PLATFORMS) $(DRAGONFLY_PLATFORMS) $(FREEBSD_PLATFORMS) $(NETBSD_PLATFORMS) $(OPENBSD_PLATFORMS) $(PLAN9_PLATFORMS) $(SOLARIS_PLATFORMS)
 ALL_PLATFORMS = $(LINUX_PLATFORMS) $(WINDOWS_PLATFORMS) $(NICHE_PLATFORMS)
-RELEASE_PLATFORMS = linux/amd64 linux/amd64 windows/amd64 windows/arm64 darwin/arm64
+RELEASE_PLATFORMS = linux/amd64 linux/arm64 windows/amd64 windows/arm64 darwin/arm64
 
 MAIN_BINARIES = $(foreach app,$(ALL_APPS),$(foreach platform,$(MAIN_PLATFORMS),build/bin/$(platform)/$(app)$(if $(findstring windows,$(platform)),.exe,)))
 WINDOWS_BINARIES = $(foreach app,$(ALL_APPS),$(foreach platform,$(WINDOWS_PLATFORMS),build/bin/$(platform)/$(app)$(if $(findstring windows,$(platform)),.exe,)))
@@ -303,6 +303,6 @@ system-info:
 	@df -h
 
 sync-upstream:
-	-git fetch origin; git add -A; git commit -m"Save pending changes."; git rebase -i origin/main 
+	-git fetch origin; git add -A; git commit -m"Save pending changes."; git rebase -i origin/main
 
-.PHONY: tools all assets protos windows-binaries release-binaries wasm-binaries lint-terraform lint-go lint-docker lint-yaml lint-shell lint-vuln bench test test-go test-deflake test-tf deps clean presubmit ensure-docker docker-images scan-images images linux-images windows-images no-sudo sync-upstream
+.PHONY: tools all assets protos windows-binaries release-binaries wasm-binaries lint-terraform lint-go lint-docker lint-yaml lint-shell lint-vuln bench test test-go test-deflake test-tf deps clean presubmit ensure-builder docker-images scan-images images linux-images windows-images no-sudo sync-upstream
