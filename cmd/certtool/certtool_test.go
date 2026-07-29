@@ -19,6 +19,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/cloudfra/certtool/pkg/certtool"
 )
@@ -219,7 +220,7 @@ func TestSplitStrings(t *testing.T) {
 	}{
 		{input: "a,b,c", want: []string{"a", "b", "c"}},
 		{input: "single", want: []string{"single"}},
-		{input: "", want: []string{""}},
+		{input: "", want: nil},
 		{input: "a,,b", want: []string{"a", "", "b"}},
 		{input: "x,y", want: []string{"x", "y"}},
 	}
@@ -279,6 +280,54 @@ func TestSplitInts(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestArgsFromFlagsValidity(t *testing.T) {
+	origValidity := *validity
+	*validity = 48 * time.Hour
+	t.Cleanup(func() { *validity = origValidity })
+
+	args, err := argsFromFlags()
+	if err != nil {
+		t.Fatalf("got error, %s", err)
+	}
+	if args.Validity != 48*time.Hour {
+		t.Errorf("args.Validity = %v, want 48h", args.Validity)
+	}
+}
+
+func TestArgsFromFlagsValidityDefault(t *testing.T) {
+	args, err := argsFromFlags()
+	if err != nil {
+		t.Fatalf("got error, %s", err)
+	}
+	if args.Validity != time.Hour*24*365 {
+		t.Errorf("args.Validity = %v, want 8760h (1 year)", args.Validity)
+	}
+}
+
+func TestArgsFromFlagsCommonName(t *testing.T) {
+	origCommonName := *commonName
+	*commonName = "my-service.example.com"
+	t.Cleanup(func() { *commonName = origCommonName })
+
+	args, err := argsFromFlags()
+	if err != nil {
+		t.Fatalf("got error, %s", err)
+	}
+	if args.CommonName != "my-service.example.com" {
+		t.Errorf("args.CommonName = %q, want %q", args.CommonName, "my-service.example.com")
+	}
+}
+
+func TestArgsFromFlagsCommonNameDefault(t *testing.T) {
+	args, err := argsFromFlags()
+	if err != nil {
+		t.Fatalf("got error, %s", err)
+	}
+	if args.CommonName != "" {
+		t.Errorf("args.CommonName = %q, want empty (defaults to organization in fillDefaults)", args.CommonName)
 	}
 }
 

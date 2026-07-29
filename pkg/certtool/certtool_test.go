@@ -586,13 +586,10 @@ func TestBadValues(t *testing.T) {
 		},
 		{"public certificate file path must not be empty", "", testPrivKeyFile, &Args{Validity: time.Second, Hostnames: []string{testLoopbackIP}, KeyType: defaultKeyType()}},
 		{"private key file path must not be empty", testPubCertFile, "", &Args{Validity: time.Second, Hostnames: []string{testLoopbackIP}, KeyType: defaultKeyType()}},
-		// {"hostname list was empty. At least 1 hostname is required for generating a certificate-key pair", testPubCertFile, testPrivKeyFile, &Args{}},
 		{"cannot generate private key, key type '{ECDSA 2047}' is not valid", testPubCertFile, testPrivKeyFile, &Args{Validity: time.Second, Hostnames: []string{testLoopbackIP}, KeyType: &KeyType{
 			Algorithm: ecdsaAlgorithm,
 			KeyLength: 2047,
 		}}},
-		// {"hostname list was empty. At least 1 hostname is required for generating a certificate-key pair", testPubCertFile, testPrivKeyFile, &Args{Validity: time.Second, KeyType: defaultKeyType()}},
-		// {"validity duration is required, otherwise the certificate would immediately expire", testPubCertFile, testPrivKeyFile, &Args{Hostnames: []string{testLoopbackIP}, KeyType: defaultKeyType()}},
 	}
 	for _, tc := range testCases {
 		tc := tc

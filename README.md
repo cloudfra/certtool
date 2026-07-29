@@ -93,6 +93,9 @@ curl -o certtool -O -L https://github.com/cloudfra/certtool/releases/latest/down
 | `--ca` | `false` | Generate a root/CA certificate |
 | `--key-type` | `RSA-2048` | Key algorithm and length (`RSA-2048`, `RSA-4096`, `ECDSA-224`, `ECDSA-256`, `ECDSA-384`, `ECDSA-521`) |
 | `--hostnames` | | Comma-separated hostnames and IP addresses to add as SANs |
+| `--ports` | | Comma-separated ports appended to each hostname to generate `host:port` SAN entries |
+| `--validity` | `8760h` (1 year) | How long the certificate is valid for, as a Go duration (e.g. `8760h`, `720h`, `24h`) |
+| `--common-name` | | Common Name (CN) field of the X.509 subject (defaults to `--organization`) |
 | `--country` | `US` | Country (C) field of the X.509 subject |
 | `--organization` | `cloudfra` | Organization (O) field of the X.509 subject |
 | `--organizational-unit` | `gows` | Organizational Unit (OU) field of the X.509 subject |
@@ -109,6 +112,12 @@ curl -o certtool -O -L https://github.com/cloudfra/certtool/releases/latest/down
 | `--target` | `windows10` | Platform profile: `windows7`, `windows10`, `windows11`, `linux` (and aliases) |
 | `--pfx-output` | `codesign.pfx` | Output path for the PKCS#12 (`.pfx`) file (Windows targets) |
 | `--pfx-password` | | Password for the `.pfx` file (empty = no password) |
+
+#### General flags
+
+| Flag | Default | Description |
+| ---- | ------- | ----------- |
+| `--version` | `false` | Print version and build information, then exit |
 
 ## Downloads
 

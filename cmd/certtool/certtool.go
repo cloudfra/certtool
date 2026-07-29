@@ -22,6 +22,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/cloudfra/certtool/internal"
 	"github.com/cloudfra/certtool/pkg/certtool"
@@ -34,12 +35,14 @@ var (
 
 	ca = flag.Bool("ca", false, "Generates a root certificate. Use this to establish a chain of trust with derived certificates.")
 
+	commonName         = flag.String("common-name", "", "Common Name (CN) field of the X.509 certificate subject. Defaults to the --organization value.")
 	country            = flag.String("country", "US", "Country (C) field of the X.509 certificate subject (e.g. US, CA, GB).")
 	organization       = flag.String("organization", "cloudfra", "Organization (O) field of the X.509 certificate subject.")
 	organizationalUnit = flag.String("organizational-unit", "gows", "Organizational Unit (OU) field of the X.509 certificate subject.")
 	locality           = flag.String("locality", "Seattle", "Locality (L) field of the X.509 certificate subject, typically the city name.")
 	province           = flag.String("province", "WA", "Province or state (ST) field of the X.509 certificate subject.")
 
+	validity  = flag.Duration("validity", time.Hour*24*365, "How long the certificate is valid for, as a Go duration (e.g. 8760h, 720h, 24h).")
 	hostnames = flag.String("hostnames", "", "Comma-separated list of hostnames and IP addresses to include as Subject Alternative Names (SANs).")
 	keyType   = flag.String("key-type", "RSA-2048", "Key algorithm and length. Supported values: RSA-2048, RSA-4096, ECDSA-224, ECDSA-256, ECDSA-384, ECDSA-521. Default for --code-sign is the profile default.")
 	ports     = flag.String("ports", "", "Comma-separated list of ports to include as Subject Alternative Names (SANs). Ports are expanded on the hostnames that are specified.")
@@ -150,11 +153,13 @@ func argsFromFlags() (*certtool.Args, error) {
 	}
 	return &certtool.Args{
 		CA:                 *ca,
+		CommonName:         *commonName,
 		Country:            *country,
 		Organization:       *organization,
 		OrganizationalUnit: *organizationalUnit,
 		Locality:           *locality,
 		Province:           *province,
+		Validity:           *validity,
 		Hostnames:          splitStrings(*hostnames),
 		Ports:              portList,
 		KeyType:            kt,
@@ -216,6 +221,9 @@ func parseKeyTypeName(keyTypeName string, defaultLength int, validValues []int) 
 }
 
 func splitStrings(csv string) []string {
+	if csv == "" {
+		return nil
+	}
 	return strings.Split(csv, ",")
 }
 
