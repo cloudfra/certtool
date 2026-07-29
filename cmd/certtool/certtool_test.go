@@ -21,16 +21,7 @@ import (
 	"testing"
 
 	"github.com/cloudfra/certtool/pkg/certtool"
-	"github.com/google/go-cmp/cmp"
 )
-
-const testLocalhost = "localhost"
-
-func BenchmarkExpandHostnames(b *testing.B) {
-	for b.Loop() {
-		expandHostnames([]string{"example.com", "test.com"})
-	}
-}
 
 func TestArgsFromFlags(t *testing.T) {
 	args, err := argsFromFlags()
@@ -211,6 +202,76 @@ func TestStringToKeyType(t *testing.T) {
 	}
 }
 
+func TestSplitStrings(t *testing.T) {
+	testCases := []struct {
+		input string
+		want  []string
+	}{
+		{input: "a,b,c", want: []string{"a", "b", "c"}},
+		{input: "single", want: []string{"single"}},
+		{input: "", want: []string{""}},
+		{input: "a,,b", want: []string{"a", "", "b"}},
+		{input: "x,y", want: []string{"x", "y"}},
+	}
+
+	for _, tc := range testCases {
+		tc := tc
+		t.Run(tc.input, func(t *testing.T) {
+			t.Parallel()
+			got := splitStrings(tc.input)
+			if len(got) != len(tc.want) {
+				t.Fatalf("splitStrings(%q) returned %d elements, want %d", tc.input, len(got), len(tc.want))
+			}
+			for i := range tc.want {
+				if got[i] != tc.want[i] {
+					t.Errorf("splitStrings(%q)[%d] = %q, want %q", tc.input, i, got[i], tc.want[i])
+				}
+			}
+		})
+	}
+}
+
+func TestSplitInts(t *testing.T) {
+	testCases := []struct {
+		input   string
+		want    []int
+		wantErr bool
+	}{
+		{input: "", want: nil},
+		{input: "1,2,3", want: []int{1, 2, 3}},
+		{input: "42", want: []int{42}},
+		{input: "0,-1,100", want: []int{0, -1, 100}},
+		{input: "abc", wantErr: true},
+		{input: "1,two,3", wantErr: true},
+		{input: "1,,3", wantErr: true},
+	}
+
+	for _, tc := range testCases {
+		tc := tc
+		t.Run(tc.input, func(t *testing.T) {
+			t.Parallel()
+			got, err := splitInts(tc.input)
+			if tc.wantErr {
+				if err == nil {
+					t.Fatalf("splitInts(%q) = nil error, want error", tc.input)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("splitInts(%q) got error: %s", tc.input, err)
+			}
+			if len(got) != len(tc.want) {
+				t.Fatalf("splitInts(%q) returned %d elements, want %d", tc.input, len(got), len(tc.want))
+			}
+			for i := range tc.want {
+				if got[i] != tc.want[i] {
+					t.Errorf("splitInts(%q)[%d] = %d, want %d", tc.input, i, got[i], tc.want[i])
+				}
+			}
+		})
+	}
+}
+
 func TestStringToKeyTypeErrors(t *testing.T) {
 	testCases := []string{
 		"bogus",          // unknown key type name
@@ -226,28 +287,6 @@ func TestStringToKeyTypeErrors(t *testing.T) {
 			t.Parallel()
 			if _, _, err := StringToKeyType(tc); err == nil {
 				t.Errorf("StringToKeyType(%q) = nil error, want error", tc)
-			}
-		})
-	}
-}
-
-func TestExpandHostnames(t *testing.T) {
-	testCases := []struct {
-		input string
-		want  []string
-	}{
-		{input: "", want: []string{}},
-		{input: testLocalhost, want: []string{testLocalhost}},
-		{input: testLocalhost + ",cloudfra," + testLocalhost, want: []string{"cloudfra", testLocalhost}},
-	}
-
-	for _, tc := range testCases {
-		tc := tc
-		t.Run(tc.input, func(t *testing.T) {
-			t.Parallel()
-			got := ExpandHostnames(tc.input)
-			if diff := cmp.Diff(tc.want, got); diff != "" {
-				t.Errorf("ExpandHostnames() mismatch (-want +got):\n%s", diff)
 			}
 		})
 	}

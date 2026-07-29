@@ -20,7 +20,6 @@ import (
 	"fmt"
 	"os"
 	"slices"
-	"sort"
 	"strconv"
 	"strings"
 
@@ -42,6 +41,7 @@ var (
 
 	hostnames = flag.String("hostnames", "", "Comma-separated list of hostnames and IP addresses to include as Subject Alternative Names (SANs).")
 	keyType   = flag.String("key-type", "RSA-2048", "Key algorithm and length. Supported values: RSA-2048, RSA-4096, ECDSA-224, ECDSA-256, ECDSA-384, ECDSA-521. Default for --code-sign is the profile default.")
+	ports     = flag.String("ports", "", "Comma-separated list of ports to include as Subject Alternative Names (SANs). Ports are expanded on the hostnames that are specified.")
 
 	parentPublicCertificate = flag.String("parent-public-certificate", "", "(optional) Parent public certificate. If set, the output certificate will trust the parent.")
 	parentPrivateKey        = flag.String("parent-private-key", "", "(optional) Parent private key. Required if -parent-public-certificate is set, private key for the parent public certificate.")
@@ -136,6 +136,10 @@ func argsFromFlags() (*certtool.Args, error) {
 		}
 	}
 
+	portList, err := splitInts(*ports)
+	if err != nil {
+		return nil, err
+	}
 	return &certtool.Args{
 		CA:                 *ca,
 		Country:            *country,
@@ -143,7 +147,8 @@ func argsFromFlags() (*certtool.Args, error) {
 		OrganizationalUnit: *organizationalUnit,
 		Locality:           *locality,
 		Province:           *province,
-		Hostnames:          ExpandHostnames(*hostnames),
+		Hostnames:          splitStrings(*hostnames),
+		Ports:              portList,
 		KeyType:            kt,
 		ParentKeyPair:      parent,
 		CodeSigning:        *codeSigning,
@@ -202,23 +207,22 @@ func parseKeyTypeName(keyTypeName string, defaultLength int, validValues []int) 
 	return "", 0, fmt.Errorf("key type '%s' does not have a valid %s key length", keyTypeName, algorithm)
 }
 
-func ExpandHostnames(hostnameCsv string) []string {
-	return expandHostnames(strings.Split(hostnameCsv, ","))
+func splitStrings(csv string) []string {
+	return strings.Split(csv, ",")
 }
 
-func expandHostnames(hostnames []string) []string {
-	unique := map[string]any{}
-
-	for _, hn := range hostnames {
-		if hn != "" {
-			unique[hn] = nil
+func splitInts(csv string) ([]int, error) {
+	if csv == "" {
+		return nil, nil
+	}
+	vals := splitStrings(csv)
+	result := make([]int, len(vals))
+	for i, v := range vals {
+		iv, err := strconv.Atoi(v)
+		if err != nil {
+			return nil, fmt.Errorf("cannot convert %q to an integer, %s", v, err)
 		}
+		result[i] = iv
 	}
-
-	all := make([]string, 0, len(unique))
-	for hn := range unique {
-		all = append(all, hn)
-	}
-	sort.Strings(all)
-	return all
+	return result, nil
 }

@@ -26,8 +26,10 @@ import (
 	"fmt"
 	"math/big"
 	"net"
+	"net/url"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 )
@@ -69,6 +71,8 @@ type Args struct {
 	Validity time.Duration
 	// ParentKeyPair is the root public certificate within the chain of trust.
 	ParentKeyPair *KeyPair
+	// Ports are a list of ports that are applied to every hostname that is not specified by a port.
+	Ports []int
 
 	// KeyType is the type of key to generate.
 	KeyType *KeyType
@@ -92,6 +96,36 @@ func (args *Args) GetKeyType() *KeyType {
 	}
 
 	return args.KeyType
+}
+
+// GetHostnames returns the full set of host names based on hostname * port combinations.
+//
+// Hostnames that are specified with a port will not be expanded.
+func (args *Args) GetHostnames() []string {
+	return expandHostnames(args.Hostnames, args.Ports)
+}
+
+func expandHostnames(hostnames []string, ports []int) []string {
+	expanded := map[string]any{}
+	for _, hostname := range hostnames {
+		if hostname != "" {
+			u, err := url.Parse(hostname)
+			if len(ports) > 0 && err == nil && u.Port() == "" {
+				for _, port := range ports {
+					expanded[fmt.Sprintf("%s:%d", hostname, port)] = nil
+				}
+			} else {
+				expanded[hostname] = nil
+			}
+		}
+	}
+
+	all := make([]string, 0, len(expanded))
+	for hn := range expanded {
+		all = append(all, hn)
+	}
+	sort.Strings(all)
+	return all
 }
 
 // KeyType is the key descriptor.
@@ -233,7 +267,7 @@ func createCertificateAndPrivateKeyPEM(args *Args) (*KeyPair, error) {
 	}
 
 	if !args.CodeSigning {
-		for _, hostname := range args.Hostnames {
+		for _, hostname := range args.GetHostnames() {
 			if ipAddress := net.ParseIP(hostname); ipAddress != nil {
 				certTemplate.IPAddresses = append(certTemplate.IPAddresses, ipAddress)
 			} else {
