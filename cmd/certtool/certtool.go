@@ -120,7 +120,7 @@ func argsFromFlags() (*certtool.Args, error) {
 
 	var kt *certtool.KeyType
 	if keyTypeExplicitlySet || !*codeSigning {
-		algorithm, keyLength, err := StringToKeyType(*keyType)
+		algorithm, keyLength, err := stringToKeyType(*keyType)
 		if err != nil {
 			return nil, err
 		}
@@ -147,6 +147,10 @@ func argsFromFlags() (*certtool.Args, error) {
 		}
 	}
 
+	if *validity <= 0 {
+		return nil, fmt.Errorf("--validity must be a positive duration, got %s", *validity)
+	}
+
 	portList, err := splitInts(*ports)
 	if err != nil {
 		return nil, err
@@ -170,7 +174,7 @@ func argsFromFlags() (*certtool.Args, error) {
 	}, nil
 }
 
-func StringToKeyType(keyType string) (string, int, error) {
+func stringToKeyType(keyType string) (string, int, error) {
 	if keyType == "" {
 		return algorithmRSA, 2048, nil
 	}
@@ -224,7 +228,11 @@ func splitStrings(csv string) []string {
 	if csv == "" {
 		return nil
 	}
-	return strings.Split(csv, ",")
+	parts := strings.Split(csv, ",")
+	for i, p := range parts {
+		parts[i] = strings.TrimSpace(p)
+	}
+	return parts
 }
 
 func splitInts(csv string) ([]int, error) {
@@ -236,7 +244,10 @@ func splitInts(csv string) ([]int, error) {
 	for i, v := range vals {
 		iv, err := strconv.Atoi(v)
 		if err != nil {
-			return nil, fmt.Errorf("cannot convert %q to an integer, %s", v, err)
+			return nil, fmt.Errorf("cannot convert %q to an integer, %w", v, err)
+		}
+		if iv <= 0 {
+			return nil, fmt.Errorf("port %d is not a valid port number, must be positive", iv)
 		}
 		result[i] = iv
 	}

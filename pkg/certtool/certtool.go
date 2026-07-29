@@ -26,7 +26,6 @@ import (
 	"fmt"
 	"math/big"
 	"net"
-	"net/url"
 	"os"
 	"path/filepath"
 	"sort"
@@ -52,7 +51,7 @@ type Args struct {
 	// CA indicates we need to create a CA certificate.
 	CA bool
 
-	// CommonName
+	// CommonName of the entity representing the certificate. Defaults to the Organization value when empty.
 	CommonName string
 	// Country of the entity representing the certificate.
 	Country string
@@ -105,12 +104,16 @@ func (args *Args) GetHostnames() []string {
 	return expandHostnames(args.Hostnames, args.Ports)
 }
 
+func hostnameHasPort(hostname string) bool {
+	_, _, err := net.SplitHostPort(hostname)
+	return err == nil
+}
+
 func expandHostnames(hostnames []string, ports []int) []string {
 	expanded := map[string]any{}
 	for _, hostname := range hostnames {
 		if hostname != "" {
-			u, err := url.Parse(hostname)
-			if len(ports) > 0 && err == nil && u.Port() == "" {
+			if len(ports) > 0 && !hostnameHasPort(hostname) {
 				for _, port := range ports {
 					expanded[fmt.Sprintf("%s:%d", hostname, port)] = nil
 				}
@@ -304,7 +307,12 @@ func createCertificateAndPrivateKeyPEM(args *Args) (*KeyPair, error) {
 		}
 	}
 
-	cert, err := x509.CreateCertificate(rand.Reader, &certTemplate, &parentTemplate, publicKey(privateKey), parentPrivateKey)
+	pubKey, err := publicKey(privateKey)
+	if err != nil {
+		return nil, err
+	}
+
+	cert, err := x509.CreateCertificate(rand.Reader, &certTemplate, &parentTemplate, pubKey, parentPrivateKey)
 	if err != nil {
 		return nil, fmt.Errorf("cannot create X.509 public certificate, %w", err)
 	}
@@ -421,14 +429,14 @@ func ReadKeyPair(publicCertFileData []byte, privateKeyFileData []byte) (*x509.Ce
 	return nil, nil, fmt.Errorf("cannot parse private key PEM type, %s, is not supported", privateKeyPemBlock.Type)
 }
 
-func publicKey(priv any) any {
+func publicKey(priv any) (any, error) {
 	switch k := priv.(type) {
 	case *rsa.PrivateKey:
-		return &k.PublicKey
+		return &k.PublicKey, nil
 	case *ecdsa.PrivateKey:
-		return &k.PublicKey
+		return &k.PublicKey, nil
 	default:
-		return nil
+		return nil, fmt.Errorf("unsupported private key type %T", priv)
 	}
 }
 
@@ -462,7 +470,7 @@ func ParseName(subject string) (pkix.Name, error) {
 			return pkix.Name{}, fmt.Errorf("AttributeType '%s' has too many parts, %v", vals[0], vals)
 		}
 
-		value := strings.ReplaceAll(vals[1], subjectDelimiterReplacement, ",")
+		value := strings.ReplaceAll(vals[1], subjectDelimiterReplacement, subjectDelimiter)
 
 		switch strings.ToUpper(vals[0]) {
 		case "CN":

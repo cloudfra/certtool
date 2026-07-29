@@ -75,5 +75,5 @@ func GetProfile(target string) (TargetProfile, error) {
 	if profile, ok := targetProfiles[normalized]; ok {
 		return profile, nil
 	}
-	return TargetProfile{}, fmt.Errorf("unknown target %q: valid targets are windows7 (aliases: win7, windows8, win8), windows10 (alias: win10), windows11 (alias: win11), linux", target)
+	return TargetProfile{}, fmt.Errorf("unknown target %q: valid targets are windows7 (aliases: win7, windows8, win8, windows8.1, win8.1), windows10 (alias: win10), windows11 (alias: win11), linux", target)
 }

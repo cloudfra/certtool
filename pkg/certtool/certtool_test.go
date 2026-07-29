@@ -37,16 +37,17 @@ import (
 )
 
 const (
-	secretMessage   = "this is a secret message"
-	testLoopbackIP  = "127.0.0.1"
-	testOrgValue    = "organization"
-	testPubCertFile = "pub.cert"
-	testPrivKeyFile = "priv.key"
-	testLocalhost   = "localhost"
-	testCloudfra    = "cloudfra"
-	testExampleCom  = "example.com"
-	testDupComURL   = "http://dup.com:80"
-	testMixComURL   = "http://mix.com:80"
+	secretMessage      = "this is a secret message"
+	testLoopbackIP     = "127.0.0.1"
+	testOrgValue       = "organization"
+	testPubCertFile    = "pub.cert"
+	testPrivKeyFile    = "priv.key"
+	testLocalhost      = "localhost"
+	testCloudfra       = "cloudfra"
+	testExampleCom     = "example.com"
+	testDupHostPort    = "dup.com:80"
+	testMixHostPort    = "mix.com:80"
+	testLoopbackIPPort = "192.168.1.1:443"
 )
 
 var testHostnames = []string{"a.com", "b.com", testLoopbackIP}
@@ -56,11 +57,17 @@ func TestPublicKey(t *testing.T) {
 		t.Skip("certificate generation takes a long time")
 	}
 
-	assert := assert.New(t)
+	pk, err := publicKey(&Args{})
+	assert.Nil(t, pk)
+	assert.NotNil(t, err)
 
-	assert.Nil(publicKey(&Args{}))
-	assert.NotNil(publicKey(&rsa.PrivateKey{}))
-	assert.NotNil(publicKey(&ecdsa.PrivateKey{}))
+	pk, err = publicKey(&rsa.PrivateKey{})
+	assert.NotNil(t, pk)
+	assert.Nil(t, err)
+
+	pk, err = publicKey(&ecdsa.PrivateKey{})
+	assert.NotNil(t, pk)
+	assert.Nil(t, err)
 }
 
 func TestReadKeyPairFromFile_Errors(t *testing.T) {
@@ -628,6 +635,9 @@ func TestParseName(t *testing.T) {
 			StreetAddress: []string{"123 Main Street"},
 			PostalCode:    []string{"12345"},
 		}},
+		{`CN=foo\/bar`, pkix.Name{
+			CommonName: "foo/bar",
+		}},
 	}
 	for _, tc := range testCases {
 		tc := tc
@@ -895,9 +905,9 @@ func TestExpandHostnames(t *testing.T) {
 			want:      []string{testLocalhost},
 		},
 		{
-			hostnames: []string{"http://example.com:8080"},
+			hostnames: []string{testExampleCom},
 			ports:     []int{443, 8443},
-			want:      []string{"http://example.com:8080"},
+			want:      []string{"example.com:443", "example.com:8443"},
 		},
 		{
 			hostnames: []string{testLocalhost},
@@ -905,24 +915,39 @@ func TestExpandHostnames(t *testing.T) {
 			want:      []string{"localhost:443"},
 		},
 		{
-			hostnames: []string{testDupComURL, testDupComURL},
+			hostnames: []string{testDupHostPort, testDupHostPort},
 			ports:     []int{443},
-			want:      []string{testDupComURL},
+			want:      []string{testDupHostPort},
 		},
 		{
-			hostnames: []string{testMixComURL, "noport"},
+			hostnames: []string{testMixHostPort, "noport"},
 			ports:     []int{443},
-			want:      []string{testMixComURL, "noport:443"},
+			want:      []string{testMixHostPort, "noport:443"},
 		},
 		{
-			hostnames: []string{"", testMixComURL, ""},
+			hostnames: []string{"", testMixHostPort, ""},
 			ports:     []int{8080},
-			want:      []string{testMixComURL},
+			want:      []string{testMixHostPort},
 		},
 		{
-			hostnames: []string{"http://a.com:80", "http://b.com:80", "http://c.com"},
+			hostnames: []string{"a.com:80", "b.com:80", "c.com"},
 			ports:     []int{443, 1443},
-			want:      []string{"http://a.com:80", "http://b.com:80", "http://c.com:1443", "http://c.com:443"},
+			want:      []string{"a.com:80", "b.com:80", "c.com:1443", "c.com:443"},
+		},
+		{
+			hostnames: []string{testLoopbackIPPort},
+			ports:     []int{8080},
+			want:      []string{testLoopbackIPPort},
+		},
+		{
+			hostnames: []string{"[::1]:8080"},
+			ports:     []int{443},
+			want:      []string{"[::1]:8080"},
+		},
+		{
+			hostnames: []string{"192.168.1.1"},
+			ports:     []int{443, 8443},
+			want:      []string{testLoopbackIPPort, "192.168.1.1:8443"},
 		},
 	}
 
