@@ -31,6 +31,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/google/go-cmp/cmp"
 	"github.com/stretchr/testify/assert"
 	"software.sslmate.com/src/go-pkcs12"
 )
@@ -41,6 +42,11 @@ const (
 	testOrgValue    = "organization"
 	testPubCertFile = "pub.cert"
 	testPrivKeyFile = "priv.key"
+	testLocalhost   = "localhost"
+	testCloudfra    = "cloudfra"
+	testExampleCom  = "example.com"
+	testDupComURL   = "http://dup.com:80"
+	testMixComURL   = "http://mix.com:80"
 )
 
 var testHostnames = []string{"a.com", "b.com", testLoopbackIP}
@@ -616,10 +622,10 @@ func TestParseName(t *testing.T) {
 			Locality:           []string{"London"},
 			Organization:       []string{"Global Security"},
 			OrganizationalUnit: []string{"IT Department"},
-			CommonName:         "example.com",
+			CommonName:         testExampleCom,
 		}},
 		{"////////////CN=example.com", pkix.Name{
-			CommonName: "example.com",
+			CommonName: testExampleCom,
 		}},
 		{"STREET=123 Main Street/POSTALCODE=12345", pkix.Name{
 			StreetAddress: []string{"123 Main Street"},
@@ -833,4 +839,109 @@ func mustTemp(tb testing.TB) string {
 		}
 	})
 	return tmpDir
+}
+
+func TestExpandHostnames(t *testing.T) {
+	testCases := []struct {
+		hostnames []string
+		ports     []int
+		want      []string
+	}{
+		{
+			hostnames: []string{""},
+			ports:     nil,
+			want:      []string{},
+		},
+		{
+			hostnames: []string{testLocalhost},
+			ports:     nil,
+			want:      []string{testLocalhost},
+		},
+		{
+			hostnames: []string{testLocalhost, testCloudfra, testLocalhost},
+			ports:     nil,
+			want:      []string{testCloudfra, testLocalhost},
+		},
+		{
+			hostnames: []string{testLocalhost, testLocalhost},
+			ports:     nil,
+			want:      []string{testLocalhost},
+		},
+		{
+			hostnames: []string{testLocalhost},
+			ports:     nil,
+			want:      []string{testLocalhost},
+		},
+		{
+			hostnames: []string{testLocalhost, testCloudfra, testLocalhost},
+			ports:     nil,
+			want:      []string{testCloudfra, testLocalhost},
+		},
+		{
+			hostnames: nil,
+			ports:     nil,
+			want:      []string{},
+		},
+		{
+			hostnames: []string{},
+			ports:     nil,
+			want:      []string{},
+		},
+		{
+			hostnames: []string{"", ""},
+			ports:     nil,
+			want:      []string{},
+		},
+		{
+			hostnames: []string{"", testLocalhost, ""},
+			ports:     nil,
+			want:      []string{testLocalhost},
+		},
+		{
+			hostnames: []string{"http://example.com:8080"},
+			ports:     []int{443, 8443},
+			want:      []string{"http://example.com:8080"},
+		},
+		{
+			hostnames: []string{testLocalhost},
+			ports:     []int{443},
+			want:      []string{"localhost:443"},
+		},
+		{
+			hostnames: []string{testDupComURL, testDupComURL},
+			ports:     []int{443},
+			want:      []string{testDupComURL},
+		},
+		{
+			hostnames: []string{testMixComURL, "noport"},
+			ports:     []int{443},
+			want:      []string{testMixComURL, "noport:443"},
+		},
+		{
+			hostnames: []string{"", testMixComURL, ""},
+			ports:     []int{8080},
+			want:      []string{testMixComURL},
+		},
+		{
+			hostnames: []string{"http://a.com:80", "http://b.com:80", "http://c.com"},
+			ports:     []int{443, 1443},
+			want:      []string{"http://a.com:80", "http://b.com:80", "http://c.com:1443", "http://c.com:443"},
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(fmt.Sprintf("%v,%v", tc.hostnames, tc.ports), func(t *testing.T) {
+			t.Parallel()
+			got := expandHostnames(tc.hostnames, tc.ports)
+			if diff := cmp.Diff(tc.want, got); diff != "" {
+				t.Errorf("expandHostnames() mismatch (-want +got):\n%s", diff)
+			}
+		})
+	}
+}
+
+func BenchmarkExpandHostnames(b *testing.B) {
+	for b.Loop() {
+		expandHostnames([]string{testExampleCom, "test.com"}, nil)
+	}
 }
