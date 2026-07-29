@@ -23,6 +23,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/cloudfra/certtool/internal"
 	"github.com/cloudfra/certtool/pkg/certtool"
 	"go.uber.org/zap"
 )
@@ -50,6 +51,8 @@ var (
 	target      = flag.String("target", "", "Platform profile for --code-sign. Values: windows7 (win7/windows8/win8), windows10 (win10), windows11 (win11), linux. Default: windows10.")
 	pfxOutput   = flag.String("pfx-output", "codesign.pfx", "Output path for the PKCS#12 (.pfx) file. Used with --code-sign for Windows targets.")
 	pfxPassword = flag.String("pfx-password", "", "Password for the PKCS#12 (.pfx) file. Empty means no password.")
+
+	version = flag.Bool("version", false, "Print version and build information, then exit.")
 )
 
 const (
@@ -65,6 +68,11 @@ func main() {
 // certtoolMain runs the tool and returns the process exit code.
 func certtoolMain() int {
 	flag.Parse()
+
+	if *version {
+		fmt.Printf("certtool %s (built %s)\n", internal.Version(), internal.Buildstamp())
+		return 0
+	}
 
 	if *target != "" && !*codeSigning {
 		zap.S().Warn("--target is set but --code-sign is not; --target will be ignored")

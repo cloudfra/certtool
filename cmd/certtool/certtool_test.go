@@ -23,6 +23,16 @@ import (
 	"github.com/cloudfra/certtool/pkg/certtool"
 )
 
+func TestCerttoolMainVersion(t *testing.T) {
+	origVersion := *version
+	*version = true
+	t.Cleanup(func() { *version = origVersion })
+
+	if got := certtoolMain(); got != 0 {
+		t.Errorf("certtoolMain() = %d, want 0 when --version is set", got)
+	}
+}
+
 func TestArgsFromFlags(t *testing.T) {
 	args, err := argsFromFlags()
 	if err != nil {
