@@ -207,7 +207,7 @@ func TestStringToKeyType(t *testing.T) {
 				t.Errorf("algorithm want: %v, got: %v", tc.wantAlgorithm, gotAlgorithm)
 			}
 			if tc.wantKeyLength != gotKeyLength {
-				t.Errorf("keyLength want: %v, got: %v", tc.wantAlgorithm, gotKeyLength)
+				t.Errorf("keyLength want: %v, got: %v", tc.wantKeyLength, gotKeyLength)
 			}
 		})
 	}
@@ -258,6 +258,7 @@ func TestSplitInts(t *testing.T) {
 		{input: "0", wantErr: true},
 		{input: "-1", wantErr: true},
 		{input: "443,-1", wantErr: true},
+		{input: "99999", wantErr: true},
 	}
 
 	for _, tc := range testCases {

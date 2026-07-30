@@ -18,7 +18,6 @@ import (
 	"crypto/rsa"
 	"testing"
 
-	"github.com/stretchr/testify/assert"
 	"software.sslmate.com/src/go-pkcs12"
 )
 
@@ -26,43 +25,68 @@ func TestToPFX_Modern(t *testing.T) {
 	if testing.Short() {
 		t.Skip("certificate generation takes a long time")
 	}
-	assert := assert.New(t)
 
 	kp, err := GenerateKeyPair(&Args{KeyType: &KeyType{Algorithm: ecdsaAlgorithm, KeyLength: 256}})
-	assert.Nil(err)
+	if err != nil {
+		t.Fatalf("GenerateKeyPair() err = %v, want nil", err)
+	}
 
 	cert, privKey, err := ReadKeyPair(kp.PublicCertificate, kp.PrivateKey)
-	assert.Nil(err)
+	if err != nil {
+		t.Fatalf("ReadKeyPair() err = %v, want nil", err)
+	}
 
 	pfxData, err := toPFX(cert, privKey, "", false)
-	assert.Nil(err)
-	assert.NotEmpty(pfxData)
+	if err != nil {
+		t.Fatalf("toPFX() err = %v, want nil", err)
+	}
+	if len(pfxData) == 0 {
+		t.Fatal("toPFX() returned empty PFX data")
+	}
 
 	decodedKey, decodedCert, err := pkcs12.Decode(pfxData, "")
-	assert.Nil(err)
-	assert.NotNil(decodedCert)
-	assert.NotNil(decodedKey)
+	if err != nil {
+		t.Fatalf("pkcs12.Decode() err = %v, want nil", err)
+	}
+	if decodedCert == nil {
+		t.Error("decoded cert is nil")
+	}
+	if decodedKey == nil {
+		t.Error("decoded key is nil")
+	}
 }
 
 func TestToPFX_Legacy(t *testing.T) {
 	if testing.Short() {
 		t.Skip("certificate generation takes a long time")
 	}
-	assert := assert.New(t)
 
 	kp, err := GenerateKeyPair(&Args{KeyType: &KeyType{Algorithm: rsaAlgorithm, KeyLength: 2048}})
-	assert.Nil(err)
+	if err != nil {
+		t.Fatalf("GenerateKeyPair() err = %v, want nil", err)
+	}
 
 	cert, privKey, err := ReadKeyPair(kp.PublicCertificate, kp.PrivateKey)
-	assert.Nil(err)
+	if err != nil {
+		t.Fatalf("ReadKeyPair() err = %v, want nil", err)
+	}
 
 	pfxData, err := toPFX(cert, privKey, "testpass", true)
-	assert.Nil(err)
-	assert.NotEmpty(pfxData)
+	if err != nil {
+		t.Fatalf("toPFX() err = %v, want nil", err)
+	}
+	if len(pfxData) == 0 {
+		t.Fatal("toPFX() returned empty PFX data")
+	}
 
 	decodedKey, decodedCert, err := pkcs12.Decode(pfxData, "testpass")
-	assert.Nil(err)
-	assert.NotNil(decodedCert)
-	_, ok := decodedKey.(*rsa.PrivateKey)
-	assert.True(ok, "expected *rsa.PrivateKey")
+	if err != nil {
+		t.Fatalf("pkcs12.Decode() err = %v, want nil", err)
+	}
+	if decodedCert == nil {
+		t.Error("decoded cert is nil")
+	}
+	if _, ok := decodedKey.(*rsa.PrivateKey); !ok {
+		t.Errorf("decoded key is %T, want *rsa.PrivateKey", decodedKey)
+	}
 }

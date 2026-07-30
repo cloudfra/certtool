@@ -246,8 +246,8 @@ func splitInts(csv string) ([]int, error) {
 		if err != nil {
 			return nil, fmt.Errorf("cannot convert %q to an integer, %w", v, err)
 		}
-		if iv <= 0 {
-			return nil, fmt.Errorf("port %d is not a valid port number, must be positive", iv)
+		if iv < 1 || iv > 65535 {
+			return nil, fmt.Errorf("port %d is not valid, must be between 1 and 65535", iv)
 		}
 		result[i] = iv
 	}
