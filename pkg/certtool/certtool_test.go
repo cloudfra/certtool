@@ -198,16 +198,6 @@ func TestReadKeyPair_BadPublicCert(t *testing.T) {
 }
 
 func TestCreateCertificateAndPrivateKeyPEMErrors(t *testing.T) {
-	ca, err := createCertificateAndPrivateKeyPEM(&Args{
-		Validity:  time.Hour * 1,
-		Hostnames: testHostnames,
-		KeyType:   defaultKeyType(),
-		CA:        true,
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-
 	testCases := []struct {
 		args    *Args
 		wantErr string
@@ -239,16 +229,6 @@ func TestCreateCertificateAndPrivateKeyPEMErrors(t *testing.T) {
 				},
 			},
 			wantErr: "public certificate contains no PEM data",
-		},
-		{
-			args: &Args{
-				KeyType: &KeyType{
-					Algorithm: ecdsaAlgorithm,
-					KeyLength: 224,
-				},
-				ParentKeyPair: ca,
-			},
-			wantErr: "cannot create X.509 public certificate, x509: requested SignatureAlgorithm does not match private key type",
 		},
 	}
 	for _, tc := range testCases {

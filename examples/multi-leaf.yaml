@@ -1,0 +1,19 @@
+- cn: "Dev Root CA"
+  ca: true
+  key-type: "ECDSA-256"
+  validity: "87600h"
+  organization: "DevTeam"
+  filename: "dev-root-ca"
+  children:
+    - cn: "frontend.dev.local"
+      hostnames:
+        - frontend.dev.local
+        - localhost
+      ports: [3000, 8080]
+      filename: "frontend"
+    - cn: "backend.dev.local"
+      hostnames:
+        - backend.dev.local
+        - localhost
+      ports: [8443]
+      filename: "backend"

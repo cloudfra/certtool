@@ -1,0 +1,10 @@
+- cn: "Simple Root CA"
+  ca: true
+  key-type: "RSA-2048"
+  validity: "87600h"
+  children:
+    - cn: "app.example.com"
+      hostnames:
+        - app.example.com
+        - localhost
+      validity: "8760h"

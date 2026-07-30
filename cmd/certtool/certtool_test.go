@@ -355,6 +355,121 @@ func TestArgsFromFlagsCommonNameDefault(t *testing.T) {
 	}
 }
 
+func TestValidateModeFlags(t *testing.T) {
+	t.Run("no modes", func(t *testing.T) {
+		origChain, origHierarchy, origParent := *chain, *hierarchy, *parentPublicCertificate
+		*chain = 0
+		*hierarchy = ""
+		*parentPublicCertificate = ""
+		t.Cleanup(func() {
+			*chain, *hierarchy, *parentPublicCertificate = origChain, origHierarchy, origParent
+		})
+
+		if err := validateModeFlags(); err != nil {
+			t.Errorf("validateModeFlags() err = %v, want nil", err)
+		}
+	})
+
+	t.Run("chain and hierarchy", func(t *testing.T) {
+		origChain, origHierarchy := *chain, *hierarchy
+		*chain = 2
+		*hierarchy = "file.yaml"
+		t.Cleanup(func() { *chain, *hierarchy = origChain, origHierarchy })
+
+		if err := validateModeFlags(); err == nil {
+			t.Error("validateModeFlags() = nil, want error for mutually exclusive flags")
+		}
+	})
+
+	t.Run("chain with parent", func(t *testing.T) {
+		origChain, origParent := *chain, *parentPublicCertificate
+		*chain = 2
+		*parentPublicCertificate = "parent.cert"
+		t.Cleanup(func() { *chain, *parentPublicCertificate = origChain, origParent })
+
+		if err := validateModeFlags(); err == nil {
+			t.Error("validateModeFlags() = nil, want error for --chain with --parent-public-certificate")
+		}
+	})
+
+	t.Run("hierarchy with parent", func(t *testing.T) {
+		origHierarchy, origParent := *hierarchy, *parentPublicCertificate
+		*hierarchy = "file.yaml"
+		*parentPublicCertificate = "parent.cert"
+		t.Cleanup(func() { *hierarchy, *parentPublicCertificate = origHierarchy, origParent })
+
+		if err := validateModeFlags(); err == nil {
+			t.Error("validateModeFlags() = nil, want error for --hierarchy with --parent-public-certificate")
+		}
+	})
+}
+
+func TestCerttoolMainChain(t *testing.T) {
+	dir := t.TempDir()
+	origChain, origOutputDir := *chain, *outputDir
+	origPublicCert, origPrivateKey := *publicCertificate, *privateKey
+	*chain = 2
+	*outputDir = dir
+	t.Cleanup(func() {
+		*chain, *outputDir = origChain, origOutputDir
+		*publicCertificate, *privateKey = origPublicCert, origPrivateKey
+	})
+
+	if got := certtoolMain(); got != 0 {
+		t.Errorf("certtoolMain() = %d, want 0 for --chain 2", got)
+	}
+
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatalf("ReadDir() err = %v", err)
+	}
+	if len(entries) < 4 {
+		t.Errorf("expected at least 4 files (2 certs + 2 keys), got %d", len(entries))
+	}
+}
+
+func TestCerttoolMainHierarchy(t *testing.T) {
+	dir := t.TempDir()
+	origHierarchy, origOutputDir := *hierarchy, *outputDir
+	*hierarchy = "../../examples/simple-chain.yaml"
+	*outputDir = dir
+	t.Cleanup(func() {
+		*hierarchy, *outputDir = origHierarchy, origOutputDir
+	})
+
+	if got := certtoolMain(); got != 0 {
+		t.Errorf("certtoolMain() = %d, want 0 for --hierarchy", got)
+	}
+
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatalf("ReadDir() err = %v", err)
+	}
+	if len(entries) < 4 {
+		t.Errorf("expected at least 4 files (2 certs + 2 keys), got %d", len(entries))
+	}
+}
+
+func TestCerttoolMainChainInvalid(t *testing.T) {
+	origChain := *chain
+	*chain = 1
+	t.Cleanup(func() { *chain = origChain })
+
+	if got := certtoolMain(); got != 1 {
+		t.Errorf("certtoolMain() = %d, want 1 for --chain 1", got)
+	}
+}
+
+func TestCerttoolMainHierarchyMissing(t *testing.T) {
+	origHierarchy := *hierarchy
+	*hierarchy = "does-not-exist.yaml"
+	t.Cleanup(func() { *hierarchy = origHierarchy })
+
+	if got := certtoolMain(); got != 1 {
+		t.Errorf("certtoolMain() = %d, want 1 for missing hierarchy file", got)
+	}
+}
+
 func TestStringToKeyTypeErrors(t *testing.T) {
 	testCases := []string{
 		"bogus",          // unknown key type name

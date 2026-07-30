@@ -306,6 +306,7 @@ func createCertificateAndPrivateKeyPEM(args *Args) (*KeyPair, error) {
 			}
 			parentTemplate = *parentPublicCertificateT
 			parentPrivateKey = parentPrivateKeyT
+			certTemplate.SignatureAlgorithm = sigAlgForKey(parentPrivateKey, args.CodeSigning)
 		}
 	}
 
@@ -435,6 +436,23 @@ func ReadKeyPair(publicCertFileData []byte, privateKeyFileData []byte) (*x509.Ce
 	}
 
 	return nil, nil, fmt.Errorf("cannot parse private key PEM type, %s, is not supported", privateKeyPemBlock.Type)
+}
+
+func sigAlgForKey(key any, codeSigning bool) x509.SignatureAlgorithm {
+	switch key.(type) {
+	case *rsa.PrivateKey:
+		if codeSigning {
+			return x509.SHA256WithRSA
+		}
+		return x509.SHA512WithRSA
+	case *ecdsa.PrivateKey:
+		if codeSigning {
+			return x509.ECDSAWithSHA256
+		}
+		return x509.ECDSAWithSHA512
+	default:
+		return x509.UnknownSignatureAlgorithm
+	}
 }
 
 func publicKey(priv any) (any, error) {
