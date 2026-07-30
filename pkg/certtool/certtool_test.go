@@ -32,7 +32,6 @@ import (
 	"time"
 
 	"github.com/google/go-cmp/cmp"
-	"github.com/stretchr/testify/assert"
 	"software.sslmate.com/src/go-pkcs12"
 )
 
@@ -58,16 +57,28 @@ func TestPublicKey(t *testing.T) {
 	}
 
 	pk, err := publicKey(&Args{})
-	assert.Nil(t, pk)
-	assert.NotNil(t, err)
+	if pk != nil {
+		t.Errorf("publicKey(&Args{}) = %v, want nil", pk)
+	}
+	if err == nil {
+		t.Error("publicKey(&Args{}) err = nil, want error")
+	}
 
 	pk, err = publicKey(&rsa.PrivateKey{})
-	assert.NotNil(t, pk)
-	assert.Nil(t, err)
+	if pk == nil {
+		t.Error("publicKey(&rsa.PrivateKey{}) = nil, want non-nil")
+	}
+	if err != nil {
+		t.Errorf("publicKey(&rsa.PrivateKey{}) err = %v, want nil", err)
+	}
 
 	pk, err = publicKey(&ecdsa.PrivateKey{})
-	assert.NotNil(t, pk)
-	assert.Nil(t, err)
+	if pk == nil {
+		t.Error("publicKey(&ecdsa.PrivateKey{}) = nil, want non-nil")
+	}
+	if err != nil {
+		t.Errorf("publicKey(&ecdsa.PrivateKey{}) err = %v, want nil", err)
+	}
 }
 
 func TestReadKeyPairFromFile_Errors(t *testing.T) {
@@ -149,13 +160,41 @@ func TestReadKeyPairFromFile_Errors(t *testing.T) {
 	}
 }
 
-func TestReadKeyPair_BadPublicCert(t *testing.T) {
-	assert := assert.New(t)
+func TestReadKeyPair_EmptyInput(t *testing.T) {
+	pubCert, pk, err := ReadKeyPair([]byte{}, []byte{})
+	if pubCert != nil {
+		t.Errorf("pubCert = %v, want nil", pubCert)
+	}
+	if pk != nil {
+		t.Errorf("pk = %v, want nil", pk)
+	}
+	if err == nil || !strings.Contains(err.Error(), "public certificate contains no PEM data") {
+		t.Errorf("err = %v, want error containing %q", err, "public certificate contains no PEM data")
+	}
 
+	pubCert, pk, err = ReadKeyPair(nil, nil)
+	if pubCert != nil {
+		t.Errorf("pubCert = %v, want nil", pubCert)
+	}
+	if pk != nil {
+		t.Errorf("pk = %v, want nil", pk)
+	}
+	if err == nil || !strings.Contains(err.Error(), "public certificate contains no PEM data") {
+		t.Errorf("err = %v, want error containing %q", err, "public certificate contains no PEM data")
+	}
+}
+
+func TestReadKeyPair_BadPublicCert(t *testing.T) {
 	pubCert, pk, err := ReadKeyPair([]byte("bad"), []byte("bad"))
-	assert.Nil(pubCert)
-	assert.Nil(pk)
-	assert.Contains(err.Error(), "public certificate has a PEM remainder")
+	if pubCert != nil {
+		t.Errorf("pubCert = %v, want nil", pubCert)
+	}
+	if pk != nil {
+		t.Errorf("pk = %v, want nil", pk)
+	}
+	if err == nil || !strings.Contains(err.Error(), "public certificate contains no PEM data") {
+		t.Errorf("err = %v, want error containing %q", err, "public certificate contains no PEM data")
+	}
 }
 
 func TestCreateCertificateAndPrivateKeyPEMErrors(t *testing.T) {
@@ -199,7 +238,7 @@ func TestCreateCertificateAndPrivateKeyPEMErrors(t *testing.T) {
 					PrivateKey:        []byte("lol"),
 				},
 			},
-			wantErr: "public certificate has a PEM remainder of 3 bytes",
+			wantErr: "public certificate contains no PEM data",
 		},
 		{
 			args: &Args{
@@ -236,21 +275,31 @@ func TestReadKeyPair_MalformedPublicCertificate(t *testing.T) {
 		t.Skip("certificate generation takes a long time")
 	}
 
-	assert := assert.New(t)
-
 	pair, err := createCertificateAndPrivateKeyPEM(&Args{
 		KeyType: defaultKeyType(),
 	})
-	assert.Nil(err)
-	assert.NotNil(pair.PrivateKey)
-	assert.NotNil(pair.PublicCertificate)
+	if err != nil {
+		t.Fatalf("createCertificateAndPrivateKeyPEM() err = %v", err)
+	}
+	if pair.PrivateKey == nil {
+		t.Fatal("pair.PrivateKey is nil")
+	}
+	if pair.PublicCertificate == nil {
+		t.Fatal("pair.PublicCertificate is nil")
+	}
 
 	malformedPublicKey := []byte(strings.ReplaceAll(string(pair.PublicCertificate), "MII", "MIE"))
 
 	pubCert, pk, err := ReadKeyPair(malformedPublicKey, pair.PrivateKey)
-	assert.Nil(pubCert)
-	assert.Nil(pk)
-	assert.Contains(err.Error(), "malformed")
+	if pubCert != nil {
+		t.Errorf("pubCert = %v, want nil", pubCert)
+	}
+	if pk != nil {
+		t.Errorf("pk = %v, want nil", pk)
+	}
+	if err == nil || !strings.Contains(err.Error(), "malformed") {
+		t.Errorf("err = %v, want error containing %q", err, "malformed")
+	}
 }
 
 func TestReadKeyPair_MalformedPrivateKey(t *testing.T) {
@@ -258,39 +307,62 @@ func TestReadKeyPair_MalformedPrivateKey(t *testing.T) {
 		t.Skip("certificate generation takes a long time")
 	}
 
-	assert := assert.New(t)
-
 	pair, err := createCertificateAndPrivateKeyPEM(&Args{
 		KeyType: defaultKeyType(),
 	})
-	assert.Nil(err)
-	assert.NotNil(pair.PrivateKey)
-	assert.NotNil(pair.PublicCertificate)
+	if err != nil {
+		t.Fatalf("createCertificateAndPrivateKeyPEM() err = %v", err)
+	}
+	if pair.PrivateKey == nil {
+		t.Fatal("pair.PrivateKey is nil")
+	}
+	if pair.PublicCertificate == nil {
+		t.Fatal("pair.PublicCertificate is nil")
+	}
 	malformedPriv := []byte(strings.ReplaceAll(string(pair.PrivateKey), rsaPrivateKeyPEMType, ecPrivateKeyPEMType))
 
 	pubCert, pk, err := ReadKeyPair(pair.PublicCertificate, malformedPriv)
-	assert.Nil(pubCert)
-	assert.Nil(pk)
-	assert.Contains(err.Error(), "x509: failed to parse")
-	assert.Contains(err.Error(), "private key")
+	if pubCert != nil {
+		t.Errorf("pubCert = %v, want nil", pubCert)
+	}
+	if pk != nil {
+		t.Errorf("pk = %v, want nil", pk)
+	}
+	if err == nil || !strings.Contains(err.Error(), "x509: failed to parse") {
+		t.Errorf("err = %v, want error containing %q", err, "x509: failed to parse")
+	}
+	if err == nil || !strings.Contains(err.Error(), "private key") {
+		t.Errorf("err = %v, want error containing %q", err, "private key")
+	}
 
 	malformedPriv = pair.PrivateKey
-	// Increment some bit in the middle of the payload.
 	for i := 500; i < 600; i++ {
 		malformedPriv[i] = byte(0)
 	}
 
 	pubCert, pk, err = ReadKeyPair(pair.PublicCertificate, malformedPriv)
-	assert.Nil(pubCert)
-	assert.Nil(pk)
-	assert.NotNil(err)
+	if pubCert != nil {
+		t.Errorf("pubCert = %v, want nil", pubCert)
+	}
+	if pk != nil {
+		t.Errorf("pk = %v, want nil", pk)
+	}
+	if err == nil {
+		t.Error("err = nil, want non-nil")
+	}
 
 	malformedPriv = []byte(strings.ReplaceAll(string(pair.PrivateKey), rsaPrivateKeyPEMType, "IDK"))
 
 	pubCert, pk, err = ReadKeyPair(pair.PublicCertificate, malformedPriv)
-	assert.Nil(pubCert)
-	assert.Nil(pk)
-	assert.NotEmpty(err.Error())
+	if pubCert != nil {
+		t.Errorf("pubCert = %v, want nil", pubCert)
+	}
+	if pk != nil {
+		t.Errorf("pk = %v, want nil", pk)
+	}
+	if err == nil || err.Error() == "" {
+		t.Error("err is nil or empty, want non-empty error")
+	}
 }
 
 func TestReadKeyPair_BadPrivateKey(t *testing.T) {
@@ -298,17 +370,27 @@ func TestReadKeyPair_BadPrivateKey(t *testing.T) {
 		t.Skip("certificate generation takes a long time")
 	}
 
-	assert := assert.New(t)
-
 	pair, err := createCertificateAndPrivateKeyPEM(&Args{})
-	assert.Nil(err)
-	assert.NotNil(pair.PrivateKey)
-	assert.NotNil(pair.PublicCertificate)
+	if err != nil {
+		t.Fatalf("createCertificateAndPrivateKeyPEM() err = %v", err)
+	}
+	if pair.PrivateKey == nil {
+		t.Fatal("pair.PrivateKey is nil")
+	}
+	if pair.PublicCertificate == nil {
+		t.Fatal("pair.PublicCertificate is nil")
+	}
 
 	pubCert, pk, err := ReadKeyPair(pair.PublicCertificate, []byte("bad"))
-	assert.Nil(pubCert)
-	assert.Nil(pk)
-	assert.Contains(err.Error(), "private key has a PEM remainder")
+	if pubCert != nil {
+		t.Errorf("pubCert = %v, want nil", pubCert)
+	}
+	if pk != nil {
+		t.Errorf("pk = %v, want nil", pk)
+	}
+	if err == nil || !strings.Contains(err.Error(), "private key contains no PEM data") {
+		t.Errorf("err = %v, want error containing %q", err, "private key contains no PEM data")
+	}
 }
 
 func TestArgsToPkixName(t *testing.T) {
@@ -378,7 +460,6 @@ func TestCreateCACertificateWithECDSA(t *testing.T) {
 		tc := tc
 		t.Run(fmt.Sprintf("%v", tc.keyType), func(t *testing.T) {
 			t.Parallel()
-			assert := assert.New(t)
 
 			rootPair, err := createCertificateAndPrivateKeyPEM(&Args{
 				Validity:  time.Hour * 1,
@@ -386,7 +467,9 @@ func TestCreateCACertificateWithECDSA(t *testing.T) {
 				KeyType:   &tc.keyType,
 				CA:        true,
 			})
-			assert.Nil(err)
+			if err != nil {
+				t.Fatalf("createCertificateAndPrivateKeyPEM(root) err = %v", err)
+			}
 
 			derivedPair, err := createCertificateAndPrivateKeyPEM(&Args{
 				Validity:      time.Hour * 1,
@@ -395,35 +478,54 @@ func TestCreateCACertificateWithECDSA(t *testing.T) {
 				CA:            false,
 				ParentKeyPair: rootPair,
 			})
-			assert.Nil(err)
+			if err != nil {
+				t.Fatalf("createCertificateAndPrivateKeyPEM(derived) err = %v", err)
+			}
 
-			// Verify that we can load the public/private key pair.
 			rootPub, _, err := ReadKeyPair(rootPair.PublicCertificate, rootPair.PrivateKey)
-			assert.Nil(err)
-			assert.NotNil(rootPub)
+			if err != nil {
+				t.Fatalf("ReadKeyPair(root) err = %v", err)
+			}
+			if rootPub == nil {
+				t.Fatal("rootPub is nil")
+			}
 
-			// Verify that we can load the public/private key pair.
 			pub, pk, err := ReadKeyPair(derivedPair.PublicCertificate, derivedPair.PrivateKey)
-			assert.Nil(err)
-			assert.NotNil(pub)
-			assert.NotNil(pk)
+			if err != nil {
+				t.Fatalf("ReadKeyPair(derived) err = %v", err)
+			}
+			if pub == nil {
+				t.Fatal("pub is nil")
+			}
+			if pk == nil {
+				t.Fatal("pk is nil")
+			}
 			pkEcdsa, ok := pk.(*ecdsa.PrivateKey)
-			assert.True(ok)
+			if !ok {
+				t.Fatalf("pk is %T, want *ecdsa.PrivateKey", pk)
+			}
 			pubEcdsa, ok := pub.PublicKey.(*ecdsa.PublicKey)
-			assert.True(ok)
+			if !ok {
+				t.Fatalf("pub.PublicKey is %T, want *ecdsa.PublicKey", pub.PublicKey)
+			}
 
 			hash := sha256.Sum256([]byte(secretMessage))
 			r, s, err := ecdsa.Sign(rand.Reader, pkEcdsa, hash[:])
-			assert.Nil(err)
-			verified := ecdsa.Verify(pubEcdsa, hash[:], r, s)
-			assert.True(verified)
+			if err != nil {
+				t.Fatalf("ecdsa.Sign() err = %v", err)
+			}
+			if verified := ecdsa.Verify(pubEcdsa, hash[:], r, s); !verified {
+				t.Error("ecdsa.Verify() = false, want true")
+			}
 
-			// Validate certificate rootness.
 			pool := x509.NewCertPool()
-			ok = pool.AppendCertsFromPEM(rootPair.PublicCertificate)
-			assert.True(ok)
+			if ok = pool.AppendCertsFromPEM(rootPair.PublicCertificate); !ok {
+				t.Error("AppendCertsFromPEM() = false, want true")
+			}
 
-			assert.Nil(pub.CheckSignatureFrom(rootPub))
+			if err := pub.CheckSignatureFrom(rootPub); err != nil {
+				t.Errorf("CheckSignatureFrom() err = %v", err)
+			}
 		})
 	}
 }
@@ -433,31 +535,42 @@ func TestGenerateKeyPair(t *testing.T) {
 		t.Skip("certificate generation takes a long time")
 	}
 
-	assert := assert.New(t)
-
 	rootPair, err := GenerateKeyPair(&Args{
 		Hostnames: testHostnames,
 	})
-	assert.Nil(err)
+	if err != nil {
+		t.Fatalf("GenerateKeyPair() err = %v", err)
+	}
 
-	// Verify that we can load the public/private key pair.
 	publicCert, privateKey, err := ReadKeyPair(rootPair.PublicCertificate, rootPair.PrivateKey)
-	assert.Nil(err)
-	assert.NotNil(publicCert)
-	assert.NotNil(privateKey)
+	if err != nil {
+		t.Fatalf("ReadKeyPair() err = %v", err)
+	}
+	if publicCert == nil {
+		t.Fatal("publicCert is nil")
+	}
+	if privateKey == nil {
+		t.Fatal("privateKey is nil")
+	}
 
-	// Verify that we can load the public/private key pair.
 	pkRSA, ok := privateKey.(*rsa.PrivateKey)
-	assert.True(ok)
+	if !ok {
+		t.Fatalf("privateKey is %T, want *rsa.PrivateKey", privateKey)
+	}
 	pubRSA, ok := publicCert.PublicKey.(*rsa.PublicKey)
-	assert.True(ok)
+	if !ok {
+		t.Fatalf("publicCert.PublicKey is %T, want *rsa.PublicKey", publicCert.PublicKey)
+	}
 
 	hash := sha256.Sum256([]byte(secretMessage))
 
 	sig, err := rsa.SignPKCS1v15(rand.Reader, pkRSA, crypto.SHA256, hash[:])
-	assert.Nil(err)
-	err = rsa.VerifyPKCS1v15(pubRSA, crypto.SHA256, hash[:], sig)
-	assert.Nil(err)
+	if err != nil {
+		t.Fatalf("SignPKCS1v15() err = %v", err)
+	}
+	if err = rsa.VerifyPKCS1v15(pubRSA, crypto.SHA256, hash[:], sig); err != nil {
+		t.Errorf("VerifyPKCS1v15() err = %v", err)
+	}
 }
 
 func TestFillDefaults(t *testing.T) {
@@ -489,8 +602,6 @@ func TestFillDefaults(t *testing.T) {
 }
 
 func TestCreateCertificateToBadPath(t *testing.T) {
-	assert := assert.New(t)
-
 	tmpDir := mustTemp(t)
 
 	publicCertPath := filepath.Join(tmpDir, "public.cert")
@@ -505,8 +616,12 @@ func TestCreateCertificateToBadPath(t *testing.T) {
 		"does-not-exist/private.key",
 	)
 
-	assert.Nil(kp)
-	assert.Contains(err.Error(), "does-not-exist/pub.cert")
+	if kp != nil {
+		t.Errorf("kp = %v, want nil", kp)
+	}
+	if err == nil || !strings.Contains(err.Error(), "does-not-exist/pub.cert") {
+		t.Errorf("err = %v, want error containing %q", err, "does-not-exist/pub.cert")
+	}
 
 	kp, err = GenerateAndWriteKeyPair(
 		&Args{
@@ -518,16 +633,18 @@ func TestCreateCertificateToBadPath(t *testing.T) {
 		"does-not-exist/private.key",
 	)
 
-	assert.Nil(kp)
-	assert.Contains(err.Error(), "does-not-exist/private.key")
+	if kp != nil {
+		t.Errorf("kp = %v, want nil", kp)
+	}
+	if err == nil || !strings.Contains(err.Error(), "does-not-exist/private.key") {
+		t.Errorf("err = %v, want error containing %q", err, "does-not-exist/private.key")
+	}
 }
 
 func TestCreateCertificate(t *testing.T) {
 	if testing.Short() {
 		t.Skip("certificate generation takes a long time")
 	}
-
-	assert := assert.New(t)
 
 	tmpDir := mustTemp(t)
 
@@ -544,36 +661,62 @@ func TestCreateCertificate(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	assert.NotNil(kp)
+	if kp == nil {
+		t.Fatal("kp is nil")
+	}
 
-	assert.FileExists(publicCertPath)
-	assert.FileExists(privateKeyPath)
+	if _, err := os.Stat(publicCertPath); err != nil {
+		t.Errorf("public cert file does not exist: %v", err)
+	}
+	if _, err := os.Stat(privateKeyPath); err != nil {
+		t.Errorf("private key file does not exist: %v", err)
+	}
 
 	publicCertFileData, err := os.ReadFile(filepath.Clean(publicCertPath))
-	assert.Nil(err)
+	if err != nil {
+		t.Fatalf("ReadFile(publicCert) err = %v", err)
+	}
 
 	privateKeyFileData, err := os.ReadFile(filepath.Clean(privateKeyPath))
-	assert.Nil(err)
+	if err != nil {
+		t.Fatalf("ReadFile(privateKey) err = %v", err)
+	}
 
-	// Verify that we can load the public/private key pair.
 	pub, pk, err := ReadKeyPair(publicCertFileData, privateKeyFileData)
-	assert.Nil(err)
-	assert.NotNil(pub)
-	assert.NotNil(pk)
+	if err != nil {
+		t.Fatalf("ReadKeyPair() err = %v", err)
+	}
+	if pub == nil {
+		t.Fatal("pub is nil")
+	}
+	if pk == nil {
+		t.Fatal("pk is nil")
+	}
 	pkRSA, ok := pk.(*rsa.PrivateKey)
-	assert.True(ok)
+	if !ok {
+		t.Fatalf("pk is %T, want *rsa.PrivateKey", pk)
+	}
 
-	// Verify that the public/private key pair can RSA encrypt/decrypt.
 	pubKey, ok := pub.PublicKey.(*rsa.PublicKey)
-	assert.True(ok, "pub.PublicKey is not of type, *rsa.PublicKey, %v", pub.PublicKey)
+	if !ok {
+		t.Fatalf("pub.PublicKey is %T, want *rsa.PublicKey", pub.PublicKey)
+	}
 
 	ciphertext, err := rsa.EncryptOAEP(sha256.New(), rand.Reader, pubKey, []byte(secretMessage), []byte{})
-	assert.Nil(err)
-	assert.NotEqual(string(ciphertext), secretMessage)
+	if err != nil {
+		t.Fatalf("EncryptOAEP() err = %v", err)
+	}
+	if string(ciphertext) == secretMessage {
+		t.Error("ciphertext equals plaintext")
+	}
 
 	cleartext, err := rsa.DecryptOAEP(sha256.New(), rand.Reader, pkRSA, ciphertext, []byte{})
-	assert.Nil(err)
-	assert.Equal(string(cleartext), string(secretMessage))
+	if err != nil {
+		t.Fatalf("DecryptOAEP() err = %v", err)
+	}
+	if string(cleartext) != secretMessage {
+		t.Errorf("cleartext = %q, want %q", string(cleartext), secretMessage)
+	}
 }
 
 func TestBadValues(t *testing.T) {
@@ -677,116 +820,181 @@ func TestBadParseName(t *testing.T) {
 }
 
 func TestPemBlockForKey_errors(t *testing.T) {
-	assert := assert.New(t)
-
 	block, err := pemBlockForKey("ok")
-	assert.Nil(block)
-	assert.Contains(err.Error(), "not a valid private key")
+	if block != nil {
+		t.Errorf("block = %v, want nil", block)
+	}
+	if err == nil || !strings.Contains(err.Error(), "not a valid private key") {
+		t.Errorf("err = %v, want error containing %q", err, "not a valid private key")
+	}
 
 	block, err = pemBlockForKey(&ecdsa.PrivateKey{})
-	assert.Nil(block)
-	assert.Contains(err.Error(), "unknown elliptic curve")
+	if block != nil {
+		t.Errorf("block = %v, want nil", block)
+	}
+	if err == nil || !strings.Contains(err.Error(), "unknown elliptic curve") {
+		t.Errorf("err = %v, want error containing %q", err, "unknown elliptic curve")
+	}
 }
 
 func TestGenerateCodeSigningKeyPair_Windows10(t *testing.T) {
 	if testing.Short() {
 		t.Skip("certificate generation takes a long time")
 	}
-	assert := assert.New(t)
 
 	kp, err := GenerateKeyPair(&Args{
 		CodeSigning: true,
 		Target:      windows10Target,
 	})
-	assert.Nil(err)
-	assert.NotNil(kp)
-	assert.NotEmpty(kp.PFX)
-	assert.NotEmpty(kp.PublicCertificate)
-	assert.NotEmpty(kp.PrivateKey)
+	if err != nil {
+		t.Fatalf("GenerateKeyPair() err = %v", err)
+	}
+	if kp == nil {
+		t.Fatal("kp is nil")
+	}
+	if len(kp.PFX) == 0 {
+		t.Error("kp.PFX is empty")
+	}
+	if len(kp.PublicCertificate) == 0 {
+		t.Error("kp.PublicCertificate is empty")
+	}
+	if len(kp.PrivateKey) == 0 {
+		t.Error("kp.PrivateKey is empty")
+	}
 
 	pub, _, err := ReadKeyPair(kp.PublicCertificate, kp.PrivateKey)
-	assert.Nil(err)
-	assert.Equal(x509.KeyUsageDigitalSignature, pub.KeyUsage)
-	assert.Equal([]x509.ExtKeyUsage{x509.ExtKeyUsageCodeSigning}, pub.ExtKeyUsage)
-	assert.Empty(pub.DNSNames)
-	assert.Empty(pub.IPAddresses)
+	if err != nil {
+		t.Fatalf("ReadKeyPair() err = %v", err)
+	}
+	if pub.KeyUsage != x509.KeyUsageDigitalSignature {
+		t.Errorf("KeyUsage = %v, want %v", pub.KeyUsage, x509.KeyUsageDigitalSignature)
+	}
+	if !reflect.DeepEqual(pub.ExtKeyUsage, []x509.ExtKeyUsage{x509.ExtKeyUsageCodeSigning}) {
+		t.Errorf("ExtKeyUsage = %v, want [CodeSigning]", pub.ExtKeyUsage)
+	}
+	if len(pub.DNSNames) != 0 {
+		t.Errorf("DNSNames = %v, want empty", pub.DNSNames)
+	}
+	if len(pub.IPAddresses) != 0 {
+		t.Errorf("IPAddresses = %v, want empty", pub.IPAddresses)
+	}
 }
 
 func TestGenerateCodeSigningKeyPair_Windows7(t *testing.T) {
 	if testing.Short() {
 		t.Skip("certificate generation takes a long time")
 	}
-	assert := assert.New(t)
 
 	kp, err := GenerateKeyPair(&Args{
 		CodeSigning: true,
 		Target:      windows7Target,
 	})
-	assert.Nil(err)
-	assert.NotNil(kp)
-	assert.NotEmpty(kp.PFX)
+	if err != nil {
+		t.Fatalf("GenerateKeyPair() err = %v", err)
+	}
+	if kp == nil {
+		t.Fatal("kp is nil")
+	}
+	if len(kp.PFX) == 0 {
+		t.Error("kp.PFX is empty")
+	}
 
 	pub, _, err := ReadKeyPair(kp.PublicCertificate, kp.PrivateKey)
-	assert.Nil(err)
-	assert.Equal(x509.KeyUsageDigitalSignature, pub.KeyUsage)
-	assert.Equal([]x509.ExtKeyUsage{x509.ExtKeyUsageCodeSigning}, pub.ExtKeyUsage)
-	assert.Empty(pub.DNSNames)
-	assert.Empty(pub.IPAddresses)
+	if err != nil {
+		t.Fatalf("ReadKeyPair() err = %v", err)
+	}
+	if pub.KeyUsage != x509.KeyUsageDigitalSignature {
+		t.Errorf("KeyUsage = %v, want %v", pub.KeyUsage, x509.KeyUsageDigitalSignature)
+	}
+	if !reflect.DeepEqual(pub.ExtKeyUsage, []x509.ExtKeyUsage{x509.ExtKeyUsageCodeSigning}) {
+		t.Errorf("ExtKeyUsage = %v, want [CodeSigning]", pub.ExtKeyUsage)
+	}
+	if len(pub.DNSNames) != 0 {
+		t.Errorf("DNSNames = %v, want empty", pub.DNSNames)
+	}
+	if len(pub.IPAddresses) != 0 {
+		t.Errorf("IPAddresses = %v, want empty", pub.IPAddresses)
+	}
 }
 
 func TestGenerateCodeSigningKeyPair_Linux(t *testing.T) {
 	if testing.Short() {
 		t.Skip("certificate generation takes a long time")
 	}
-	assert := assert.New(t)
 
 	kp, err := GenerateKeyPair(&Args{
 		CodeSigning: true,
 		Target:      linuxTarget,
 	})
-	assert.Nil(err)
-	assert.NotNil(kp)
-	assert.Empty(kp.PFX)
-	assert.NotEmpty(kp.PublicCertificate)
-	assert.NotEmpty(kp.PrivateKey)
+	if err != nil {
+		t.Fatalf("GenerateKeyPair() err = %v", err)
+	}
+	if kp == nil {
+		t.Fatal("kp is nil")
+	}
+	if len(kp.PFX) != 0 {
+		t.Errorf("kp.PFX = %d bytes, want empty for linux target", len(kp.PFX))
+	}
+	if len(kp.PublicCertificate) == 0 {
+		t.Error("kp.PublicCertificate is empty")
+	}
+	if len(kp.PrivateKey) == 0 {
+		t.Error("kp.PrivateKey is empty")
+	}
 
 	pub, _, err := ReadKeyPair(kp.PublicCertificate, kp.PrivateKey)
-	assert.Nil(err)
-	assert.Equal(x509.KeyUsageDigitalSignature, pub.KeyUsage)
-	assert.Equal([]x509.ExtKeyUsage{x509.ExtKeyUsageCodeSigning}, pub.ExtKeyUsage)
+	if err != nil {
+		t.Fatalf("ReadKeyPair() err = %v", err)
+	}
+	if pub.KeyUsage != x509.KeyUsageDigitalSignature {
+		t.Errorf("KeyUsage = %v, want %v", pub.KeyUsage, x509.KeyUsageDigitalSignature)
+	}
+	if !reflect.DeepEqual(pub.ExtKeyUsage, []x509.ExtKeyUsage{x509.ExtKeyUsageCodeSigning}) {
+		t.Errorf("ExtKeyUsage = %v, want [CodeSigning]", pub.ExtKeyUsage)
+	}
 }
 
 func TestGenerateCodeSigningKeyPair_DefaultTarget(t *testing.T) {
 	if testing.Short() {
 		t.Skip("certificate generation takes a long time")
 	}
-	assert := assert.New(t)
 
 	kp, err := GenerateKeyPair(&Args{CodeSigning: true})
-	assert.Nil(err)
-	assert.NotNil(kp)
-	assert.NotEmpty(kp.PFX, "windows10 is the default target and should produce PFX output")
+	if err != nil {
+		t.Fatalf("GenerateKeyPair() err = %v", err)
+	}
+	if kp == nil {
+		t.Fatal("kp is nil")
+	}
+	if len(kp.PFX) == 0 {
+		t.Error("kp.PFX is empty; windows10 is the default target and should produce PFX output")
+	}
 }
 
 func TestGenerateCodeSigningKeyPair_WithPassword(t *testing.T) {
 	if testing.Short() {
 		t.Skip("certificate generation takes a long time")
 	}
-	assert := assert.New(t)
 
 	kp, err := GenerateKeyPair(&Args{
 		CodeSigning: true,
 		Target:      windows10Target,
 		PFXPassword: "hunter2",
 	})
-	assert.Nil(err)
-	assert.NotEmpty(kp.PFX)
+	if err != nil {
+		t.Fatalf("GenerateKeyPair() err = %v", err)
+	}
+	if len(kp.PFX) == 0 {
+		t.Fatal("kp.PFX is empty")
+	}
 
-	_, _, err = pkcs12.Decode(kp.PFX, "hunter2")
-	assert.Nil(err)
+	if _, _, err = pkcs12.Decode(kp.PFX, "hunter2"); err != nil {
+		t.Errorf("pkcs12.Decode(correct password) err = %v", err)
+	}
 
-	_, _, err = pkcs12.Decode(kp.PFX, "wrongpassword")
-	assert.NotNil(err, "wrong password should fail")
+	if _, _, err = pkcs12.Decode(kp.PFX, "wrongpassword"); err == nil {
+		t.Error("pkcs12.Decode(wrong password) err = nil, want error")
+	}
 }
 
 func TestGenerateCodeSigningKeyPair_InvalidTarget(t *testing.T) {
@@ -806,7 +1014,6 @@ func TestWritePFX(t *testing.T) {
 	if testing.Short() {
 		t.Skip("certificate generation takes a long time")
 	}
-	assert := assert.New(t)
 
 	tmpDir := mustTemp(t)
 	pfxPath := filepath.Join(tmpDir, "codesign.pfx")
@@ -815,24 +1022,33 @@ func TestWritePFX(t *testing.T) {
 		CodeSigning: true,
 		Target:      windows10Target,
 	})
-	assert.Nil(err)
+	if err != nil {
+		t.Fatalf("GenerateKeyPair() err = %v", err)
+	}
 
-	err = WritePFX(kp, pfxPath)
-	assert.Nil(err)
-	assert.FileExists(pfxPath)
+	if err = WritePFX(kp, pfxPath); err != nil {
+		t.Fatalf("WritePFX() err = %v", err)
+	}
+	if _, err := os.Stat(pfxPath); err != nil {
+		t.Errorf("pfx file does not exist: %v", err)
+	}
 
-	// Verify mode 0600
 	info, err := os.Stat(pfxPath)
-	assert.Nil(err)
+	if err != nil {
+		t.Fatalf("Stat() err = %v", err)
+	}
 	if runtime.GOOS != "windows" {
-		assert.Equal(os.FileMode(0o600), info.Mode().Perm())
+		if perm := info.Mode().Perm(); perm != 0o600 {
+			t.Errorf("file permissions = %o, want 0600", perm)
+		}
 	}
 }
 
 func TestWritePFX_NoPFXData(t *testing.T) {
-	assert := assert.New(t)
 	err := WritePFX(&KeyPair{}, "out.pfx")
-	assert.Contains(err.Error(), "does not contain PKCS#12 data")
+	if err == nil || !strings.Contains(err.Error(), "does not contain PKCS#12 data") {
+		t.Errorf("err = %v, want error containing %q", err, "does not contain PKCS#12 data")
+	}
 }
 
 func mustTemp(tb testing.TB) string {

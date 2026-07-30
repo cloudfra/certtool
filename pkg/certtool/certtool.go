@@ -248,7 +248,10 @@ func createCertificateAndPrivateKeyPEM(args *Args) (*KeyPair, error) {
 		keyUsage = x509.KeyUsageDigitalSignature
 		extKeyUsage = []x509.ExtKeyUsage{x509.ExtKeyUsageCodeSigning}
 	} else {
-		keyUsage = x509.KeyUsageKeyEncipherment | x509.KeyUsageDigitalSignature
+		keyUsage = x509.KeyUsageDigitalSignature
+		if strings.ToUpper(keyType.Algorithm) == rsaAlgorithm {
+			keyUsage |= x509.KeyUsageKeyEncipherment
+		}
 		extKeyUsage = []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth, x509.ExtKeyUsageClientAuth}
 	}
 
@@ -270,15 +273,14 @@ func createCertificateAndPrivateKeyPEM(args *Args) (*KeyPair, error) {
 	}
 
 	if !args.CodeSigning {
-		for _, hostname := range args.GetHostnames() {
+		allHostnames := expandHostnames(append(args.Hostnames, "localhost", "127.0.0.1"), args.Ports)
+		for _, hostname := range allHostnames {
 			if ipAddress := net.ParseIP(hostname); ipAddress != nil {
 				certTemplate.IPAddresses = append(certTemplate.IPAddresses, ipAddress)
 			} else {
 				certTemplate.DNSNames = append(certTemplate.DNSNames, hostname)
 			}
 		}
-		certTemplate.DNSNames = append(certTemplate.DNSNames, "localhost")
-		certTemplate.IPAddresses = append(certTemplate.IPAddresses, net.ParseIP("127.0.0.1"))
 	}
 
 	privateKey, err := generatePrivateKeyFromType(*keyType)
@@ -395,6 +397,9 @@ func generatePrivateKeyFromType(keyType KeyType) (any, error) {
 func ReadKeyPair(publicCertFileData []byte, privateKeyFileData []byte) (*x509.Certificate, any, error) {
 	// Verify that we can load the public/private key pair.
 	publicCertPemBlock, remainder := pem.Decode(publicCertFileData)
+	if publicCertPemBlock == nil {
+		return nil, nil, fmt.Errorf("public certificate contains no PEM data")
+	}
 	if len(remainder) > 0 {
 		return nil, nil, fmt.Errorf("public certificate has a PEM remainder of %d bytes", len(remainder))
 	}
@@ -405,6 +410,9 @@ func ReadKeyPair(publicCertFileData []byte, privateKeyFileData []byte) (*x509.Ce
 	}
 
 	privateKeyPemBlock, remainder := pem.Decode(privateKeyFileData)
+	if privateKeyPemBlock == nil {
+		return nil, nil, fmt.Errorf("private key contains no PEM data")
+	}
 	if len(remainder) > 0 {
 		return nil, nil, fmt.Errorf("private key has a PEM remainder of %d bytes", len(remainder))
 	}
