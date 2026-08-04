@@ -99,10 +99,10 @@ func TestBuildFilename(t *testing.T) {
 
 func TestParseHierarchy_Valid(t *testing.T) {
 	yaml := []byte(`
-- cn: "Root CA"
-  ca: true
+- commonName: "Root CA"
+  certificateAuthority: true
   children:
-    - cn: "leaf.example.com"
+    - commonName: "leaf.example.com"
       hostnames:
         - leaf.example.com
 `)
@@ -132,23 +132,23 @@ func TestParseHierarchy_Errors(t *testing.T) {
 	}{
 		{
 			name:    "multiple roots",
-			yaml:    "- cn: A\n  ca: true\n- cn: B\n  ca: true\n",
+			yaml:    "- commonName: A\n  certificateAuthority: true\n- commonName: B\n  certificateAuthority: true\n",
 			wantErr: "exactly one root",
 		},
 		{
 			name:    "root not CA",
-			yaml:    "- cn: Root\n  ca: false\n",
-			wantErr: "must have ca: true",
+			yaml:    "- commonName: Root\n  certificateAuthority: false\n",
+			wantErr: "must have certificateAuthority: true",
 		},
 		{
 			name:    "children without CA",
-			yaml:    "- cn: Root\n  ca: true\n  children:\n    - cn: Mid\n      children:\n        - cn: Leaf\n",
-			wantErr: "has children but ca is not true",
+			yaml:    "- commonName: Root\n  certificateAuthority: true\n  children:\n    - commonName: Mid\n      children:\n        - commonName: Leaf\n",
+			wantErr: "has children but certificateAuthority is not true",
 		},
 		{
 			name:    "empty CN",
-			yaml:    "- cn: Root\n  ca: true\n  children:\n    - ca: false\n",
-			wantErr: "must have a cn field",
+			yaml:    "- commonName: Root\n  certificateAuthority: true\n  children:\n    - certificateAuthority: false\n",
+			wantErr: "must have a commonName field",
 		},
 		{
 			name:    "invalid YAML",

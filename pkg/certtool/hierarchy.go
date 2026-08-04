@@ -27,9 +27,9 @@ import (
 
 // HierarchyNode defines a single certificate in a hierarchy tree.
 type HierarchyNode struct {
-	CN           string          `yaml:"cn"`
-	CA           bool            `yaml:"ca"`
-	KeyType      string          `yaml:"key-type"`
+	CN           string          `yaml:"commonName"`
+	CA           bool            `yaml:"certificateAuthority"`
+	KeyType      string          `yaml:"keyType"`
 	Validity     string          `yaml:"validity"`
 	Organization string          `yaml:"organization"`
 	Country      string          `yaml:"country"`
@@ -88,7 +88,7 @@ func ParseHierarchy(data []byte) ([]HierarchyNode, error) {
 		return nil, fmt.Errorf("hierarchy must have exactly one root node, got %d", len(nodes))
 	}
 	if !nodes[0].CA {
-		return nil, fmt.Errorf("root node %q must have ca: true", nodes[0].CN)
+		return nil, fmt.Errorf("root node %q must have certificateAuthority: true", nodes[0].CN)
 	}
 
 	if err := validateNode(&nodes[0]); err != nil {
@@ -100,10 +100,10 @@ func ParseHierarchy(data []byte) ([]HierarchyNode, error) {
 
 func validateNode(node *HierarchyNode) error {
 	if node.CN == "" {
-		return fmt.Errorf("every hierarchy node must have a cn field")
+		return fmt.Errorf("every hierarchy node must have a commonName field")
 	}
 	if len(node.Children) > 0 && !node.CA {
-		return fmt.Errorf("node %q has children but ca is not true", node.CN)
+		return fmt.Errorf("node %q has children but certificateAuthority is not true", node.CN)
 	}
 	for i := range node.Children {
 		if err := validateNode(&node.Children[i]); err != nil {

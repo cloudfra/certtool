@@ -113,17 +113,12 @@ func certtoolMain() int {
 }
 
 func validateModeFlags() error {
-	modes := 0
-	if *chain > 0 {
-		modes++
-	}
-	if *hierarchy != "" {
-		modes++
-	}
-	if modes > 1 {
+	hasChain := *chain > 0
+	hasHierarchy := *hierarchy != ""
+	if hasChain && hasHierarchy {
 		return fmt.Errorf("--chain and --hierarchy are mutually exclusive")
 	}
-	if modes > 0 && *parentPublicCertificate != "" {
+	if (hasChain || hasHierarchy) && *parentPublicCertificate != "" {
 		return fmt.Errorf("--parent-public-certificate cannot be used with --chain or --hierarchy")
 	}
 	return nil

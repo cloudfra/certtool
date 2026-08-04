@@ -1,17 +1,17 @@
-- cn: "Acme Root CA"
-  ca: true
-  key-type: "RSA-4096"
+- commonName: "Acme Root CA"
+  certificateAuthority: true
+  keyType: "RSA-4096"
   validity: "87600h"
   organization: "Acme Corp"
   country: "US"
   children:
-    - cn: "Acme Intermediate CA"
-      ca: true
-      key-type: "RSA-4096"
+    - commonName: "Acme Intermediate CA"
+      certificateAuthority: true
+      keyType: "RSA-4096"
       validity: "43800h"
       children:
-        - cn: "api.acme.com"
-          key-type: "ECDSA-256"
+        - commonName: "api.acme.com"
+          keyType: "ECDSA-256"
           validity: "8760h"
           hostnames:
             - api.acme.com
