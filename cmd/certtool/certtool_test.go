@@ -75,12 +75,17 @@ func TestCerttoolMainInvalidKeyType(t *testing.T) {
 }
 
 func TestCerttoolMainWriteFailure(t *testing.T) {
+	dir := t.TempDir()
+	blocker := filepath.Join(dir, "blocker")
+	if err := os.WriteFile(blocker, []byte("x"), 0o600); err != nil {
+		t.Fatal(err)
+	}
 	origPublicCertificate := *publicCertificate
-	*publicCertificate = filepath.Join(t.TempDir(), "does-not-exist", "app.cert")
+	*publicCertificate = filepath.Join(blocker, "app.cert")
 	t.Cleanup(func() { *publicCertificate = origPublicCertificate })
 
 	if got := certtoolMain(); got != 1 {
-		t.Errorf("certtoolMain() = %d, want 1 when the output directory does not exist", got)
+		t.Errorf("certtoolMain() = %d, want 1 when the output directory cannot be created", got)
 	}
 }
 

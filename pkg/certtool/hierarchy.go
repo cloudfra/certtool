@@ -27,16 +27,19 @@ import (
 
 // HierarchyNode defines a single certificate in a hierarchy tree.
 type HierarchyNode struct {
-	CN           string          `yaml:"commonName"`
-	CA           bool            `yaml:"certificateAuthority"`
-	KeyType      string          `yaml:"keyType"`
-	Validity     string          `yaml:"validity"`
-	Organization string          `yaml:"organization"`
-	Country      string          `yaml:"country"`
-	Hostnames    []string        `yaml:"hostnames"`
-	Ports        []int           `yaml:"ports"`
-	Filename     string          `yaml:"filename"`
-	Children     []HierarchyNode `yaml:"children"`
+	CN                 string          `yaml:"commonName"`
+	CA                 bool            `yaml:"certificateAuthority,omitempty"`
+	KeyType            string          `yaml:"keyType,omitempty"`
+	Validity           string          `yaml:"validity,omitempty"`
+	Organization       string          `yaml:"organization,omitempty"`
+	OrganizationalUnit string          `yaml:"organizationalUnit,omitempty"`
+	Country            string          `yaml:"country,omitempty"`
+	Locality           string          `yaml:"locality,omitempty"`
+	Province           string          `yaml:"province,omitempty"`
+	Hostnames          []string        `yaml:"hostnames,omitempty"`
+	Ports              []int           `yaml:"ports,omitempty"`
+	Filename           string          `yaml:"filename,omitempty"`
+	Children           []HierarchyNode `yaml:"children,omitempty"`
 }
 
 // HierarchyOutput is the result of generating a single certificate in a hierarchy.
@@ -113,8 +116,53 @@ func validateNode(node *HierarchyNode) error {
 	return nil
 }
 
+// ApplyDefaults fills empty fields on all nodes from the provided defaults.
+func ApplyDefaults(nodes []HierarchyNode, defaults *Args) []HierarchyNode {
+	if defaults == nil {
+		return nodes
+	}
+	result := make([]HierarchyNode, len(nodes))
+	copy(result, nodes)
+	for i := range result {
+		applyDefaultsToNode(&result[i], defaults)
+	}
+	return result
+}
+
+func applyDefaultsToNode(node *HierarchyNode, defaults *Args) {
+	if node.Organization == "" {
+		node.Organization = defaults.Organization
+	}
+	if node.Country == "" {
+		node.Country = defaults.Country
+	}
+	if node.OrganizationalUnit == "" {
+		node.OrganizationalUnit = defaults.OrganizationalUnit
+	}
+	if node.Locality == "" {
+		node.Locality = defaults.Locality
+	}
+	if node.Province == "" {
+		node.Province = defaults.Province
+	}
+	if node.Validity == "" && defaults.Validity > 0 {
+		node.Validity = defaults.Validity.String()
+	}
+	if node.KeyType == "" && defaults.KeyType != nil {
+		node.KeyType = fmt.Sprintf("%s-%d", defaults.KeyType.Algorithm, defaults.KeyType.KeyLength)
+	}
+	for i := range node.Children {
+		applyDefaultsToNode(&node.Children[i], defaults)
+	}
+}
+
+// MarshalSpec serializes hierarchy nodes to YAML.
+func MarshalSpec(nodes []HierarchyNode) ([]byte, error) {
+	return yaml.Marshal(nodes)
+}
+
 // GenerateHierarchy generates certificates for all nodes in the hierarchy tree.
-func GenerateHierarchy(nodes []HierarchyNode, defaults *Args, outputDir string) ([]HierarchyOutput, error) {
+func GenerateHierarchy(nodes []HierarchyNode, outputDir string, parentKP *KeyPair) ([]HierarchyOutput, error) {
 	if err := os.MkdirAll(outputDir, 0o750); err != nil {
 		return nil, fmt.Errorf("cannot create output directory (%s): %w", outputDir, err)
 	}
@@ -123,7 +171,7 @@ func GenerateHierarchy(nodes []HierarchyNode, defaults *Args, outputDir string) 
 	var results []HierarchyOutput
 
 	for i := range nodes {
-		out, err := generateNode(&nodes[i], nil, defaults, outputDir, nil, filenames)
+		out, err := generateNode(&nodes[i], parentKP, outputDir, nil, filenames)
 		if err != nil {
 			return nil, err
 		}
@@ -132,8 +180,8 @@ func GenerateHierarchy(nodes []HierarchyNode, defaults *Args, outputDir string) 
 	return results, nil
 }
 
-func generateNode(node *HierarchyNode, parentKP *KeyPair, defaults *Args, outputDir string, ancestorCNs []string, filenames map[string]string) ([]HierarchyOutput, error) {
-	args := nodeToArgs(node, defaults)
+func generateNode(node *HierarchyNode, parentKP *KeyPair, outputDir string, ancestorCNs []string, filenames map[string]string) ([]HierarchyOutput, error) {
+	args := nodeToArgs(node)
 	args.ParentKeyPair = parentKP
 
 	kp, err := GenerateKeyPair(args)
@@ -163,7 +211,7 @@ func generateNode(node *HierarchyNode, parentKP *KeyPair, defaults *Args, output
 
 	childAncestors := append(append([]string{}, ancestorCNs...), node.CN)
 	for i := range node.Children {
-		childResults, err := generateNode(&node.Children[i], kp, defaults, outputDir, childAncestors, filenames)
+		childResults, err := generateNode(&node.Children[i], kp, outputDir, childAncestors, filenames)
 		if err != nil {
 			return nil, err
 		}
@@ -173,38 +221,23 @@ func generateNode(node *HierarchyNode, parentKP *KeyPair, defaults *Args, output
 	return results, nil
 }
 
-func nodeToArgs(node *HierarchyNode, defaults *Args) *Args {
+func nodeToArgs(node *HierarchyNode) *Args {
 	args := &Args{
-		CA:         node.CA,
-		CommonName: node.CN,
-		Hostnames:  node.Hostnames,
-		Ports:      node.Ports,
-	}
-
-	if node.Organization != "" {
-		args.Organization = node.Organization
-	} else if defaults != nil {
-		args.Organization = defaults.Organization
-	}
-
-	if node.Country != "" {
-		args.Country = node.Country
-	} else if defaults != nil {
-		args.Country = defaults.Country
-	}
-
-	if defaults != nil {
-		args.OrganizationalUnit = defaults.OrganizationalUnit
-		args.Locality = defaults.Locality
-		args.Province = defaults.Province
+		CA:                 node.CA,
+		CommonName:         node.CN,
+		Organization:       node.Organization,
+		OrganizationalUnit: node.OrganizationalUnit,
+		Country:            node.Country,
+		Locality:           node.Locality,
+		Province:           node.Province,
+		Hostnames:          node.Hostnames,
+		Ports:              node.Ports,
 	}
 
 	if node.Validity != "" {
 		if d, err := time.ParseDuration(node.Validity); err == nil {
 			args.Validity = d
 		}
-	} else if defaults != nil && defaults.Validity > 0 {
-		args.Validity = defaults.Validity
 	}
 
 	if node.KeyType != "" {
@@ -217,8 +250,6 @@ func nodeToArgs(node *HierarchyNode, defaults *Args) *Args {
 		} else if len(parts) == 1 {
 			args.KeyType = &KeyType{Algorithm: parts[0]}
 		}
-	} else if defaults != nil && defaults.KeyType != nil {
-		args.KeyType = defaults.KeyType
 	}
 
 	return args

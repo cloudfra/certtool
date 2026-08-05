@@ -33,6 +33,7 @@ const (
 	testMyappExampleCom = "myapp.example.com"
 	testValidity8760h   = "8760h"
 	testECDSA256        = "ECDSA-256"
+	testBerlin          = "Berlin"
 )
 
 func TestSlugify(t *testing.T) {
@@ -265,8 +266,8 @@ func TestGenerateHierarchy_SimpleChain(t *testing.T) {
 		},
 	}
 
-	defaults := &Args{KeyType: defaultKeyType()}
-	results, err := GenerateHierarchy(nodes, defaults, outputDir)
+	nodes = ApplyDefaults(nodes, &Args{KeyType: defaultKeyType()})
+	results, err := GenerateHierarchy(nodes, outputDir, nil)
 	if err != nil {
 		t.Fatalf("GenerateHierarchy() err = %v", err)
 	}
@@ -319,8 +320,8 @@ func TestGenerateHierarchy_ThreeTier(t *testing.T) {
 		},
 	}
 
-	defaults := &Args{KeyType: defaultKeyType()}
-	results, err := GenerateHierarchy(nodes, defaults, outputDir)
+	nodes = ApplyDefaults(nodes, &Args{KeyType: defaultKeyType()})
+	results, err := GenerateHierarchy(nodes, outputDir, nil)
 	if err != nil {
 		t.Fatalf("GenerateHierarchy() err = %v", err)
 	}
@@ -379,8 +380,7 @@ func TestGenerateHierarchy_MultiLeaf(t *testing.T) {
 		},
 	}
 
-	defaults := &Args{}
-	results, err := GenerateHierarchy(nodes, defaults, outputDir)
+	results, err := GenerateHierarchy(nodes, outputDir, nil)
 	if err != nil {
 		t.Fatalf("GenerateHierarchy() err = %v", err)
 	}
@@ -427,8 +427,8 @@ func TestGenerateHierarchy_DefaultFilenames(t *testing.T) {
 		},
 	}
 
-	defaults := &Args{KeyType: defaultKeyType()}
-	results, err := GenerateHierarchy(nodes, defaults, outputDir)
+	nodes = ApplyDefaults(nodes, &Args{KeyType: defaultKeyType()})
+	results, err := GenerateHierarchy(nodes, outputDir, nil)
 	if err != nil {
 		t.Fatalf("GenerateHierarchy() err = %v", err)
 	}
@@ -461,7 +461,8 @@ func TestGenerateHierarchy_ChainMode(t *testing.T) {
 		t.Fatalf("ChainToHierarchy() err = %v", err)
 	}
 
-	results, err := GenerateHierarchy(nodes, args, outputDir)
+	nodes = ApplyDefaults(nodes, args)
+	results, err := GenerateHierarchy(nodes, outputDir, nil)
 	if err != nil {
 		t.Fatalf("GenerateHierarchy() err = %v", err)
 	}
@@ -500,8 +501,8 @@ func TestGenerateHierarchy_FilenameCollision(t *testing.T) {
 		},
 	}
 
-	defaults := &Args{KeyType: defaultKeyType()}
-	_, err := GenerateHierarchy(nodes, defaults, outputDir)
+	nodes = ApplyDefaults(nodes, &Args{KeyType: defaultKeyType()})
+	_, err := GenerateHierarchy(nodes, outputDir, nil)
 	if err == nil {
 		t.Fatal("expected filename collision error")
 	}
@@ -521,8 +522,7 @@ func TestParseHierarchyFile_ExampleSimpleChain(t *testing.T) {
 	}
 
 	outputDir := t.TempDir()
-	defaults := &Args{KeyType: defaultKeyType()}
-	results, err := GenerateHierarchy(nodes, defaults, outputDir)
+	results, err := GenerateHierarchy(nodes, outputDir, nil)
 	if err != nil {
 		t.Fatalf("GenerateHierarchy() err = %v", err)
 	}
@@ -545,8 +545,7 @@ func TestParseHierarchyFile_ExampleThreeTier(t *testing.T) {
 	}
 
 	outputDir := t.TempDir()
-	defaults := &Args{KeyType: defaultKeyType()}
-	results, err := GenerateHierarchy(nodes, defaults, outputDir)
+	results, err := GenerateHierarchy(nodes, outputDir, nil)
 	if err != nil {
 		t.Fatalf("GenerateHierarchy() err = %v", err)
 	}
@@ -580,8 +579,7 @@ func TestParseHierarchyFile_ExampleMultiLeaf(t *testing.T) {
 	}
 
 	outputDir := t.TempDir()
-	defaults := &Args{}
-	results, err := GenerateHierarchy(nodes, defaults, outputDir)
+	results, err := GenerateHierarchy(nodes, outputDir, nil)
 	if err != nil {
 		t.Fatalf("GenerateHierarchy() err = %v", err)
 	}
@@ -603,26 +601,33 @@ func TestParseHierarchyFile_ExampleMultiLeaf(t *testing.T) {
 	}
 }
 
-func TestNodeToArgs_Inheritance(t *testing.T) {
+func TestApplyDefaults(t *testing.T) {
 	defaults := &Args{
 		Organization:       "DefaultOrg",
 		Country:            "DE",
 		OrganizationalUnit: "DefaultOU",
-		Locality:           "Berlin",
-		Province:           "Berlin",
+		Locality:           testBerlin,
+		Province:           testBerlin,
 		Validity:           24 * time.Hour,
 		KeyType:            &KeyType{Algorithm: rsaAlgorithm, KeyLength: 4096},
 	}
 
 	t.Run("inherits defaults", func(t *testing.T) {
-		node := &HierarchyNode{CN: "test"}
-		args := nodeToArgs(node, defaults)
-		if args.Organization != "DefaultOrg" {
-			t.Errorf("Organization = %q, want %q", args.Organization, "DefaultOrg")
+		nodes := ApplyDefaults([]HierarchyNode{{CN: "test"}}, defaults)
+		node := nodes[0]
+		if node.Organization != "DefaultOrg" {
+			t.Errorf("Organization = %q, want %q", node.Organization, "DefaultOrg")
 		}
-		if args.Country != "DE" {
-			t.Errorf("Country = %q, want %q", args.Country, "DE")
+		if node.Country != "DE" {
+			t.Errorf("Country = %q, want %q", node.Country, "DE")
 		}
+		if node.OrganizationalUnit != "DefaultOU" {
+			t.Errorf("OrganizationalUnit = %q, want %q", node.OrganizationalUnit, "DefaultOU")
+		}
+		if node.Locality != testBerlin {
+			t.Errorf("Locality = %q, want %q", node.Locality, testBerlin)
+		}
+		args := nodeToArgs(&node)
 		if args.Validity != 24*time.Hour {
 			t.Errorf("Validity = %v, want 24h", args.Validity)
 		}
@@ -632,14 +637,14 @@ func TestNodeToArgs_Inheritance(t *testing.T) {
 	})
 
 	t.Run("node overrides", func(t *testing.T) {
-		node := &HierarchyNode{
+		nodes := ApplyDefaults([]HierarchyNode{{
 			CN:           "test",
 			Organization: "NodeOrg",
 			Country:      "US",
 			Validity:     "48h",
 			KeyType:      testECDSA256,
-		}
-		args := nodeToArgs(node, defaults)
+		}}, defaults)
+		args := nodeToArgs(&nodes[0])
 		if args.Organization != "NodeOrg" {
 			t.Errorf("Organization = %q, want %q", args.Organization, "NodeOrg")
 		}
@@ -717,8 +722,8 @@ func TestGenerateHierarchy_LeafSANs(t *testing.T) {
 		},
 	}
 
-	defaults := &Args{KeyType: defaultKeyType()}
-	results, err := GenerateHierarchy(nodes, defaults, outputDir)
+	nodes = ApplyDefaults(nodes, &Args{KeyType: defaultKeyType()})
+	results, err := GenerateHierarchy(nodes, outputDir, nil)
 	if err != nil {
 		t.Fatalf("GenerateHierarchy() err = %v", err)
 	}
@@ -824,8 +829,8 @@ func TestGenerateHierarchy_KeyTypeInheritance(t *testing.T) {
 		},
 	}
 
-	defaults := &Args{KeyType: defaultKeyType()}
-	results, err := GenerateHierarchy(nodes, defaults, outputDir)
+	nodes = ApplyDefaults(nodes, &Args{KeyType: defaultKeyType()})
+	results, err := GenerateHierarchy(nodes, outputDir, nil)
 	if err != nil {
 		t.Fatalf("GenerateHierarchy() err = %v", err)
 	}
