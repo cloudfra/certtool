@@ -34,6 +34,10 @@ const (
 	testValidity8760h   = "8760h"
 	testECDSA256        = "ECDSA-256"
 	testBerlin          = "Berlin"
+	testTLSRootCA       = "TLS Root CA"
+	testCodeSigningCert = "Code Signing Cert"
+	testCodesign        = "codesign"
+	testWebExampleCom   = "web.example.com"
 )
 
 func TestSlugify(t *testing.T) {
@@ -125,6 +129,55 @@ func TestParseHierarchy_Valid(t *testing.T) {
 	}
 }
 
+func TestParseHierarchy_MultipleRoots(t *testing.T) {
+	input := []byte(`
+- commonName: "TLS Root CA"
+  certificateAuthority: true
+  children:
+    - commonName: "web.example.com"
+      hostnames:
+        - web.example.com
+- commonName: "Code Signing Cert"
+  codeSigning: true
+  target: "windows10"
+`)
+	nodes, err := ParseHierarchy(input)
+	if err != nil {
+		t.Fatalf("ParseHierarchy() err = %v", err)
+	}
+	if len(nodes) != 2 {
+		t.Fatalf("got %d root nodes, want 2", len(nodes))
+	}
+	if nodes[0].CN != testTLSRootCA {
+		t.Errorf("first root CN = %q, want %q", nodes[0].CN, testTLSRootCA)
+	}
+	if nodes[1].CN != testCodeSigningCert {
+		t.Errorf("second root CN = %q, want %q", nodes[1].CN, testCodeSigningCert)
+	}
+	if !nodes[1].CodeSigning {
+		t.Error("second root CodeSigning = false, want true")
+	}
+}
+
+func TestParseHierarchy_NonCARootLeaf(t *testing.T) {
+	input := []byte(`
+- commonName: "standalone.example.com"
+  hostnames:
+    - standalone.example.com
+    - localhost
+`)
+	nodes, err := ParseHierarchy(input)
+	if err != nil {
+		t.Fatalf("ParseHierarchy() err = %v", err)
+	}
+	if len(nodes) != 1 {
+		t.Fatalf("got %d root nodes, want 1", len(nodes))
+	}
+	if nodes[0].CA {
+		t.Error("root CA = true, want false")
+	}
+}
+
 func TestParseHierarchy_Errors(t *testing.T) {
 	testCases := []struct {
 		name    string
@@ -132,14 +185,9 @@ func TestParseHierarchy_Errors(t *testing.T) {
 		wantErr string
 	}{
 		{
-			name:    "multiple roots",
-			yaml:    "- commonName: A\n  certificateAuthority: true\n- commonName: B\n  certificateAuthority: true\n",
-			wantErr: "exactly one root",
-		},
-		{
-			name:    "root not CA",
-			yaml:    "- commonName: Root\n  certificateAuthority: false\n",
-			wantErr: "must have certificateAuthority: true",
+			name:    "empty spec",
+			yaml:    "[]\n",
+			wantErr: "must have at least one node",
 		},
 		{
 			name:    "children without CA",
@@ -658,6 +706,95 @@ func TestApplyDefaults(t *testing.T) {
 			t.Errorf("KeyType = %+v, want ECDSA-256", args.KeyType)
 		}
 	})
+
+	t.Run("skips key type for code signing", func(t *testing.T) {
+		nodes := ApplyDefaults([]HierarchyNode{{
+			CN:          testCodesign,
+			CodeSigning: true,
+		}}, defaults)
+		if nodes[0].KeyType != "" {
+			t.Errorf("KeyType = %q, want empty (code signing nodes use profile defaults)", nodes[0].KeyType)
+		}
+	})
+}
+
+func TestGenerateHierarchy_CodeSigning(t *testing.T) {
+	if testing.Short() {
+		t.Skip("certificate generation takes a long time")
+	}
+
+	outputDir := t.TempDir()
+	nodes := []HierarchyNode{
+		{
+			CN:          "Test Code Signing",
+			CodeSigning: true,
+			Target:      "windows10",
+			Validity:    testValidity8760h,
+			Filename:    testCodesign,
+		},
+	}
+
+	results, err := GenerateHierarchy(nodes, outputDir, nil)
+	if err != nil {
+		t.Fatalf("GenerateHierarchy() err = %v", err)
+	}
+	if len(results) != 1 {
+		t.Fatalf("got %d results, want 1", len(results))
+	}
+
+	if results[0].PFXPath == "" {
+		t.Error("PFXPath is empty, want PFX file for code signing")
+	}
+	if _, err := os.Stat(results[0].PFXPath); err != nil {
+		t.Errorf("PFX file does not exist: %v", err)
+	}
+}
+
+func TestGenerateHierarchy_DisjointRoots(t *testing.T) {
+	if testing.Short() {
+		t.Skip("certificate generation takes a long time")
+	}
+
+	outputDir := t.TempDir()
+	nodes := []HierarchyNode{
+		{
+			CN:       testTLSRootCA,
+			CA:       true,
+			Validity: testValidity8760h,
+			Children: []HierarchyNode{
+				{
+					CN:        testWebExampleCom,
+					Hostnames: []string{testWebExampleCom},
+				},
+			},
+		},
+		{
+			CN:          testCodeSigningCert,
+			CodeSigning: true,
+			Target:      "windows10",
+			Validity:    testValidity8760h,
+			Filename:    testCodesign,
+		},
+	}
+
+	nodes = ApplyDefaults(nodes, &Args{KeyType: defaultKeyType()})
+	results, err := GenerateHierarchy(nodes, outputDir, nil)
+	if err != nil {
+		t.Fatalf("GenerateHierarchy() err = %v", err)
+	}
+	if len(results) != 3 {
+		t.Fatalf("got %d results, want 3", len(results))
+	}
+
+	if results[0].CN != testTLSRootCA {
+		t.Errorf("first result CN = %q, want %q", results[0].CN, testTLSRootCA)
+	}
+	if results[2].CN != testCodeSigningCert {
+		t.Errorf("third result CN = %q, want %q", results[2].CN, testCodeSigningCert)
+	}
+	if results[2].PFXPath == "" {
+		t.Error("code signing result PFXPath is empty")
+	}
 }
 
 // helpers
@@ -714,8 +851,8 @@ func TestGenerateHierarchy_LeafSANs(t *testing.T) {
 			Validity: testValidity8760h,
 			Children: []HierarchyNode{
 				{
-					CN:        "web.example.com",
-					Hostnames: []string{"web.example.com", "www.example.com"},
+					CN:        testWebExampleCom,
+					Hostnames: []string{testWebExampleCom, "www.example.com"},
 					Ports:     []int{443},
 				},
 			},

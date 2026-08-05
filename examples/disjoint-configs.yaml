@@ -1,0 +1,20 @@
+- commonName: "TLS Root CA"
+  certificateAuthority: true
+  keyType: "RSA-4096"
+  validity: "87600h"
+  organization: "Acme Corp"
+  filename: "tls-root-ca"
+  children:
+    - commonName: "api.acme.com"
+      keyType: "ECDSA-256"
+      validity: "8760h"
+      hostnames:
+        - api.acme.com
+      filename: "api-server"
+
+- commonName: "Code Signing Certificate"
+  codeSigning: true
+  target: "windows10"
+  validity: "8760h"
+  organization: "Acme Corp"
+  filename: "codesign"

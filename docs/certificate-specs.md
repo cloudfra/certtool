@@ -10,7 +10,10 @@ Each node supports the following fields:
 |---|---|---|---|
 | `commonName` | string | yes | Subject common name (CN) |
 | `certificateAuthority` | bool | no | Whether this certificate is a CA |
-| `keyType` | string | no | Key algorithm and size (e.g. `RSA-2048`, `RSA-4096`, `ECDSA-256`) |
+| `codeSigning` | bool | no | Generate a code signing certificate (produces a `.pfx` bundle) |
+| `target` | string | no | Platform profile for code signing (e.g. `windows7`, `windows10`, `windows11`, `linux`) |
+| `pfxPassword` | string | no | Password for the `.pfx` file; empty means no password |
+| `keyType` | string | no | Key algorithm and size (e.g. `RSA-2048`, `RSA-4096`, `ECDSA-256`). Omit for code signing nodes to use the target profile default |
 | `validity` | string | no | Duration (e.g. `8760h` for 1 year, `87600h` for 10 years) |
 | `organization` | string | no | Subject organization (O) |
 | `country` | string | no | Subject country (C) |
@@ -19,7 +22,7 @@ Each node supports the following fields:
 | `filename` | string | no | Output filename base (without extension); defaults to a slug of the CN path |
 | `children` | list | no | Child certificates signed by this node |
 
-The spec must have exactly one root node, and the root must set `certificateAuthority: true`. Any node with `children` must also be a CA.
+A spec must have at least one node. Multiple top-level nodes are allowed for disjoint configurations (e.g. a TLS hierarchy and a separate code signing certificate). Any node with `children` must also be a CA.
 
 ## Quick Chain
 
@@ -159,6 +162,67 @@ A spec with one node and no children generates a single self-signed certificate:
 ```sh
 certtool --spec standalone.yaml --output-dir certs/
 ```
+
+### Code Signing Certificate
+
+A single code signing certificate for Windows binary signing, producing a `.pfx` bundle:
+
+```yaml
+- commonName: "My Code Signing Certificate"
+  codeSigning: true
+  target: "windows10"
+  pfxPassword: "changeit"
+  validity: "8760h"
+  organization: "Acme Corp"
+  filename: "codesign"
+```
+
+```sh
+certtool --spec codesign.yaml --output-dir certs/
+```
+
+This produces:
+
+```
+certs/codesign.cert
+certs/codesign.key
+certs/codesign.pfx
+```
+
+The `.pfx` file can be used with Windows `signtool.exe` for binary signing.
+
+### Multiple Disjoint Configurations
+
+A single spec can define independent certificate trees. This example generates a TLS hierarchy and a code signing certificate in one pass:
+
+```yaml
+- commonName: "Acme TLS Root CA"
+  certificateAuthority: true
+  keyType: "RSA-4096"
+  validity: "87600h"
+  organization: "Acme Corp"
+  filename: "tls-root-ca"
+  children:
+    - commonName: "api.acme.com"
+      keyType: "ECDSA-256"
+      validity: "8760h"
+      hostnames:
+        - api.acme.com
+      filename: "api-server"
+
+- commonName: "Acme Code Signing"
+  codeSigning: true
+  target: "windows10"
+  validity: "8760h"
+  organization: "Acme Corp"
+  filename: "codesign"
+```
+
+```sh
+certtool --spec acme-all.yaml --output-dir certs/
+```
+
+This produces TLS certificates (`.cert`/`.key`) for the CA and API server, plus a code signing bundle (`.cert`/`.key`/`.pfx`).
 
 ## Real-World Use Cases
 

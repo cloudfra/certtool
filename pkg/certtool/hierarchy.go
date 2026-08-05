@@ -29,6 +29,9 @@ import (
 type HierarchyNode struct {
 	CN                 string          `yaml:"commonName"`
 	CA                 bool            `yaml:"certificateAuthority,omitempty"`
+	CodeSigning        bool            `yaml:"codeSigning,omitempty"`
+	Target             string          `yaml:"target,omitempty"`
+	PFXPassword        string          `yaml:"pfxPassword,omitempty"`
 	KeyType            string          `yaml:"keyType,omitempty"`
 	Validity           string          `yaml:"validity,omitempty"`
 	Organization       string          `yaml:"organization,omitempty"`
@@ -48,6 +51,7 @@ type HierarchyOutput struct {
 	KeyPair  *KeyPair
 	CertPath string
 	KeyPath  string
+	PFXPath  string
 }
 
 var slugRe = regexp.MustCompile(`[^a-z0-9]+`)
@@ -87,15 +91,14 @@ func ParseHierarchy(data []byte) ([]HierarchyNode, error) {
 		return nil, fmt.Errorf("cannot parse hierarchy YAML: %w", err)
 	}
 
-	if len(nodes) != 1 {
-		return nil, fmt.Errorf("hierarchy must have exactly one root node, got %d", len(nodes))
-	}
-	if !nodes[0].CA {
-		return nil, fmt.Errorf("root node %q must have certificateAuthority: true", nodes[0].CN)
+	if len(nodes) == 0 {
+		return nil, fmt.Errorf("spec must have at least one node")
 	}
 
-	if err := validateNode(&nodes[0]); err != nil {
-		return nil, err
+	for i := range nodes {
+		if err := validateNode(&nodes[i]); err != nil {
+			return nil, err
+		}
 	}
 
 	return nodes, nil
@@ -148,7 +151,7 @@ func applyDefaultsToNode(node *HierarchyNode, defaults *Args) {
 	if node.Validity == "" && defaults.Validity > 0 {
 		node.Validity = defaults.Validity.String()
 	}
-	if node.KeyType == "" && defaults.KeyType != nil {
+	if node.KeyType == "" && defaults.KeyType != nil && !node.CodeSigning {
 		node.KeyType = fmt.Sprintf("%s-%d", defaults.KeyType.Algorithm, defaults.KeyType.KeyLength)
 	}
 	for i := range node.Children {
@@ -202,12 +205,22 @@ func generateNode(node *HierarchyNode, parentKP *KeyPair, outputDir string, ance
 		return nil, fmt.Errorf("cannot write certificate for %q: %w", node.CN, err)
 	}
 
-	results := []HierarchyOutput{{
+	output := HierarchyOutput{
 		CN:       node.CN,
 		KeyPair:  kp,
 		CertPath: certPath,
 		KeyPath:  keyPath,
-	}}
+	}
+
+	if len(kp.PFX) > 0 {
+		pfxPath := filepath.Join(outputDir, basename+".pfx")
+		if err := WritePFX(kp, pfxPath); err != nil {
+			return nil, fmt.Errorf("cannot write PFX for %q: %w", node.CN, err)
+		}
+		output.PFXPath = pfxPath
+	}
+
+	results := []HierarchyOutput{output}
 
 	childAncestors := append(append([]string{}, ancestorCNs...), node.CN)
 	for i := range node.Children {
@@ -224,6 +237,9 @@ func generateNode(node *HierarchyNode, parentKP *KeyPair, outputDir string, ance
 func nodeToArgs(node *HierarchyNode) *Args {
 	args := &Args{
 		CA:                 node.CA,
+		CodeSigning:        node.CodeSigning,
+		Target:             node.Target,
+		PFXPassword:        node.PFXPassword,
 		CommonName:         node.CN,
 		Organization:       node.Organization,
 		OrganizationalUnit: node.OrganizationalUnit,

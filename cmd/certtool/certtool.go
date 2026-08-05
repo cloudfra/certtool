@@ -92,10 +92,6 @@ func certtoolMain() int {
 		return 1
 	}
 
-	if *codeSigning {
-		return runCodeSignMode()
-	}
-
 	nodes, parentKP, dir, err := buildSpec()
 	if err != nil {
 		zap.S().Error(err)
@@ -113,7 +109,11 @@ func certtoolMain() int {
 	}
 
 	for _, r := range results {
-		zap.S().Infof("Generated %s: %s, %s", r.CN, r.CertPath, r.KeyPath)
+		if r.PFXPath != "" {
+			zap.S().Infof("Generated %s: %s, %s, %s", r.CN, r.CertPath, r.KeyPath, r.PFXPath)
+		} else {
+			zap.S().Infof("Generated %s: %s, %s", r.CN, r.CertPath, r.KeyPath)
+		}
 	}
 	return 0
 }
@@ -127,23 +127,7 @@ func validateModeFlags() error {
 	if (hasChain || hasSpec) && *parentPublicCertificate != "" {
 		return fmt.Errorf("--parent-public-certificate cannot be used with --chain or --spec")
 	}
-	if *exportSpec != "" && *codeSigning {
-		return fmt.Errorf("--export-spec cannot be used with --code-sign")
-	}
 	return nil
-}
-
-func runCodeSignMode() int {
-	args, err := argsFromFlags()
-	if err != nil {
-		zap.S().Error(err)
-		return 1
-	}
-	if err := generateAndWriteKeyPair(args); err != nil {
-		zap.S().Error(err)
-		return 1
-	}
-	return 0
 }
 
 func buildSpec() ([]certtool.HierarchyNode, *certtool.KeyPair, string, error) {
@@ -185,15 +169,24 @@ func buildSpec() ([]certtool.HierarchyNode, *certtool.KeyPair, string, error) {
 			cn = *organization
 		}
 
-		base := strings.TrimSuffix(filepath.Base(*publicCertificate), filepath.Ext(*publicCertificate))
-		dir = filepath.Dir(*publicCertificate)
+		var base string
+		if *codeSigning {
+			base = strings.TrimSuffix(filepath.Base(*pfxOutput), filepath.Ext(*pfxOutput))
+			dir = filepath.Dir(*pfxOutput)
+		} else {
+			base = strings.TrimSuffix(filepath.Base(*publicCertificate), filepath.Ext(*publicCertificate))
+			dir = filepath.Dir(*publicCertificate)
+		}
 
 		nodes = []certtool.HierarchyNode{{
-			CN:        cn,
-			CA:        *ca,
-			Hostnames: splitStrings(*hostnames),
-			Ports:     portList,
-			Filename:  base,
+			CN:          cn,
+			CA:          *ca,
+			CodeSigning: *codeSigning,
+			Target:      *target,
+			PFXPassword: *pfxPassword,
+			Hostnames:   splitStrings(*hostnames),
+			Ports:       portList,
+			Filename:    base,
 		}}
 	}
 
@@ -211,9 +204,27 @@ func buildDefaults() (*certtool.Args, error) {
 		return nil, err
 	}
 
-	algorithm, keyLength, err := stringToKeyType(*keyType)
-	if err != nil {
-		return nil, err
+	var kt *certtool.KeyType
+	if !*codeSigning {
+		algorithm, keyLength, err := stringToKeyType(*keyType)
+		if err != nil {
+			return nil, err
+		}
+		kt = &certtool.KeyType{Algorithm: algorithm, KeyLength: keyLength}
+	} else {
+		var keyTypeExplicitlySet bool
+		flag.Visit(func(f *flag.Flag) {
+			if f.Name == "key-type" {
+				keyTypeExplicitlySet = true
+			}
+		})
+		if keyTypeExplicitlySet {
+			algorithm, keyLength, err := stringToKeyType(*keyType)
+			if err != nil {
+				return nil, err
+			}
+			kt = &certtool.KeyType{Algorithm: algorithm, KeyLength: keyLength}
+		}
 	}
 
 	return &certtool.Args{
@@ -226,7 +237,7 @@ func buildDefaults() (*certtool.Args, error) {
 		Validity:           *validity,
 		Hostnames:          splitStrings(*hostnames),
 		Ports:              portList,
-		KeyType:            &certtool.KeyType{Algorithm: algorithm, KeyLength: keyLength},
+		KeyType:            kt,
 	}, nil
 }
 
