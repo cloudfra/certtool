@@ -526,13 +526,6 @@ func TestGenerateKeyPair(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ReadKeyPair() err = %v", err)
 	}
-	if publicCert == nil {
-		t.Fatal("publicCert is nil")
-	}
-	if privateKey == nil {
-		t.Fatal("privateKey is nil")
-	}
-
 	pkRSA, ok := privateKey.(*rsa.PrivateKey)
 	if !ok {
 		t.Fatalf("privateKey is %T, want *rsa.PrivateKey", privateKey)
@@ -665,12 +658,6 @@ func TestCreateCertificate(t *testing.T) {
 	pub, pk, err := ReadKeyPair(publicCertFileData, privateKeyFileData)
 	if err != nil {
 		t.Fatalf("ReadKeyPair() err = %v", err)
-	}
-	if pub == nil {
-		t.Fatal("pub is nil")
-	}
-	if pk == nil {
-		t.Fatal("pk is nil")
 	}
 	pkRSA, ok := pk.(*rsa.PrivateKey)
 	if !ok {
@@ -829,9 +816,6 @@ func TestGenerateCodeSigningKeyPair_Windows10(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GenerateKeyPair() err = %v", err)
 	}
-	if kp == nil {
-		t.Fatal("kp is nil")
-	}
 	if len(kp.PFX) == 0 {
 		t.Error("kp.PFX is empty")
 	}
@@ -872,9 +856,6 @@ func TestGenerateCodeSigningKeyPair_Windows7(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GenerateKeyPair() err = %v", err)
 	}
-	if kp == nil {
-		t.Fatal("kp is nil")
-	}
 	if len(kp.PFX) == 0 {
 		t.Error("kp.PFX is empty")
 	}
@@ -909,9 +890,6 @@ func TestGenerateCodeSigningKeyPair_Linux(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GenerateKeyPair() err = %v", err)
 	}
-	if kp == nil {
-		t.Fatal("kp is nil")
-	}
 	if len(kp.PFX) != 0 {
 		t.Errorf("kp.PFX = %d bytes, want empty for linux target", len(kp.PFX))
 	}
@@ -942,9 +920,6 @@ func TestGenerateCodeSigningKeyPair_DefaultTarget(t *testing.T) {
 	kp, err := GenerateKeyPair(&Args{CodeSigning: true})
 	if err != nil {
 		t.Fatalf("GenerateKeyPair() err = %v", err)
-	}
-	if kp == nil {
-		t.Fatal("kp is nil")
 	}
 	if len(kp.PFX) == 0 {
 		t.Error("kp.PFX is empty; windows10 is the default target and should produce PFX output")
