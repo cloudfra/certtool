@@ -267,6 +267,89 @@ func TestMarshalSpec_RoundTrip(t *testing.T) {
 	}
 }
 
+func TestChainToSpec_Depth2(t *testing.T) {
+	t.Parallel()
+	specs, err := ChainToSpec(2, "leaf.local", "Acme")
+	if err != nil {
+		t.Fatalf("ChainToSpec() err = %v", err)
+	}
+	if len(specs) != 1 {
+		t.Fatalf("got %d roots, want 1", len(specs))
+	}
+	root := specs[0]
+	if root.CommonName != "Acme Root CA" {
+		t.Errorf("root CN = %q, want %q", root.CommonName, "Acme Root CA")
+	}
+	if !root.CertificateAuthority {
+		t.Error("root CA = false, want true")
+	}
+	if len(root.Children) != 1 {
+		t.Fatalf("root has %d children, want 1", len(root.Children))
+	}
+	if root.Children[0].CommonName != "leaf.local" {
+		t.Errorf("leaf CN = %q, want %q", root.Children[0].CommonName, "leaf.local")
+	}
+	if root.Children[0].CertificateAuthority {
+		t.Error("leaf CA = true, want false")
+	}
+}
+
+func TestChainToSpec_Depth4(t *testing.T) {
+	t.Parallel()
+	specs, err := ChainToSpec(4, "", "TestOrg")
+	if err != nil {
+		t.Fatalf("ChainToSpec() err = %v", err)
+	}
+	root := specs[0]
+	if root.CommonName != "TestOrg Root CA" {
+		t.Errorf("root CN = %q", root.CommonName)
+	}
+	inter1 := root.Children[0]
+	if inter1.CommonName != "TestOrg Intermediate CA 1" {
+		t.Errorf("intermediate 1 CN = %q", inter1.CommonName)
+	}
+	if !inter1.CertificateAuthority {
+		t.Error("intermediate 1 CA = false")
+	}
+	inter2 := inter1.Children[0]
+	if inter2.CommonName != "TestOrg Intermediate CA 2" {
+		t.Errorf("intermediate 2 CN = %q", inter2.CommonName)
+	}
+	leaf := inter2.Children[0]
+	if leaf.CommonName != "TestOrg" {
+		t.Errorf("leaf CN = %q, want %q", leaf.CommonName, "TestOrg")
+	}
+	if leaf.CertificateAuthority {
+		t.Error("leaf CA = true")
+	}
+}
+
+func TestChainToSpec_TooShort(t *testing.T) {
+	t.Parallel()
+	_, err := ChainToSpec(1, "", "")
+	if err == nil {
+		t.Fatal("ChainToSpec(1) = nil error, want error")
+	}
+	_, err = ChainToSpec(0, "", "")
+	if err == nil {
+		t.Fatal("ChainToSpec(0) = nil error, want error")
+	}
+}
+
+func TestChainToSpec_DefaultOrg(t *testing.T) {
+	t.Parallel()
+	specs, err := ChainToSpec(2, "", "")
+	if err != nil {
+		t.Fatalf("ChainToSpec() err = %v", err)
+	}
+	if specs[0].CommonName != "Certtool Root CA" {
+		t.Errorf("root CN = %q, want %q", specs[0].CommonName, "Certtool Root CA")
+	}
+	if specs[0].Children[0].CommonName != "Certtool" {
+		t.Errorf("leaf CN = %q, want %q", specs[0].Children[0].CommonName, "Certtool")
+	}
+}
+
 func TestGenerateFromSpec_SimpleChain(t *testing.T) {
 	if testing.Short() {
 		t.Skip("certificate generation takes a long time")

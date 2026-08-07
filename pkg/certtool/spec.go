@@ -155,6 +155,45 @@ func MarshalSpec(specs []CertificateSpec) ([]byte, error) {
 	return yaml.Marshal(specs)
 }
 
+// ChainToSpec builds a linear certificate chain of depth N (root CA +
+// intermediates + leaf) using the given common name as the leaf CN and
+// organization as the naming base for CAs.
+func ChainToSpec(depth int, commonName string, organization string) ([]CertificateSpec, error) {
+	if depth < 2 {
+		return nil, fmt.Errorf("--chain must be at least 2 (root CA + leaf), got %d", depth)
+	}
+
+	if organization == "" {
+		organization = "Certtool"
+	}
+
+	leafCN := commonName
+	if leafCN == "" {
+		leafCN = organization
+	}
+
+	leaf := CertificateSpec{
+		CommonName: leafCN,
+	}
+
+	current := leaf
+	for i := depth - 2; i >= 1; i-- {
+		current = CertificateSpec{
+			CommonName:           fmt.Sprintf("%s Intermediate CA %d", organization, i),
+			CertificateAuthority: true,
+			Children:             []CertificateSpec{current},
+		}
+	}
+
+	root := CertificateSpec{
+		CommonName:           fmt.Sprintf("%s Root CA", organization),
+		CertificateAuthority: true,
+		Children:             []CertificateSpec{current},
+	}
+
+	return []CertificateSpec{root}, nil
+}
+
 // GenerationOutput is the result of generating a single certificate from a spec.
 type GenerationOutput struct {
 	// CommonName is the CN of the generated certificate.
