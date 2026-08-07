@@ -5,6 +5,7 @@ go 1.26.2
 require (
 	github.com/google/go-cmp v0.7.0
 	go.uber.org/zap v1.28.0
+	gopkg.in/yaml.v3 v3.0.1
 	software.sslmate.com/src/go-pkcs12 v0.7.3
 )
 
