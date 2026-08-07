@@ -402,7 +402,7 @@ func TestCerttoolMainSpecMissing(t *testing.T) {
 func TestValidateModeFlags(t *testing.T) {
 	t.Run("no modes", func(t *testing.T) {
 		origChain, origSpec := *chain, *spec
-		*chain = 0
+		*chain = ""
 		*spec = ""
 		t.Cleanup(func() { *chain, *spec = origChain, origSpec })
 
@@ -413,7 +413,7 @@ func TestValidateModeFlags(t *testing.T) {
 
 	t.Run("chain and spec", func(t *testing.T) {
 		origChain, origSpec := *chain, *spec
-		*chain = 2
+		*chain = "2"
 		*spec = "file.yaml"
 		t.Cleanup(func() { *chain, *spec = origChain, origSpec })
 
@@ -426,7 +426,7 @@ func TestValidateModeFlags(t *testing.T) {
 func TestCerttoolMainChain(t *testing.T) {
 	dir := t.TempDir()
 	origChain, origOutputDir := *chain, *outputDir
-	*chain = 2
+	*chain = "2"
 	*outputDir = dir
 	t.Cleanup(func() { *chain, *outputDir = origChain, origOutputDir })
 
@@ -446,7 +446,7 @@ func TestCerttoolMainChain(t *testing.T) {
 func TestCerttoolMainChainThreeTier(t *testing.T) {
 	dir := t.TempDir()
 	origChain, origOutputDir := *chain, *outputDir
-	*chain = 3
+	*chain = "3"
 	*outputDir = dir
 	t.Cleanup(func() { *chain, *outputDir = origChain, origOutputDir })
 
@@ -463,9 +463,30 @@ func TestCerttoolMainChainThreeTier(t *testing.T) {
 	}
 }
 
+func TestCerttoolMainChainBreadth(t *testing.T) {
+	dir := t.TempDir()
+	origChain, origOutputDir := *chain, *outputDir
+	*chain = "1,2,3"
+	*outputDir = dir
+	t.Cleanup(func() { *chain, *outputDir = origChain, origOutputDir })
+
+	if got := certtoolMain(); got != 0 {
+		t.Errorf("certtoolMain() = %d, want 0 for --chain 1,2,3", got)
+	}
+
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatalf("ReadDir() err = %v", err)
+	}
+	wantFiles := (1 + 2 + 2*3) * 2
+	if len(entries) != wantFiles {
+		t.Errorf("expected %d files, got %d", wantFiles, len(entries))
+	}
+}
+
 func TestCerttoolMainChainInvalid(t *testing.T) {
 	origChain := *chain
-	*chain = 1
+	*chain = "1"
 	t.Cleanup(func() { *chain = origChain })
 
 	if got := certtoolMain(); got != 1 {
@@ -479,7 +500,7 @@ func TestCerttoolMainExportSpec(t *testing.T) {
 
 	origExportSpec, origChain, origOutputDir := *exportSpec, *chain, *outputDir
 	*exportSpec = outFile
-	*chain = 2
+	*chain = "2"
 	*outputDir = dir
 	t.Cleanup(func() { *exportSpec, *chain, *outputDir = origExportSpec, origChain, origOutputDir })
 
