@@ -1,0 +1,6 @@
+- commonName: "Code Signing Certificate"
+  codeSigning: true
+  target: "windows10"
+  validity: "8760h"
+  organization: "Acme Corp"
+  filename: "codesign"

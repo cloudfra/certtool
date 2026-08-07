@@ -1,0 +1,10 @@
+- commonName: "Simple Root CA"
+  certificateAuthority: true
+  keyType: "RSA-2048"
+  validity: "87600h"
+  children:
+    - commonName: "app.example.com"
+      hostnames:
+        - app.example.com
+        - localhost
+      validity: "8760h"

@@ -75,12 +75,17 @@ func TestCerttoolMainInvalidKeyType(t *testing.T) {
 }
 
 func TestCerttoolMainWriteFailure(t *testing.T) {
+	dir := t.TempDir()
+	blocker := filepath.Join(dir, "blocker")
+	if err := os.WriteFile(blocker, []byte("x"), 0o600); err != nil {
+		t.Fatal(err)
+	}
 	origPublicCertificate := *publicCertificate
-	*publicCertificate = filepath.Join(t.TempDir(), "does-not-exist", "app.cert")
+	*publicCertificate = filepath.Join(blocker, "app.cert")
 	t.Cleanup(func() { *publicCertificate = origPublicCertificate })
 
 	if got := certtoolMain(); got != 1 {
-		t.Errorf("certtoolMain() = %d, want 1 when the output directory does not exist", got)
+		t.Errorf("certtoolMain() = %d, want 1 when the output directory cannot be created", got)
 	}
 }
 
@@ -352,6 +357,121 @@ func TestArgsFromFlagsCommonNameDefault(t *testing.T) {
 	}
 	if args.CommonName != "" {
 		t.Errorf("args.CommonName = %q, want empty (defaults to organization in fillDefaults)", args.CommonName)
+	}
+}
+
+func TestValidateModeFlags(t *testing.T) {
+	t.Run("no modes", func(t *testing.T) {
+		origChain, origSpec, origParent := *chain, *spec, *parentPublicCertificate
+		*chain = 0
+		*spec = ""
+		*parentPublicCertificate = ""
+		t.Cleanup(func() {
+			*chain, *spec, *parentPublicCertificate = origChain, origSpec, origParent
+		})
+
+		if err := validateModeFlags(); err != nil {
+			t.Errorf("validateModeFlags() err = %v, want nil", err)
+		}
+	})
+
+	t.Run("chain and spec", func(t *testing.T) {
+		origChain, origSpec := *chain, *spec
+		*chain = 2
+		*spec = "file.yaml"
+		t.Cleanup(func() { *chain, *spec = origChain, origSpec })
+
+		if err := validateModeFlags(); err == nil {
+			t.Error("validateModeFlags() = nil, want error for mutually exclusive flags")
+		}
+	})
+
+	t.Run("chain with parent", func(t *testing.T) {
+		origChain, origParent := *chain, *parentPublicCertificate
+		*chain = 2
+		*parentPublicCertificate = "parent.cert"
+		t.Cleanup(func() { *chain, *parentPublicCertificate = origChain, origParent })
+
+		if err := validateModeFlags(); err == nil {
+			t.Error("validateModeFlags() = nil, want error for --chain with --parent-public-certificate")
+		}
+	})
+
+	t.Run("spec with parent", func(t *testing.T) {
+		origSpec, origParent := *spec, *parentPublicCertificate
+		*spec = "file.yaml"
+		*parentPublicCertificate = "parent.cert"
+		t.Cleanup(func() { *spec, *parentPublicCertificate = origSpec, origParent })
+
+		if err := validateModeFlags(); err == nil {
+			t.Error("validateModeFlags() = nil, want error for --spec with --parent-public-certificate")
+		}
+	})
+}
+
+func TestCerttoolMainChain(t *testing.T) {
+	dir := t.TempDir()
+	origChain, origOutputDir := *chain, *outputDir
+	origPublicCert, origPrivateKey := *publicCertificate, *privateKey
+	*chain = 2
+	*outputDir = dir
+	t.Cleanup(func() {
+		*chain, *outputDir = origChain, origOutputDir
+		*publicCertificate, *privateKey = origPublicCert, origPrivateKey
+	})
+
+	if got := certtoolMain(); got != 0 {
+		t.Errorf("certtoolMain() = %d, want 0 for --chain 2", got)
+	}
+
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatalf("ReadDir() err = %v", err)
+	}
+	if len(entries) < 4 {
+		t.Errorf("expected at least 4 files (2 certs + 2 keys), got %d", len(entries))
+	}
+}
+
+func TestCerttoolMainSpec(t *testing.T) {
+	dir := t.TempDir()
+	origSpec, origOutputDir := *spec, *outputDir
+	*spec = "../../examples/simple-chain.yaml"
+	*outputDir = dir
+	t.Cleanup(func() {
+		*spec, *outputDir = origSpec, origOutputDir
+	})
+
+	if got := certtoolMain(); got != 0 {
+		t.Errorf("certtoolMain() = %d, want 0 for --spec", got)
+	}
+
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatalf("ReadDir() err = %v", err)
+	}
+	if len(entries) < 4 {
+		t.Errorf("expected at least 4 files (2 certs + 2 keys), got %d", len(entries))
+	}
+}
+
+func TestCerttoolMainChainInvalid(t *testing.T) {
+	origChain := *chain
+	*chain = 1
+	t.Cleanup(func() { *chain = origChain })
+
+	if got := certtoolMain(); got != 1 {
+		t.Errorf("certtoolMain() = %d, want 1 for --chain 1", got)
+	}
+}
+
+func TestCerttoolMainSpecMissing(t *testing.T) {
+	origSpec := *spec
+	*spec = "does-not-exist.yaml"
+	t.Cleanup(func() { *spec = origSpec })
+
+	if got := certtoolMain(); got != 1 {
+		t.Errorf("certtoolMain() = %d, want 1 for missing spec file", got)
 	}
 }
 
