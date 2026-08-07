@@ -155,6 +155,101 @@ func MarshalSpec(specs []CertificateSpec) ([]byte, error) {
 	return yaml.Marshal(specs)
 }
 
+// ChainToSpec builds a certificate hierarchy from a list of layer widths.
+//
+// A single-element widths (e.g. [5]) is shorthand for a linear chain of that
+// depth (equivalent to [1,1,1,1,1]).
+//
+// With multiple elements, each value is the number of certificates at that
+// layer: widths[0] roots, widths[1] intermediates per root, and so on. The
+// last layer produces leaf certificates; all prior layers are CAs.
+//
+// Example: [1,2,3] produces 1 root CA, 2 intermediate CAs (each signed by
+// the root), and 3 leaves per intermediate (6 leaves total, 9 certificates).
+func ChainToSpec(widths []int, commonName string, organization string) ([]CertificateSpec, error) {
+	if len(widths) == 0 {
+		return nil, fmt.Errorf("--chain requires at least one value")
+	}
+
+	if len(widths) == 1 {
+		depth := widths[0]
+		if depth < 2 {
+			return nil, fmt.Errorf("--chain must be at least 2 (root CA + leaf), got %d", depth)
+		}
+		expanded := make([]int, depth)
+		for i := range expanded {
+			expanded[i] = 1
+		}
+		widths = expanded
+	}
+
+	if len(widths) < 2 {
+		return nil, fmt.Errorf("--chain must have at least 2 layers (root + leaf)")
+	}
+
+	for i, w := range widths {
+		if w < 1 {
+			return nil, fmt.Errorf("--chain layer %d must be at least 1, got %d", i+1, w)
+		}
+	}
+
+	if organization == "" {
+		organization = "Certtool"
+	}
+
+	leafCN := commonName
+	if leafCN == "" {
+		leafCN = organization
+	}
+
+	roots := make([]CertificateSpec, widths[0])
+	for i := range roots {
+		cn := fmt.Sprintf("%s Root CA", organization)
+		if widths[0] > 1 {
+			cn = fmt.Sprintf("%s Root CA %d", organization, i+1)
+		}
+		roots[i] = CertificateSpec{
+			CommonName:           cn,
+			CertificateAuthority: true,
+		}
+		roots[i].Children = buildChainLayer(widths, 1, leafCN, organization)
+	}
+
+	return roots, nil
+}
+
+func buildChainLayer(widths []int, depth int, leafCN string, organization string) []CertificateSpec {
+	if depth >= len(widths) {
+		return nil
+	}
+
+	isLeaf := depth == len(widths)-1
+	count := widths[depth]
+	specs := make([]CertificateSpec, count)
+
+	for i := range specs {
+		if isLeaf {
+			cn := leafCN
+			if count > 1 {
+				cn = fmt.Sprintf("%s %d", leafCN, i+1)
+			}
+			specs[i] = CertificateSpec{CommonName: cn}
+		} else {
+			cn := fmt.Sprintf("%s Intermediate CA %d", organization, i+1)
+			if count == 1 {
+				cn = fmt.Sprintf("%s Intermediate CA", organization)
+			}
+			specs[i] = CertificateSpec{
+				CommonName:           cn,
+				CertificateAuthority: true,
+				Children:             buildChainLayer(widths, depth+1, leafCN, organization),
+			}
+		}
+	}
+
+	return specs
+}
+
 // GenerationOutput is the result of generating a single certificate from a spec.
 type GenerationOutput struct {
 	// CommonName is the CN of the generated certificate.
