@@ -18,6 +18,9 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
+	"strings"
+	"time"
 
 	"gopkg.in/yaml.v3"
 )
@@ -150,4 +153,147 @@ func validateSpec(spec *CertificateSpec) error {
 // MarshalSpec serializes certificate specs to YAML.
 func MarshalSpec(specs []CertificateSpec) ([]byte, error) {
 	return yaml.Marshal(specs)
+}
+
+// GenerationOutput is the result of generating a single certificate from a spec.
+type GenerationOutput struct {
+	// CommonName is the CN of the generated certificate.
+	CommonName string
+	// KeyPair holds the generated public certificate, private key, and optional PFX data.
+	KeyPair *KeyPair
+	// CertPath is the filesystem path where the public certificate was written.
+	CertPath string
+	// KeyPath is the filesystem path where the private key was written.
+	KeyPath string
+	// PFXPath is the filesystem path where the PKCS#12 bundle was written.
+	// Empty when the certificate does not produce PFX output.
+	PFXPath string
+}
+
+// GenerateFromSpec generates certificates for all specs and writes them to outputDir.
+func GenerateFromSpec(specs []CertificateSpec, outputDir string) ([]GenerationOutput, error) {
+	if err := os.MkdirAll(outputDir, 0o750); err != nil {
+		return nil, fmt.Errorf("cannot create output directory (%s): %w", outputDir, err)
+	}
+
+	filenames := map[string]string{}
+	var results []GenerationOutput
+
+	for i := range specs {
+		out, err := generateSpec(&specs[i], nil, outputDir, nil, filenames)
+		if err != nil {
+			return nil, err
+		}
+		results = append(results, out...)
+	}
+	return results, nil
+}
+
+var slugPattern = regexp.MustCompile(`[^a-z0-9]+`)
+
+func slugify(s string) string {
+	s = strings.ToLower(s)
+	s = slugPattern.ReplaceAllString(s, "-")
+	s = strings.Trim(s, "-")
+	return s
+}
+
+func specFilename(ancestorCNs []string, spec *CertificateSpec) string {
+	if spec.Filename != "" {
+		return spec.Filename
+	}
+	parts := make([]string, 0, len(ancestorCNs)+1)
+	for _, cn := range ancestorCNs {
+		parts = append(parts, slugify(cn))
+	}
+	parts = append(parts, slugify(spec.CommonName))
+	return strings.Join(parts, "-")
+}
+
+func generateSpec(spec *CertificateSpec, parentKP *KeyPair, outputDir string, ancestorCNs []string, filenames map[string]string) ([]GenerationOutput, error) {
+	args := specToArgs(spec)
+	args.ParentKeyPair = parentKP
+
+	kp, err := GenerateKeyPair(args)
+	if err != nil {
+		return nil, fmt.Errorf("cannot generate certificate for %q: %w", spec.CommonName, err)
+	}
+
+	basename := specFilename(ancestorCNs, spec)
+	certPath := filepath.Join(outputDir, basename+".cert")
+	keyPath := filepath.Join(outputDir, basename+".key")
+
+	if existingCN, ok := filenames[basename]; ok {
+		return nil, fmt.Errorf("filename collision: %q and %q both resolve to %q", existingCN, spec.CommonName, basename)
+	}
+	filenames[basename] = spec.CommonName
+
+	if err := WriteKeyPair(kp, certPath, keyPath); err != nil {
+		return nil, fmt.Errorf("cannot write certificate for %q: %w", spec.CommonName, err)
+	}
+
+	output := GenerationOutput{
+		CommonName: spec.CommonName,
+		KeyPair:    kp,
+		CertPath:   certPath,
+		KeyPath:    keyPath,
+	}
+
+	if len(kp.PFX) > 0 {
+		pfxPath := filepath.Join(outputDir, basename+".pfx")
+		if err := WritePFX(kp, pfxPath); err != nil {
+			return nil, fmt.Errorf("cannot write PFX for %q: %w", spec.CommonName, err)
+		}
+		output.PFXPath = pfxPath
+	}
+
+	results := []GenerationOutput{output}
+
+	childAncestors := append(append([]string{}, ancestorCNs...), spec.CommonName)
+	for i := range spec.Children {
+		childResults, err := generateSpec(&spec.Children[i], kp, outputDir, childAncestors, filenames)
+		if err != nil {
+			return nil, err
+		}
+		results = append(results, childResults...)
+	}
+
+	return results, nil
+}
+
+func specToArgs(spec *CertificateSpec) *Args {
+	args := &Args{
+		CA:                 spec.CertificateAuthority,
+		CodeSigning:        spec.CodeSigning,
+		Target:             spec.Target,
+		PFXPassword:        spec.PFXPassword,
+		CommonName:         spec.CommonName,
+		Organization:       spec.Organization,
+		OrganizationalUnit: spec.OrganizationalUnit,
+		Country:            spec.Country,
+		Locality:           spec.Locality,
+		Province:           spec.Province,
+		Hostnames:          spec.Hostnames,
+		Ports:              spec.Ports,
+	}
+
+	if spec.Validity != "" {
+		if d, err := time.ParseDuration(spec.Validity); err == nil {
+			args.Validity = d
+		}
+	}
+
+	if spec.KeyType != "" {
+		parts := strings.SplitN(strings.ToUpper(spec.KeyType), "-", 2)
+		if len(parts) == 2 {
+			var keyLen int
+			if _, err := fmt.Sscanf(parts[1], "%d", &keyLen); err == nil {
+				args.KeyType = &KeyType{Algorithm: parts[0], KeyLength: keyLen}
+			}
+		} else if len(parts) == 1 {
+			args.KeyType = &KeyType{Algorithm: parts[0]}
+		}
+	}
+
+	return args
 }

@@ -15,13 +15,20 @@
 package certtool
 
 import (
+	"crypto/x509"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
 
 const (
-	testSpecRootCA  = "Root CA"
-	testSpecLeafCom = "leaf.example.com"
+	testSpecRootCA    = "Root CA"
+	testSpecLeafCom   = "leaf.example.com"
+	testSpecRSA2048   = "RSA-2048"
+	testSpecECDSA256  = "ECDSA-256"
+	testSpecValidity  = "8760h"
+	testSpecWindows10 = "windows10"
 )
 
 func TestUnmarshalSpec_Valid(t *testing.T) {
@@ -76,8 +83,8 @@ func TestUnmarshalSpec_MultipleRoots(t *testing.T) {
 	if !specs[1].CodeSigning {
 		t.Error("second spec CodeSigning = false, want true")
 	}
-	if specs[1].Target != "windows10" {
-		t.Errorf("second spec Target = %q, want %q", specs[1].Target, "windows10")
+	if specs[1].Target != testSpecWindows10 {
+		t.Errorf("second spec Target = %q, want %q", specs[1].Target, testSpecWindows10)
 	}
 }
 
@@ -125,7 +132,7 @@ func TestUnmarshalSpec_AllFields(t *testing.T) {
 		t.Fatalf("UnmarshalSpec() err = %v", err)
 	}
 	s := specs[0]
-	if s.Target != "windows10" {
+	if s.Target != testSpecWindows10 {
 		t.Errorf("Target = %q", s.Target)
 	}
 	if s.PFXPassword != "secret" {
@@ -257,4 +264,158 @@ func TestMarshalSpec_RoundTrip(t *testing.T) {
 	if roundTrip[0].Children[0].CommonName != testSpecLeafCom {
 		t.Errorf("round-trip child CN = %q, want %q", roundTrip[0].Children[0].CommonName, testSpecLeafCom)
 	}
+}
+
+func TestGenerateFromSpec_SimpleChain(t *testing.T) {
+	if testing.Short() {
+		t.Skip("certificate generation takes a long time")
+	}
+
+	outputDir := t.TempDir()
+	specs := []CertificateSpec{
+		{
+			CommonName:           "Test Root CA",
+			CertificateAuthority: true,
+			KeyType:              testSpecRSA2048,
+			Validity:             testSpecValidity,
+			Children: []CertificateSpec{
+				{
+					CommonName: testSpecLeafCom,
+					KeyType:    testSpecRSA2048,
+					Hostnames:  []string{testSpecLeafCom},
+					Validity:   "720h",
+				},
+			},
+		},
+	}
+
+	results, err := GenerateFromSpec(specs, outputDir)
+	if err != nil {
+		t.Fatalf("GenerateFromSpec() err = %v", err)
+	}
+	if len(results) != 2 {
+		t.Fatalf("got %d results, want 2", len(results))
+	}
+
+	for _, r := range results {
+		if _, err := os.Stat(r.CertPath); err != nil {
+			t.Errorf("cert file %q missing: %v", r.CertPath, err)
+		}
+		if _, err := os.Stat(r.KeyPath); err != nil {
+			t.Errorf("key file %q missing: %v", r.KeyPath, err)
+		}
+	}
+
+	rootCert := parseGenCert(t, results[0])
+	if !rootCert.IsCA {
+		t.Error("root IsCA = false, want true")
+	}
+
+	leafCert := parseGenCert(t, results[1])
+	if leafCert.IsCA {
+		t.Error("leaf IsCA = true, want false")
+	}
+	if err := leafCert.CheckSignatureFrom(rootCert); err != nil {
+		t.Errorf("leaf not signed by root: %v", err)
+	}
+}
+
+func TestGenerateFromSpec_MultiLeaf(t *testing.T) {
+	if testing.Short() {
+		t.Skip("certificate generation takes a long time")
+	}
+
+	outputDir := t.TempDir()
+	specs := []CertificateSpec{
+		{
+			CommonName:           testSpecRootCA,
+			CertificateAuthority: true,
+			KeyType:              testSpecECDSA256,
+			Validity:             testSpecValidity,
+			Children: []CertificateSpec{
+				{CommonName: "frontend.local", KeyType: testSpecECDSA256, Filename: "frontend"},
+				{CommonName: "backend.local", KeyType: testSpecECDSA256, Filename: "backend"},
+			},
+		},
+	}
+
+	results, err := GenerateFromSpec(specs, outputDir)
+	if err != nil {
+		t.Fatalf("GenerateFromSpec() err = %v", err)
+	}
+	if len(results) != 3 {
+		t.Fatalf("got %d results, want 3", len(results))
+	}
+
+	if results[1].CertPath != filepath.Join(outputDir, "frontend.cert") {
+		t.Errorf("frontend path = %q", results[1].CertPath)
+	}
+	if results[2].CertPath != filepath.Join(outputDir, "backend.cert") {
+		t.Errorf("backend path = %q", results[2].CertPath)
+	}
+}
+
+func TestGenerateFromSpec_FilenameCollision(t *testing.T) {
+	if testing.Short() {
+		t.Skip("certificate generation takes a long time")
+	}
+
+	outputDir := t.TempDir()
+	specs := []CertificateSpec{
+		{
+			CommonName:           testSpecRootCA,
+			CertificateAuthority: true,
+			KeyType:              testSpecRSA2048,
+			Validity:             testSpecValidity,
+			Children: []CertificateSpec{
+				{CommonName: "a", Filename: "same", KeyType: testSpecRSA2048},
+				{CommonName: "b", Filename: "same", KeyType: testSpecRSA2048},
+			},
+		},
+	}
+
+	_, err := GenerateFromSpec(specs, outputDir)
+	if err == nil {
+		t.Fatal("expected filename collision error")
+	}
+	if !strings.Contains(err.Error(), "filename collision") {
+		t.Errorf("err = %q, want containing %q", err.Error(), "filename collision")
+	}
+}
+
+func TestGenerateFromSpec_CodeSigning(t *testing.T) {
+	if testing.Short() {
+		t.Skip("certificate generation takes a long time")
+	}
+
+	outputDir := t.TempDir()
+	specs := []CertificateSpec{
+		{
+			CommonName:  "Test Code Signing",
+			CodeSigning: true,
+			Target:      testSpecWindows10,
+			Validity:    testSpecValidity,
+			Filename:    "codesign",
+		},
+	}
+
+	results, err := GenerateFromSpec(specs, outputDir)
+	if err != nil {
+		t.Fatalf("GenerateFromSpec() err = %v", err)
+	}
+	if results[0].PFXPath == "" {
+		t.Error("PFXPath is empty, want PFX for code signing")
+	}
+	if _, err := os.Stat(results[0].PFXPath); err != nil {
+		t.Errorf("PFX file missing: %v", err)
+	}
+}
+
+func parseGenCert(t *testing.T, result GenerationOutput) *x509.Certificate {
+	t.Helper()
+	cert, _, err := ReadKeyPair(result.KeyPair.PublicCertificate, result.KeyPair.PrivateKey)
+	if err != nil {
+		t.Fatalf("ReadKeyPair() for %q err = %v", result.CommonName, err)
+	}
+	return cert
 }
