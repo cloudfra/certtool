@@ -1,0 +1,7 @@
+# A code signing certificate for Windows 10/11.
+- commonName: "Acme Code Signing"
+  codeSigning: true
+  target: "windows10"
+  organization: "Acme Corp"
+  validity: "8760h"
+  filename: "codesign"

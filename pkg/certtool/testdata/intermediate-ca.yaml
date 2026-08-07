@@ -1,0 +1,23 @@
+# A three-level hierarchy: root CA, intermediate CA, and leaf certificates.
+- commonName: "Root CA"
+  certificateAuthority: true
+  keyType: "RSA-4096"
+  validity: "87600h"
+  children:
+    - commonName: "Intermediate CA"
+      certificateAuthority: true
+      keyType: "RSA-2048"
+      validity: "43800h"
+      children:
+        - commonName: "server.internal"
+          keyType: "RSA-2048"
+          validity: "8760h"
+          hostnames:
+            - server.internal
+          filename: "server"
+        - commonName: "db.internal"
+          keyType: "RSA-2048"
+          validity: "8760h"
+          hostnames:
+            - db.internal
+          filename: "db"

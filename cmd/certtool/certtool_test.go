@@ -355,6 +355,50 @@ func TestArgsFromFlagsCommonNameDefault(t *testing.T) {
 	}
 }
 
+func TestCerttoolMainSpec(t *testing.T) {
+	dir := t.TempDir()
+	specFile := filepath.Join(dir, "test.yaml")
+	if err := os.WriteFile(specFile, []byte(`
+- commonName: "Test Root CA"
+  certificateAuthority: true
+  keyType: "RSA-2048"
+  validity: "8760h"
+  children:
+    - commonName: "leaf.example.com"
+      keyType: "RSA-2048"
+      validity: "8760h"
+      hostnames:
+        - leaf.example.com
+`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	origSpec, origOutputDir := *spec, *outputDir
+	*spec = specFile
+	*outputDir = dir
+	t.Cleanup(func() { *spec, *outputDir = origSpec, origOutputDir })
+
+	if got := certtoolMain(); got != 0 {
+		t.Errorf("certtoolMain() = %d, want 0", got)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "test-root-ca.cert")); err != nil {
+		t.Errorf("expected root cert: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "test-root-ca-leaf-example-com.cert")); err != nil {
+		t.Errorf("expected leaf cert: %v", err)
+	}
+}
+
+func TestCerttoolMainSpecMissing(t *testing.T) {
+	origSpec := *spec
+	*spec = filepath.Join(t.TempDir(), "does-not-exist.yaml")
+	t.Cleanup(func() { *spec = origSpec })
+
+	if got := certtoolMain(); got != 1 {
+		t.Errorf("certtoolMain() = %d, want 1 for missing spec file", got)
+	}
+}
+
 func TestStringToKeyTypeErrors(t *testing.T) {
 	testCases := []string{
 		"bogus",          // unknown key type name
