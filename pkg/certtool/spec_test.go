@@ -16,6 +16,7 @@ package certtool
 
 import (
 	"crypto/x509"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -418,4 +419,151 @@ func parseGenCert(t *testing.T, result GenerationOutput) *x509.Certificate {
 		t.Fatalf("ReadKeyPair() for %q err = %v", result.CommonName, err)
 	}
 	return cert
+}
+
+func TestGenerateFromSpec_Examples(t *testing.T) {
+	if testing.Short() {
+		t.Skip("certificate generation takes a long time")
+	}
+
+	tests := []struct {
+		file      string
+		wantCerts int
+	}{
+		{file: "simple-chain.yaml", wantCerts: 2},
+		{file: "multi-service.yaml", wantCerts: 4},
+		{file: "intermediate-ca.yaml", wantCerts: 4},
+		{file: "code-signing.yaml", wantCerts: 1},
+		{file: "mixed-roots.yaml", wantCerts: 4},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.file, func(t *testing.T) {
+			specs, err := ReadSpec(filepath.Join("testdata", tc.file))
+			if err != nil {
+				t.Fatalf("ReadSpec(%q) err = %v", tc.file, err)
+			}
+
+			outputDir := t.TempDir()
+			results, err := GenerateFromSpec(specs, outputDir)
+			if err != nil {
+				t.Fatalf("GenerateFromSpec() err = %v", err)
+			}
+			if len(results) != tc.wantCerts {
+				t.Fatalf("got %d results, want %d", len(results), tc.wantCerts)
+			}
+
+			for _, r := range results {
+				if _, err := os.Stat(r.CertPath); err != nil {
+					t.Errorf("cert file %q missing: %v", r.CertPath, err)
+				}
+				if _, err := os.Stat(r.KeyPath); err != nil {
+					t.Errorf("key file %q missing: %v", r.KeyPath, err)
+				}
+				if r.PFXPath != "" {
+					if _, err := os.Stat(r.PFXPath); err != nil {
+						t.Errorf("pfx file %q missing: %v", r.PFXPath, err)
+					}
+				}
+			}
+		})
+	}
+}
+
+func TestGenerateFromSpec_IntermediateChainVerify(t *testing.T) {
+	if testing.Short() {
+		t.Skip("certificate generation takes a long time")
+	}
+
+	specs, err := ReadSpec(filepath.Join("testdata", "intermediate-ca.yaml"))
+	if err != nil {
+		t.Fatalf("ReadSpec() err = %v", err)
+	}
+
+	results, err := GenerateFromSpec(specs, t.TempDir())
+	if err != nil {
+		t.Fatalf("GenerateFromSpec() err = %v", err)
+	}
+
+	root := parseGenCert(t, results[0])
+	intermediate := parseGenCert(t, results[1])
+	leaf := parseGenCert(t, results[2])
+
+	if !root.IsCA {
+		t.Error("root IsCA = false")
+	}
+	if !intermediate.IsCA {
+		t.Error("intermediate IsCA = false")
+	}
+	if leaf.IsCA {
+		t.Error("leaf IsCA = true")
+	}
+
+	if err := intermediate.CheckSignatureFrom(root); err != nil {
+		t.Errorf("intermediate not signed by root: %v", err)
+	}
+	if err := leaf.CheckSignatureFrom(intermediate); err != nil {
+		t.Errorf("leaf not signed by intermediate: %v", err)
+	}
+}
+
+func TestGenerateFromSpec_Stress(t *testing.T) {
+	if testing.Short() {
+		t.Skip("certificate generation takes a long time")
+	}
+
+	const leafCount = 20
+	children := make([]CertificateSpec, leafCount)
+	for i := range children {
+		children[i] = CertificateSpec{
+			CommonName: fmt.Sprintf("leaf-%03d.stress.local", i),
+			KeyType:    testSpecECDSA256,
+			Hostnames:  []string{fmt.Sprintf("leaf-%03d.stress.local", i)},
+		}
+	}
+
+	specs := []CertificateSpec{
+		{
+			CommonName:           "Stress Root CA",
+			CertificateAuthority: true,
+			KeyType:              testSpecECDSA256,
+			Validity:             testSpecValidity,
+			Children:             children,
+		},
+	}
+
+	outputDir := t.TempDir()
+	results, err := GenerateFromSpec(specs, outputDir)
+	if err != nil {
+		t.Fatalf("GenerateFromSpec() err = %v", err)
+	}
+
+	wantTotal := 1 + leafCount
+	if len(results) != wantTotal {
+		t.Fatalf("got %d results, want %d", len(results), wantTotal)
+	}
+
+	root := parseGenCert(t, results[0])
+	if !root.IsCA {
+		t.Error("root IsCA = false")
+	}
+
+	for i := 1; i < len(results); i++ {
+		leaf := parseGenCert(t, results[i])
+		if leaf.IsCA {
+			t.Errorf("leaf[%d] IsCA = true", i)
+		}
+		if err := leaf.CheckSignatureFrom(root); err != nil {
+			t.Errorf("leaf[%d] not signed by root: %v", i, err)
+		}
+	}
+
+	entries, err := os.ReadDir(outputDir)
+	if err != nil {
+		t.Fatalf("ReadDir() err = %v", err)
+	}
+	wantFiles := wantTotal * 2
+	if len(entries) != wantFiles {
+		t.Errorf("output dir has %d files, want %d", len(entries), wantFiles)
+	}
 }

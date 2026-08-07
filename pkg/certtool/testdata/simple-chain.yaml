@@ -1,0 +1,12 @@
+# A root CA with a single leaf certificate for TLS.
+- commonName: "Root CA"
+  certificateAuthority: true
+  keyType: "ECDSA-256"
+  validity: "87600h"
+  children:
+    - commonName: "app.example.com"
+      keyType: "ECDSA-256"
+      validity: "8760h"
+      hostnames:
+        - app.example.com
+        - localhost

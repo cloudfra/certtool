@@ -1,0 +1,23 @@
+# Multiple independent trees: a TLS hierarchy and a code signing certificate.
+- commonName: "TLS Root CA"
+  certificateAuthority: true
+  keyType: "ECDSA-256"
+  validity: "87600h"
+  children:
+    - commonName: "frontend.example.com"
+      keyType: "ECDSA-256"
+      validity: "8760h"
+      hostnames:
+        - frontend.example.com
+      filename: "frontend"
+    - commonName: "backend.example.com"
+      keyType: "ECDSA-256"
+      validity: "8760h"
+      hostnames:
+        - backend.example.com
+      filename: "backend"
+- commonName: "Release Signing"
+  codeSigning: true
+  target: "windows10"
+  validity: "8760h"
+  filename: "release-sign"

@@ -1,0 +1,28 @@
+# A root CA issuing certificates for multiple services.
+- commonName: "Acme Corp Root CA"
+  certificateAuthority: true
+  keyType: "RSA-2048"
+  validity: "87600h"
+  organization: "Acme Corp"
+  country: "US"
+  children:
+    - commonName: "api.acme.dev"
+      keyType: "RSA-2048"
+      validity: "8760h"
+      hostnames:
+        - api.acme.dev
+        - api.acme.local
+      ports: [443, 8443]
+      filename: "api"
+    - commonName: "web.acme.dev"
+      keyType: "RSA-2048"
+      validity: "8760h"
+      hostnames:
+        - web.acme.dev
+      filename: "web"
+    - commonName: "grpc.acme.dev"
+      keyType: "RSA-2048"
+      validity: "8760h"
+      hostnames:
+        - grpc.acme.dev
+      filename: "grpc"
