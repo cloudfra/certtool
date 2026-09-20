@@ -18,6 +18,7 @@ package main
 import (
 	"flag"
 	"fmt"
+	"log/slog"
 	"os"
 	"slices"
 	"strconv"
@@ -25,8 +26,8 @@ import (
 	"time"
 
 	"github.com/cloudfra/certtool/internal"
+	"github.com/cloudfra/certtool/internal/logging"
 	"github.com/cloudfra/certtool/pkg/certtool"
-	"go.uber.org/zap"
 )
 
 var (
@@ -74,6 +75,7 @@ func main() {
 // certtoolMain runs the tool and returns the process exit code.
 func certtoolMain() int {
 	flag.Parse()
+	logging.Init()
 
 	if *version {
 		fmt.Printf("certtool %s (built %s)\n", internal.Version(), internal.Buildstamp())
@@ -81,7 +83,7 @@ func certtoolMain() int {
 	}
 
 	if *target != "" && !*codeSigning {
-		zap.S().Warn("--target is set but --code-sign is not; --target will be ignored")
+		slog.Warn("--target is set but --code-sign is not; --target will be ignored")
 	}
 
 	if *spec != "" {
@@ -90,12 +92,12 @@ func certtoolMain() int {
 
 	args, err := argsFromFlags()
 	if err != nil {
-		zap.S().Error(err)
+		slog.Error("certtool failed", "error", err)
 		return 1
 	}
 
 	if err := generateAndWriteKeyPair(args); err != nil {
-		zap.S().Error(err)
+		slog.Error("certtool failed", "error", err)
 		return 1
 	}
 
@@ -105,21 +107,21 @@ func certtoolMain() int {
 func runSpecMode() int {
 	specs, err := certtool.ReadSpec(*spec)
 	if err != nil {
-		zap.S().Error(err)
+		slog.Error("certtool failed", "error", err)
 		return 1
 	}
 
 	results, err := certtool.GenerateFromSpec(specs, *outputDir)
 	if err != nil {
-		zap.S().Error(err)
+		slog.Error("certtool failed", "error", err)
 		return 1
 	}
 
 	for _, r := range results {
 		if r.PFXPath != "" {
-			zap.S().Infof("Generated %s: %s, %s, %s", r.CommonName, r.CertPath, r.KeyPath, r.PFXPath)
+			slog.Info("generated certificate", "cn", r.CommonName, "cert", r.CertPath, "key", r.KeyPath, "pfx", r.PFXPath)
 		} else {
-			zap.S().Infof("Generated %s: %s, %s", r.CommonName, r.CertPath, r.KeyPath)
+			slog.Info("generated certificate", "cn", r.CommonName, "cert", r.CertPath, "key", r.KeyPath)
 		}
 	}
 	return 0
@@ -163,7 +165,7 @@ func argsFromFlags() (*certtool.Args, error) {
 				effectiveTarget = defaultCodeSignTarget
 			}
 			if profile, profErr := certtool.GetProfile(effectiveTarget); profErr == nil && profile.LegacyPFX {
-				zap.S().Warn("ECDSA code signing certs are not supported by Windows 7 signtool.exe; proceeding with user-specified key type")
+				slog.Warn("ECDSA code signing certs are not supported by Windows 7 signtool.exe; proceeding with user-specified key type")
 			}
 		}
 	}
