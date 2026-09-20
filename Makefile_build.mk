@@ -15,6 +15,7 @@
 include Makefile_core.mk
 include Makefile_proto.mk
 include Makefile_toolchain.mk
+include Makefile_testassets.mk
 
 DOCKER_PUSH = --push
 
@@ -27,21 +28,58 @@ TAR = tar
 
 GO_TEST_COUNT = 25
 
+ifeq ($(PRODUCTION), 1)
+	IGNORE_LINT_CHECK =
+else
+	IGNORE_LINT_CHECK = -
+endif
+
+ifeq ($(origin LINUX_PLATFORMS),undefined)
 LINUX_PLATFORMS = linux/386 linux/amd64 linux/arm/v5 linux/arm/v6 linux/arm/v7 linux/arm64 linux/loong64 linux/s390x linux/ppc64 linux/ppc64le linux/riscv64 linux/mips64le linux/mips linux/mipsle linux/mips64
+endif
+ifeq ($(origin ANDROID_PLATFORMS),undefined)
 ANDROID_PLATFORMS = android/arm64 # android/386 android/amd64 android/arm android/arm/v5 android/arm/v6 android/arm/v7
+endif
+ifeq ($(origin WINDOWS_PLATFORMS),undefined)
 WINDOWS_PLATFORMS = windows/386 windows/amd64 windows/arm64 # windows/arm/v5 windows/arm/v6 windows/arm/v7
-MAIN_PLATFORMS = windows/amd64 linux/amd64 linux/arm64
+endif
+ifeq ($(origin IOS_PLATFORMS),undefined)
 IOS_PLATFORMS = # ios/amd64 ios/arm64
+endif
+ifeq ($(origin DARWIN_PLATFORMS),undefined)
 DARWIN_PLATFORMS = darwin/amd64 darwin/arm64
+endif
+ifeq ($(origin DRAGONFLY_PLATFORMS),undefined)
 DRAGONFLY_PLATFORMS = dragonfly/amd64
+endif
+ifeq ($(origin FREEBSD_PLATFORMS),undefined)
 FREEBSD_PLATFORMS = freebsd/386 freebsd/amd64 freebsd/arm/v5 freebsd/arm/v6 freebsd/arm/v7 freebsd/arm64
+endif
+ifeq ($(origin NETBSD_PLATFORMS),undefined)
 NETBSD_PLATFORMS = netbsd/amd64 netbsd/arm64 netbsd/386 netbsd/arm/v5 netbsd/arm/v6 netbsd/arm/v7
+endif
+ifeq ($(origin OPENBSD_PLATFORMS),undefined)
 OPENBSD_PLATFORMS = openbsd/386 openbsd/amd64 openbsd/arm/v5 openbsd/arm/v6 openbsd/arm/v7 openbsd/arm64 # openbsd/mips64
+endif
+ifeq ($(origin PLAN9_PLATFORMS),undefined)
 PLAN9_PLATFORMS = plan9/386 plan9/amd64 plan9/arm/v5 plan9/arm/v6 plan9/arm/v7
+endif
+ifeq ($(origin SOLARIS_PLATFORMS),undefined)
 SOLARIS_PLATFORMS = solaris/amd64
-NICHE_PLATFORMS = js/wasm illumos/amd64 aix/ppc64 $(ANDROID_PLATFORMS) $(DARWIN_PLATFORMS) $(IOS_PLATFORMS) $(DRAGONFLY_PLATFORMS) $(FREEBSD_PLATFORMS) $(NETBSD_PLATFORMS) $(OPENBSD_PLATFORMS) $(PLAN9_PLATFORMS) $(SOLARIS_PLATFORMS)
-ALL_PLATFORMS = $(LINUX_PLATFORMS) $(WINDOWS_PLATFORMS) $(NICHE_PLATFORMS)
+endif
+ifeq ($(origin JS_PLATFORMS),undefined)
+JS_PLATFORMS = js/wasm
+endif
+ifeq ($(origin ILLUMOS_PLATFORMS),undefined)
+ILLUMOS_PLATFORMS = illumos/amd64
+endif
+ifeq ($(origin AIX_PLATFORMS),undefined)
+AIX_PLATFORMS = aix/ppc64
+endif
+MAIN_PLATFORMS = windows/amd64 linux/amd64 linux/arm64
 RELEASE_PLATFORMS = linux/amd64 linux/arm64 windows/amd64 windows/arm64 darwin/arm64
+NICHE_PLATFORMS = $(JS_PLATFORMS) $(ILLUMOS_PLATFORMS) $(AIX_PLATFORMS) $(ANDROID_PLATFORMS) $(DARWIN_PLATFORMS) $(IOS_PLATFORMS) $(DRAGONFLY_PLATFORMS) $(FREEBSD_PLATFORMS) $(NETBSD_PLATFORMS) $(OPENBSD_PLATFORMS) $(PLAN9_PLATFORMS) $(SOLARIS_PLATFORMS)
+ALL_PLATFORMS = $(LINUX_PLATFORMS) $(WINDOWS_PLATFORMS) $(NICHE_PLATFORMS)
 
 MAIN_BINARIES = $(foreach app,$(ALL_APPS),$(foreach platform,$(MAIN_PLATFORMS),build/bin/$(platform)/$(app)$(if $(findstring windows,$(platform)),.exe,)))
 WINDOWS_BINARIES = $(foreach app,$(ALL_APPS),$(foreach platform,$(WINDOWS_PLATFORMS),build/bin/$(platform)/$(app)$(if $(findstring windows,$(platform)),.exe,)))
@@ -70,6 +108,7 @@ tools: $(TOOLCHAIN)
 
 all: no-sudo $(ALL_BINARIES)
 assets: $(ASSETS)
+testassets: $(TEST_ASSETS)
 protos: $(PROTOS)
 windows-binaries: $(WINDOWS_BINARIES)
 
@@ -112,45 +151,51 @@ build/bin/js/wasm/wasm_exec.js:
 
 wasm-binaries: $(WASM_BINARIES)
 
-lint: lint-go lint-terraform lint-docker lint-yaml lint-shell lint-vuln
+lint: lint-go lint-terraform lint-docker lint-yaml lint-shell lint-markdown lint-vuln
 
 ifneq ($(wildcard install/terraform),)
 lint-terraform: build/toolchain/bin/terraform$(EXE) build/toolchain/bin/tflint$(EXE) build/toolchain/bin/trivy$(EXE)
-	(cd "$(REPOSITORY_ROOT)/install/terraform"; "$(REPOSITORY_ROOT)/build/toolchain/bin/terraform$(EXE)" fmt .)
-	"$(REPOSITORY_ROOT)/build/toolchain/bin/tflint$(EXE)" --init --chdir install/terraform
-	"$(REPOSITORY_ROOT)/build/toolchain/bin/tflint$(EXE)" --chdir install/terraform
+	$(IGNORE_LINT_CHECK)(cd "$(REPOSITORY_ROOT)/install/terraform"; "$(REPOSITORY_ROOT)/build/toolchain/bin/terraform$(EXE)" fmt .)
+	$(IGNORE_LINT_CHECK)"$(REPOSITORY_ROOT)/build/toolchain/bin/tflint$(EXE)" --init --chdir install/terraform
+	$(IGNORE_LINT_CHECK)"$(REPOSITORY_ROOT)/build/toolchain/bin/tflint$(EXE)" --chdir install/terraform
 	# tflint covers style/correctness, not security misconfigurations (overly
 	# permissive IAM, public storage buckets, missing encryption, etc.) -
 	# trivy config (successor to the now-maintenance-mode tfsec, folded into
 	# trivy) covers that instead, reusing the same tool already pinned for
 	# image scanning rather than adding a second, redundant IaC scanner.
-	"$(REPOSITORY_ROOT)/build/toolchain/bin/trivy$(EXE)" config --severity HIGH,CRITICAL --exit-code 1 "$(REPOSITORY_ROOT)/install/terraform"
+	$(IGNORE_LINT_CHECK)"$(REPOSITORY_ROOT)/build/toolchain/bin/trivy$(EXE)" config --severity HIGH,CRITICAL --exit-code 1 "$(REPOSITORY_ROOT)/install/terraform"
 else
 lint-terraform:
 endif
 
 lint-go: build/toolchain/bin/golangci-lint$(EXE) build/toolchain/bin/gofumpt$(EXE) build/toolchain/bin/revive$(EXE)
-	$(GO) fmt ./...
-	$(GO) mod verify
-	"$(REPOSITORY_ROOT)/build/toolchain/bin/gofumpt$(EXE)" -l -w .
-	"$(REPOSITORY_ROOT)/build/toolchain/bin/golangci-lint$(EXE)" fmt ./...
-	"$(REPOSITORY_ROOT)/build/toolchain/bin/golangci-lint$(EXE)" run ./...
-	"$(REPOSITORY_ROOT)/build/toolchain/bin/revive$(EXE)" -set_exit_status -exclude=build/... ./...
+	$(IGNORE_LINT_CHECK)$(GO) fmt ./...
+	$(IGNORE_LINT_CHECK)$(GO) mod verify
+	$(IGNORE_LINT_CHECK)"$(REPOSITORY_ROOT)/build/toolchain/bin/gofumpt$(EXE)" -l -w .
+	$(IGNORE_LINT_CHECK)"$(REPOSITORY_ROOT)/build/toolchain/bin/golangci-lint$(EXE)" fmt ./...
+	$(IGNORE_LINT_CHECK)"$(REPOSITORY_ROOT)/build/toolchain/bin/golangci-lint$(EXE)" run ./...
+	$(IGNORE_LINT_CHECK)"$(REPOSITORY_ROOT)/build/toolchain/bin/revive$(EXE)" -set_exit_status -exclude=build/... ./...
 
 lint-docker: build/toolchain/bin/hadolint$(EXE)
-	$(FIND) cmd -iname 'Dockerfile*' -exec "$(REPOSITORY_ROOT)/build/toolchain/bin/hadolint$(EXE)" {} +
+	$(IGNORE_LINT_CHECK)$(FIND) cmd -iname 'Dockerfile*' -exec "$(REPOSITORY_ROOT)/build/toolchain/bin/hadolint$(EXE)" --ignore=DL3066 {} +
 
 lint-yaml: build/toolchain/bin/actionlint$(EXE) build/toolchain/bin/shellcheck$(EXE)
-	"$(REPOSITORY_ROOT)/build/toolchain/bin/actionlint$(EXE)" -shellcheck="$(REPOSITORY_ROOT)/build/toolchain/bin/shellcheck$(EXE)" -config-file "$(REPOSITORY_ROOT)/.github/actionlint.yaml"
+	$(IGNORE_LINT_CHECK)"$(REPOSITORY_ROOT)/build/toolchain/bin/actionlint$(EXE)" -shellcheck="$(REPOSITORY_ROOT)/build/toolchain/bin/shellcheck$(EXE)" -config-file "$(REPOSITORY_ROOT)/.github/actionlint.yaml"
 
 lint-shell: build/toolchain/bin/shellcheck$(EXE)
-	@scripts="$$($(FIND) . -name '*.sh' -not -path './third_party/*' -not -path './build/*' -not -path '*/testassets/*')"; \
+	$(IGNORE_LINT_CHECK)@scripts="$$($(FIND) . -name '*.sh' -not -path './third_party/*' -not -path './build/*' -not -path '*/testassets/*')"; \
 	shellcheck_exclude=""; \
 	if [ "$(OS)" = "Windows_NT" ]; then shellcheck_exclude="--exclude=SC1009,SC1017,SC1044,SC1072,SC1073"; fi; \
 	if [ -n "$$scripts" ]; then "$(REPOSITORY_ROOT)/build/toolchain/bin/shellcheck$(EXE)" $$shellcheck_exclude $$scripts; fi
 
+# RUMDL_IGNORE is an optional comma-separated list of extra globs to exclude.
+RUMDL_EXCLUDE = third_party/**,build/**$(if $(RUMDL_IGNORE),$(COMMA)$(RUMDL_IGNORE))
+
+lint-markdown: build/toolchain/bin/rumdl$(EXE)
+	$(IGNORE_LINT_CHECK)"$(REPOSITORY_ROOT)/build/toolchain/bin/rumdl$(EXE)" check --exclude "$(RUMDL_EXCLUDE)" .
+
 lint-vuln: build/toolchain/bin/govulncheck$(EXE)
-	"$(REPOSITORY_ROOT)/build/toolchain/bin/govulncheck$(EXE)" ./...
+	$(IGNORE_LINT_CHECK)"$(REPOSITORY_ROOT)/build/toolchain/bin/govulncheck$(EXE)" ./...
 
 bench: $(TEST_ASSETS)
 	$(GO) test -bench=. -benchmem -tags testing ${SOURCE_DIRS}
@@ -171,8 +216,8 @@ test-tf: build/toolchain/bin/terraform$(EXE) $(TEST_ASSETS)
 	# -backend=false: main.tftest.hcl mocks the providers and never touches
 	# real state, so there's no need to configure the (real, per-environment)
 	# GCS backend just to run tests.
-	(cd "$(REPOSITORY_ROOT)install/terraform/"; "$(REPOSITORY_ROOT)/build/toolchain/bin/terraform$(EXE)" init -backend=false)
-	(cd "$(REPOSITORY_ROOT)install/terraform/"; "$(REPOSITORY_ROOT)/build/toolchain/bin/terraform$(EXE)" test)
+	(cd "$(REPOSITORY_ROOT)/install/terraform/"; "$(REPOSITORY_ROOT)/build/toolchain/bin/terraform$(EXE)" init -backend=false)
+	(cd "$(REPOSITORY_ROOT)/install/terraform/"; "$(REPOSITORY_ROOT)/build/toolchain/bin/terraform$(EXE)" test)
 else
 test-tf:
 endif
@@ -201,7 +246,7 @@ clean:
 	rm -rf build/
 	rm -rf output/
 
-presubmit: no-sudo tools lint all test-deflake release-binaries
+presubmit: no-sudo tools assets testassets lint all test-deflake release-binaries
 
 ensure-builder:
 	-$(DOCKER) buildx create --name $(BUILDX_BUILDER)
@@ -303,4 +348,4 @@ system-info:
 sync-upstream:
 	-git fetch origin; git add -A; git commit -m"Save pending changes."; git rebase -i origin/main
 
-.PHONY: tools all assets protos windows-binaries release-binaries wasm-binaries lint lint-terraform lint-go lint-docker lint-yaml lint-shell lint-vuln bench test test-go test-deflake test-tf deps clean presubmit ensure-builder docker-images scan-images images linux-images windows-images no-sudo system-info sync-upstream
+.PHONY: tools all assets testassets protos windows-binaries release-binaries wasm-binaries lint lint-terraform lint-go lint-docker lint-yaml lint-shell lint-markdown lint-vuln bench test test-go test-deflake test-tf deps clean presubmit ensure-builder docker-images scan-images images linux-images windows-images no-sudo system-info sync-upstream
