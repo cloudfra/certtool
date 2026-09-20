@@ -12,15 +12,4 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-# https://docs.codecov.com/docs/codecovyml-reference
-
-coverage:
-  status:
-    project:
-      default:
-        target: auto
-        threshold: 1%
-        informational: true
-    patch:
-      default:
-        informational: true
+TEST_ASSETS =

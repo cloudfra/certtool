@@ -12,15 +12,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-# https://docs.codecov.com/docs/codecovyml-reference
+# https://rumdl.dev/global-settings/#toml-configuration-rumdltoml
 
-coverage:
-  status:
-    project:
-      default:
-        target: auto
-        threshold: 1%
-        informational: true
-    patch:
-      default:
-        informational: true
+[MD013]
+enabled = false
+
+[MD033]
+allowed_elements = ["img"]
