@@ -19,6 +19,8 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
+	"strconv"
 	"strings"
 	"time"
 
@@ -153,6 +155,155 @@ func validateSpec(spec *CertificateSpec) error {
 // MarshalSpec serializes certificate specs to YAML.
 func MarshalSpec(specs []CertificateSpec) ([]byte, error) {
 	return yaml.Marshal(specs)
+}
+
+// ChainToSpec builds a certificate hierarchy from a list of layer widths.
+//
+// Each value is the number of certificates at that layer: widths[0] roots,
+// widths[1] intermediates per root, and so on. The last layer produces leaf
+// certificates; all prior layers are CAs. A single value therefore has no CA
+// layers and produces that many standalone leaf certificates.
+//
+// Examples:
+//   - [3] produces 3 standalone leaf certificates.
+//   - [1,1] produces 1 root CA and 1 leaf.
+//   - [1,2,3] produces 1 root CA, 2 intermediate CAs (each signed by the
+//     root), and 3 leaves per intermediate (6 leaves, 9 certificates total).
+//
+// commonName is the leaf common name. When empty it defaults to organization,
+// which in turn defaults to "Certtool", so every certificate always has a name.
+//
+// namePrefix, when not blank, is placed in front of every certificate's common
+// name, separated by a space ("prod Org Root CA"). It defaults to empty.
+//
+// Every certificate in the result has a unique common name; ChainToSpec
+// returns an error if commonName would collide with a generated CA name.
+//
+// Intermediates declare their depth when there is more than one intermediate
+// tier: "Org Intermediate 1 CA", "Org Intermediate 2 CA", and so on. With a
+// single tier the number is left out ("Org Intermediate CA").
+//
+// Common names also carry a dot-delimited lineage so certificates from
+// adjacent trees are distinguishable. The lineage lists the 1-based position within
+// each layer that has more than one certificate, from the root down to the
+// certificate itself. Layers with a single certificate add nothing, so [1,1,3]
+// numbers only the leaves ("svc 1"), while [1,2,3] names the leaves "svc 1.1",
+// "svc 1.2", "svc 1.3", "svc 2.1", and so on.
+func ChainToSpec(widths []int, commonName string, organization string, namePrefix string) ([]CertificateSpec, error) {
+	if len(widths) == 0 {
+		return nil, fmt.Errorf("--chain requires at least one value")
+	}
+
+	for i, w := range widths {
+		if w < 1 {
+			return nil, fmt.Errorf("--chain layer %d must be at least 1, got %d", i+1, w)
+		}
+	}
+
+	if organization == "" {
+		organization = "Certtool"
+	}
+
+	leafCN := commonName
+	if leafCN == "" {
+		leafCN = organization
+	}
+
+	specs := buildChainLayer(widths, 0, nil, leafCN, organization)
+	applyNamePrefix(specs, strings.TrimSpace(namePrefix))
+	if err := checkUniqueNames(specs, map[string]bool{}); err != nil {
+		return nil, err
+	}
+	return specs, nil
+}
+
+// applyNamePrefix prepends prefix and a space to every common name in the spec
+// tree. An empty prefix leaves the names unchanged.
+func applyNamePrefix(specs []CertificateSpec, prefix string) {
+	if prefix == "" {
+		return
+	}
+	for i := range specs {
+		specs[i].CommonName = prefix + " " + specs[i].CommonName
+		applyNamePrefix(specs[i].Children, prefix)
+	}
+}
+
+// checkUniqueNames returns an error if a common name appears more than once
+// in the spec tree. seen accumulates the names visited so far.
+func checkUniqueNames(specs []CertificateSpec, seen map[string]bool) error {
+	for i := range specs {
+		if seen[specs[i].CommonName] {
+			return fmt.Errorf("--chain would generate the common name %q more than once; choose a different --common-name or --organization", specs[i].CommonName)
+		}
+		seen[specs[i].CommonName] = true
+		if err := checkUniqueNames(specs[i].Children, seen); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// caName returns the base common name, before any lineage, of a CA at the given
+// layer of a hierarchy with the given number of layers. Layer 0 is the root;
+// layers 1 through layers-2 are intermediate tiers. The tier number is only
+// included when there is more than one tier, so it is empty by default.
+func caName(organization string, layer, layers int) string {
+	if layer == 0 {
+		return organization + " Root CA"
+	}
+	tier := ""
+	if layers-2 > 1 {
+		tier = " " + strconv.Itoa(layer)
+	}
+	return organization + " Intermediate" + tier + " CA"
+}
+
+// nextLineage extends the lineage of a parent with the 1-based position of a
+// child among count siblings. A layer with a single certificate is omitted
+// because the position would carry no information.
+func nextLineage(parent []int, count, index int) []int {
+	if count == 1 {
+		return parent
+	}
+	return append(slices.Clone(parent), index+1)
+}
+
+// lineageName appends a dot-delimited lineage to a base name, if there is one.
+func lineageName(base string, lineage []int) string {
+	if len(lineage) == 0 {
+		return base
+	}
+	parts := make([]string, len(lineage))
+	for i, n := range lineage {
+		parts[i] = strconv.Itoa(n)
+	}
+	return base + " " + strings.Join(parts, ".")
+}
+
+// buildChainLayer builds the certificates at the given layer, and recursively
+// the layers beneath them. Layer 0 is the root layer unless it is also the
+// leaf layer.
+func buildChainLayer(widths []int, layer int, parentLineage []int, leafCN string, organization string) []CertificateSpec {
+	isLeaf := layer == len(widths)-1
+	count := widths[layer]
+	specs := make([]CertificateSpec, count)
+
+	for i := range specs {
+		lineage := nextLineage(parentLineage, count, i)
+		if isLeaf {
+			specs[i] = CertificateSpec{CommonName: lineageName(leafCN, lineage)}
+			continue
+		}
+
+		specs[i] = CertificateSpec{
+			CommonName:           lineageName(caName(organization, layer, len(widths)), lineage),
+			CertificateAuthority: true,
+			Children:             buildChainLayer(widths, layer+1, lineage, leafCN, organization),
+		}
+	}
+
+	return specs
 }
 
 // GenerationOutput is the result of generating a single certificate from a spec.

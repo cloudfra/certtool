@@ -399,6 +399,201 @@ func TestCerttoolMainSpecMissing(t *testing.T) {
 	}
 }
 
+func TestValidateModeFlags(t *testing.T) {
+	t.Run("no modes", func(t *testing.T) {
+		origChain, origSpec := *chain, *spec
+		*chain = ""
+		*spec = ""
+		t.Cleanup(func() { *chain, *spec = origChain, origSpec })
+
+		if err := validateModeFlags(); err != nil {
+			t.Errorf("validateModeFlags() err = %v, want nil", err)
+		}
+	})
+
+	t.Run("chain and spec", func(t *testing.T) {
+		origChain, origSpec := *chain, *spec
+		*chain = "2"
+		*spec = "file.yaml"
+		t.Cleanup(func() { *chain, *spec = origChain, origSpec })
+
+		if err := validateModeFlags(); err == nil {
+			t.Error("validateModeFlags() = nil, want error for mutually exclusive flags")
+		}
+	})
+}
+
+func TestCerttoolMainChain(t *testing.T) {
+	dir := t.TempDir()
+	origChain, origOutputDir := *chain, *outputDir
+	*chain = "1,1"
+	*outputDir = dir
+	t.Cleanup(func() { *chain, *outputDir = origChain, origOutputDir })
+
+	if got := certtoolMain(); got != 0 {
+		t.Errorf("certtoolMain() = %d, want 0 for --chain 1,1", got)
+	}
+
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatalf("ReadDir() err = %v", err)
+	}
+	if len(entries) < 4 {
+		t.Errorf("expected at least 4 files (2 certs + 2 keys), got %d", len(entries))
+	}
+}
+
+func TestCerttoolMainChainThreeTier(t *testing.T) {
+	dir := t.TempDir()
+	origChain, origOutputDir := *chain, *outputDir
+	*chain = "1,1,1"
+	*outputDir = dir
+	t.Cleanup(func() { *chain, *outputDir = origChain, origOutputDir })
+
+	if got := certtoolMain(); got != 0 {
+		t.Errorf("certtoolMain() = %d, want 0 for --chain 1,1,1", got)
+	}
+
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatalf("ReadDir() err = %v", err)
+	}
+	if len(entries) != 6 {
+		t.Errorf("expected 6 files (3 certs + 3 keys), got %d", len(entries))
+	}
+}
+
+func TestCerttoolMainChainBreadth(t *testing.T) {
+	dir := t.TempDir()
+	origChain, origOutputDir := *chain, *outputDir
+	*chain = "1,2,3"
+	*outputDir = dir
+	t.Cleanup(func() { *chain, *outputDir = origChain, origOutputDir })
+
+	if got := certtoolMain(); got != 0 {
+		t.Errorf("certtoolMain() = %d, want 0 for --chain 1,2,3", got)
+	}
+
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatalf("ReadDir() err = %v", err)
+	}
+	wantFiles := (1 + 2 + 2*3) * 2
+	if len(entries) != wantFiles {
+		t.Errorf("expected %d files, got %d", wantFiles, len(entries))
+	}
+}
+
+func TestCerttoolMainChainInvalid(t *testing.T) {
+	origChain := *chain
+	*chain = "0"
+	t.Cleanup(func() { *chain = origChain })
+
+	if got := certtoolMain(); got != 1 {
+		t.Errorf("certtoolMain() = %d, want 1 for --chain 0", got)
+	}
+}
+
+func TestCerttoolMainChainSingleWidthLeaves(t *testing.T) {
+	dir := t.TempDir()
+	origChain, origOutputDir := *chain, *outputDir
+	*chain = "3"
+	*outputDir = dir
+	t.Cleanup(func() { *chain, *outputDir = origChain, origOutputDir })
+
+	if got := certtoolMain(); got != 0 {
+		t.Fatalf("certtoolMain() = %d, want 0 for --chain 3", got)
+	}
+	certs, err := filepath.Glob(filepath.Join(dir, "*.cert"))
+	if err != nil || len(certs) != 3 {
+		t.Errorf("got %d certificates (err %v), want 3 standalone leaves", len(certs), err)
+	}
+}
+
+func TestCerttoolMainExportSpec(t *testing.T) {
+	dir := t.TempDir()
+	outFile := filepath.Join(dir, "exported.yaml")
+
+	origExportSpec, origChain, origOutputDir := *exportSpec, *chain, *outputDir
+	*exportSpec = outFile
+	*chain = "2"
+	*outputDir = dir
+	t.Cleanup(func() { *exportSpec, *chain, *outputDir = origExportSpec, origChain, origOutputDir })
+
+	if got := certtoolMain(); got != 0 {
+		t.Errorf("certtoolMain() = %d, want 0", got)
+	}
+	if _, err := os.Stat(outFile); err != nil {
+		t.Errorf("expected spec file to be written: %v", err)
+	}
+}
+
+func TestCerttoolMainExportSpecFromFlags(t *testing.T) {
+	dir := t.TempDir()
+	outFile := filepath.Join(dir, "flags.yaml")
+
+	origExportSpec := *exportSpec
+	*exportSpec = outFile
+	t.Cleanup(func() { *exportSpec = origExportSpec })
+
+	if got := certtoolMain(); got != 0 {
+		t.Errorf("certtoolMain() = %d, want 0", got)
+	}
+	if _, err := os.Stat(outFile); err != nil {
+		t.Errorf("expected spec file to be written: %v", err)
+	}
+
+	data, err := os.ReadFile(filepath.Clean(outFile))
+	if err != nil {
+		t.Fatalf("ReadFile() err = %v", err)
+	}
+	if len(data) == 0 {
+		t.Error("exported spec file is empty")
+	}
+}
+
+func TestCerttoolMainSpecWithExportSpec(t *testing.T) {
+	dir := t.TempDir()
+	specFile := filepath.Join(dir, "input.yaml")
+	outFile := filepath.Join(dir, "output.yaml")
+	if err := os.WriteFile(specFile, []byte(`
+- commonName: "Test Root CA"
+  certificateAuthority: true
+  keyType: "RSA-2048"
+  children:
+    - commonName: "leaf.example.com"
+      keyType: "RSA-2048"
+`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	origSpec, origExportSpec := *spec, *exportSpec
+	*spec = specFile
+	*exportSpec = outFile
+	t.Cleanup(func() { *spec, *exportSpec = origSpec, origExportSpec })
+
+	if got := certtoolMain(); got != 0 {
+		t.Errorf("certtoolMain() = %d, want 0", got)
+	}
+	if _, err := os.Stat(outFile); err != nil {
+		t.Errorf("expected output spec file: %v", err)
+	}
+
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatalf("ReadDir() err = %v", err)
+	}
+	certCount := 0
+	for _, e := range entries {
+		if filepath.Ext(e.Name()) == ".cert" {
+			certCount++
+		}
+	}
+	if certCount != 0 {
+		t.Errorf("expected no .cert files when --export-spec is set, got %d", certCount)
+	}
+}
+
 func TestStringToKeyTypeErrors(t *testing.T) {
 	testCases := []string{
 		"bogus",          // unknown key type name
@@ -416,5 +611,123 @@ func TestStringToKeyTypeErrors(t *testing.T) {
 				t.Errorf("stringToKeyType(%q) = nil error, want error", tc)
 			}
 		})
+	}
+}
+
+func TestCerttoolMainChainNotAnInteger(t *testing.T) {
+	origChain := *chain
+	*chain = "2,abc"
+	t.Cleanup(func() { *chain = origChain })
+
+	if got := certtoolMain(); got != 1 {
+		t.Errorf("certtoolMain() = %d, want 1 for a non-integer --chain value", got)
+	}
+}
+
+func TestCerttoolMainChainAndSpecConflict(t *testing.T) {
+	origChain, origSpec := *chain, *spec
+	*chain = "2"
+	*spec = "unused.yaml"
+	t.Cleanup(func() { *chain, *spec = origChain, origSpec })
+
+	if got := certtoolMain(); got != 1 {
+		t.Errorf("certtoolMain() = %d, want 1 when --chain and --spec are both set", got)
+	}
+}
+
+func TestCerttoolMainChainGenerateFailure(t *testing.T) {
+	blocker := filepath.Join(t.TempDir(), "file")
+	if err := os.WriteFile(blocker, nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	origChain, origOutputDir := *chain, *outputDir
+	*chain = "2"
+	*outputDir = filepath.Join(blocker, "out") // a directory cannot be created beneath a regular file
+	t.Cleanup(func() { *chain, *outputDir = origChain, origOutputDir })
+
+	if got := certtoolMain(); got != 1 {
+		t.Errorf("certtoolMain() = %d, want 1 when the output directory cannot be created", got)
+	}
+}
+
+func TestCerttoolMainExportSpecInvalidPorts(t *testing.T) {
+	origExportSpec, origPorts := *exportSpec, *ports
+	*exportSpec = filepath.Join(t.TempDir(), "out.yaml")
+	*ports = "not-a-port"
+	t.Cleanup(func() { *exportSpec, *ports = origExportSpec, origPorts })
+
+	if got := certtoolMain(); got != 1 {
+		t.Errorf("certtoolMain() = %d, want 1 for invalid --ports with --export-spec", got)
+	}
+}
+
+func TestCerttoolMainExportSpecWriteFailure(t *testing.T) {
+	origExportSpec, origChain := *exportSpec, *chain
+	*exportSpec = filepath.Join(t.TempDir(), "missing", "out.yaml")
+	*chain = "2"
+	t.Cleanup(func() { *exportSpec, *chain = origExportSpec, origChain })
+
+	if got := certtoolMain(); got != 1 {
+		t.Errorf("certtoolMain() = %d, want 1 when the spec file cannot be written", got)
+	}
+}
+
+func TestCerttoolMainSpecCodeSigningPFX(t *testing.T) {
+	dir := t.TempDir()
+	specFile := filepath.Join(dir, "codesign.yaml")
+	if err := os.WriteFile(specFile, []byte(`
+- commonName: "Test Signer"
+  codeSigning: true
+  target: windows10
+`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	origSpec, origOutputDir := *spec, *outputDir
+	*spec = specFile
+	*outputDir = dir
+	t.Cleanup(func() { *spec, *outputDir = origSpec, origOutputDir })
+
+	if got := certtoolMain(); got != 0 {
+		t.Fatalf("certtoolMain() = %d, want 0", got)
+	}
+	matches, err := filepath.Glob(filepath.Join(dir, "*.pfx"))
+	if err != nil || len(matches) != 1 {
+		t.Errorf("expected exactly one PFX file, got %v (err %v)", matches, err)
+	}
+}
+
+func TestCerttoolMainChainNamePrefix(t *testing.T) {
+	dir := t.TempDir()
+	origChain, origOutputDir, origNamePrefix := *chain, *outputDir, *namePrefix
+	*chain = "1,1"
+	*outputDir = dir
+	*namePrefix = "prod"
+	t.Cleanup(func() { *chain, *outputDir, *namePrefix = origChain, origOutputDir, origNamePrefix })
+
+	if got := certtoolMain(); got != 0 {
+		t.Fatalf("certtoolMain() = %d, want 0", got)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "prod-cloudfra-root-ca.cert")); err != nil {
+		t.Errorf("expected the root certificate to carry the prefix: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "prod-cloudfra-root-ca-prod-cloudfra.cert")); err != nil {
+		t.Errorf("expected the leaf certificate to carry the prefix: %v", err)
+	}
+}
+
+func TestCerttoolMainNamePrefixWithoutChain(t *testing.T) {
+	dir := t.TempDir()
+	origPublicCertificate, origPrivateKey, origNamePrefix := *publicCertificate, *privateKey, *namePrefix
+	*publicCertificate = filepath.Join(dir, "app.cert")
+	*privateKey = filepath.Join(dir, "app.key")
+	*namePrefix = "prod"
+	t.Cleanup(func() {
+		*publicCertificate, *privateKey, *namePrefix = origPublicCertificate, origPrivateKey, origNamePrefix
+	})
+
+	if got := certtoolMain(); got != 0 {
+		t.Errorf("certtoolMain() = %d, want 0; --name-prefix should only warn, not fail, when --chain is unset", got)
 	}
 }

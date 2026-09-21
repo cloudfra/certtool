@@ -211,6 +211,101 @@ certtool --spec mixed-roots.yaml --output-dir ./certs
 #   certs/release-sign.cert, certs/release-sign.key, certs/release-sign.pfx
 ```
 
+## Generating a hierarchy with --chain
+
+For simple hierarchies you do not need a spec file. `--chain` takes the number of certificates in each layer, from the root down. The last layer is the leaf certificates and every earlier layer is a CA.
+
+| Command | Generates |
+| ------- | --------- |
+| `--chain 3` | 3 standalone leaf certificates (no CA) |
+| `--chain 1,1` | 1 root CA and 1 leaf |
+| `--chain 1,2,3` | 1 root CA, 2 intermediate CAs, and 3 leaves under each intermediate (9 certificates) |
+| `--chain 1,1,1,1` | 1 root CA, 2 stacked intermediate CAs, and 1 leaf |
+| `--chain 2,1,1` | 2 independent trees, each with a root CA, an intermediate CA, and a leaf |
+
+```bash
+certtool --chain 1,2,3 --common-name svc --organization Acme --output-dir ./certs
+```
+
+`--common-name` names the leaves (default: the `--organization` value) and `--organization` names the CAs. Every certificate gets a unique common name, so the output filenames never collide:
+
+```text
+certs/acme-root-ca.cert
+certs/acme-root-ca-acme-intermediate-ca-1.cert
+certs/acme-root-ca-acme-intermediate-ca-1-svc-1-1.cert
+certs/acme-root-ca-acme-intermediate-ca-1-svc-1-2.cert
+certs/acme-root-ca-acme-intermediate-ca-1-svc-1-3.cert
+certs/acme-root-ca-acme-intermediate-ca-2.cert
+certs/acme-root-ca-acme-intermediate-ca-2-svc-2-1.cert
+...
+```
+
+Each certificate has a matching `.key` file. `--chain` and `--spec` cannot be combined; `--output-dir` applies to both.
+
+### How certificates are named
+
+| Rule | Example |
+| ---- | ------- |
+| CAs are named `<organization> Root CA` and `<organization> Intermediate CA`. | `Acme Root CA` |
+| When there is more than one intermediate tier, intermediates declare their depth. With a single tier the number is left out. | `Acme Intermediate 1 CA`, `Acme Intermediate 2 CA` |
+| Any layer with more than one certificate adds its 1-based position to the name. Positions from the root down are joined with dots, so the name shows the lineage. Layers with a single certificate add nothing. | `--chain 1,2,3` names the leaves `svc 1.1`, `svc 1.2`, `svc 1.3`, `svc 2.1`, and so on. |
+| `--name-prefix` puts a prefix in front of every name. It is empty by default. | `--name-prefix prod` gives `prod Acme Root CA` |
+
+If your `--common-name` would produce the same name as a generated CA (for example `--common-name "Acme Root CA"`), `certtool` reports an error instead of generating duplicate names.
+
+```bash
+# Keep two environments apart in one output directory
+certtool --chain 1,1 --common-name svc --organization Acme --name-prefix prod --output-dir ./certs
+certtool --chain 1,1 --common-name svc --organization Acme --name-prefix staging --output-dir ./certs
+```
+
+## Exporting a spec with --export-spec
+
+`--export-spec <path>` writes the spec as YAML instead of generating certificates. It works with `--chain`, `--spec`, and plain flags, so you can start from a generated hierarchy and customise it.
+
+```bash
+certtool --chain 1,2,1 --common-name svc --organization Acme --export-spec certs.yaml
+```
+
+```yaml
+- commonName: Acme Root CA
+  certificateAuthority: true
+  children:
+    - commonName: Acme Intermediate CA 1
+      certificateAuthority: true
+      children:
+        - commonName: svc 1
+    - commonName: Acme Intermediate CA 2
+      certificateAuthority: true
+      children:
+        - commonName: svc 2
+```
+
+Edit the file, for example to add `hostnames` to the leaves, then generate the certificates from it:
+
+```bash
+certtool --spec certs.yaml --output-dir ./certs
+```
+
+Exporting the flags of a single certificate is a quick way to see the field names:
+
+```bash
+certtool --hostnames example.com --export-spec single.yaml
+```
+
+```yaml
+- commonName: cloudfra
+  keyType: RSA-2048
+  validity: 8760h0m0s
+  organization: cloudfra
+  organizationalUnit: gows
+  country: US
+  locality: Seattle
+  province: WA
+  hostnames:
+    - example.com
+```
+
 ## Real-World Use Cases
 
 ### Active Directory / LDAPS
