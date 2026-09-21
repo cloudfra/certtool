@@ -109,6 +109,23 @@ Generate a root CA, intermediate CAs, and leaf certificates in one command. `--c
 
 Every certificate gets a unique name (for example `Acme Root CA`, `Acme Intermediate CA 1`, `svc 1.2`), so files never overwrite each other. See the [certificate spec documentation](docs/spec.md) for the naming rules, the spec format, and real-world examples.
 
+### Use as a Go library
+
+Everything the command does is available from `pkg/certtool`, so you can offer the same features behind your own front end. `Options` has one field per flag; fill it in from a config file, an API request, or another flag library, and call `Run`.
+
+```go
+opts := certtool.DefaultOptions()
+opts.Chain = "1,2,3"
+opts.CommonName = "svc"
+opts.OutputDir = "certs"
+
+if err := certtool.Run(opts); err != nil {
+    log.Fatal(err)
+}
+```
+
+`Run` validates the options and does all of the work; progress and warnings go to the default [`log/slog`](https://pkg.go.dev/log/slog) logger, so `slog.SetDefault` chooses where they go. [`cmd/certtool/certtool.go`](cmd/certtool/certtool.go) is a complete example: it only binds the flags to `Options` and calls `Run`. The lower-level functions (`GenerateKeyPair`, `ChainToSpec`, `GenerateFromSpec`, and others) remain available when you need more control.
+
 ### Flags
 
 #### TLS flags
