@@ -19,6 +19,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -264,6 +265,141 @@ func TestMarshalSpec_RoundTrip(t *testing.T) {
 	}
 	if roundTrip[0].Children[0].CommonName != testSpecLeafCom {
 		t.Errorf("round-trip child CN = %q, want %q", roundTrip[0].Children[0].CommonName, testSpecLeafCom)
+	}
+}
+
+func TestChainToSpec_Depth2(t *testing.T) {
+	t.Parallel()
+	specs, err := ChainToSpec([]int{1, 1}, "leaf.local", "Acme", "")
+	if err != nil {
+		t.Fatalf("ChainToSpec() err = %v", err)
+	}
+	if len(specs) != 1 {
+		t.Fatalf("got %d roots, want 1", len(specs))
+	}
+	root := specs[0]
+	if root.CommonName != "Acme Root CA" {
+		t.Errorf("root CN = %q, want %q", root.CommonName, "Acme Root CA")
+	}
+	if !root.CertificateAuthority {
+		t.Error("root CA = false, want true")
+	}
+	if len(root.Children) != 1 {
+		t.Fatalf("root has %d children, want 1", len(root.Children))
+	}
+	if root.Children[0].CommonName != "leaf.local" {
+		t.Errorf("leaf CN = %q, want %q", root.Children[0].CommonName, "leaf.local")
+	}
+	if root.Children[0].CertificateAuthority {
+		t.Error("leaf CA = true, want false")
+	}
+}
+
+func TestChainToSpec_Depth4(t *testing.T) {
+	t.Parallel()
+	specs, err := ChainToSpec([]int{1, 1, 1, 1}, "", "TestOrg", "")
+	if err != nil {
+		t.Fatalf("ChainToSpec() err = %v", err)
+	}
+	root := specs[0]
+	if root.CommonName != "TestOrg Root CA" {
+		t.Errorf("root CN = %q", root.CommonName)
+	}
+	inter1 := root.Children[0]
+	if inter1.CommonName != "TestOrg Intermediate 1 CA" {
+		t.Errorf("intermediate 1 CN = %q", inter1.CommonName)
+	}
+	if !inter1.CertificateAuthority {
+		t.Error("intermediate 1 CA = false")
+	}
+	inter2 := inter1.Children[0]
+	if inter2.CommonName != "TestOrg Intermediate 2 CA" {
+		t.Errorf("intermediate 2 CN = %q", inter2.CommonName)
+	}
+	leaf := inter2.Children[0]
+	if leaf.CommonName != "TestOrg" {
+		t.Errorf("leaf CN = %q, want %q", leaf.CommonName, "TestOrg")
+	}
+	if leaf.CertificateAuthority {
+		t.Error("leaf CA = true")
+	}
+}
+
+func TestChainToSpec_Empty(t *testing.T) {
+	t.Parallel()
+	if _, err := ChainToSpec([]int{}, "", "", ""); err == nil {
+		t.Fatal("ChainToSpec([]) = nil error, want error")
+	}
+}
+
+func TestChainToSpec_DefaultOrg(t *testing.T) {
+	t.Parallel()
+	specs, err := ChainToSpec([]int{1, 1}, "", "", "")
+	if err != nil {
+		t.Fatalf("ChainToSpec() err = %v", err)
+	}
+	if specs[0].CommonName != "Certtool Root CA" {
+		t.Errorf("root CN = %q, want %q", specs[0].CommonName, "Certtool Root CA")
+	}
+	if specs[0].Children[0].CommonName != "Certtool" {
+		t.Errorf("leaf CN = %q, want %q", specs[0].Children[0].CommonName, "Certtool")
+	}
+}
+
+func TestChainToSpec_Breadth(t *testing.T) {
+	t.Parallel()
+	specs, err := ChainToSpec([]int{1, 2, 3}, "", "Acme", "")
+	if err != nil {
+		t.Fatalf("ChainToSpec() err = %v", err)
+	}
+	if len(specs) != 1 {
+		t.Fatalf("got %d roots, want 1", len(specs))
+	}
+	root := specs[0]
+	if root.CommonName != "Acme Root CA" {
+		t.Errorf("root CN = %q", root.CommonName)
+	}
+	if len(root.Children) != 2 {
+		t.Fatalf("root has %d children, want 2", len(root.Children))
+	}
+	for i, inter := range root.Children {
+		if !inter.CertificateAuthority {
+			t.Errorf("intermediate %d CA = false", i)
+		}
+		if len(inter.Children) != 3 {
+			t.Fatalf("intermediate %d has %d children, want 3", i, len(inter.Children))
+		}
+		for _, leaf := range inter.Children {
+			if leaf.CertificateAuthority {
+				t.Errorf("leaf %q CA = true", leaf.CommonName)
+			}
+		}
+	}
+}
+
+func TestChainToSpec_MultipleRoots(t *testing.T) {
+	t.Parallel()
+	specs, err := ChainToSpec([]int{2, 1}, "", "Org", "")
+	if err != nil {
+		t.Fatalf("ChainToSpec() err = %v", err)
+	}
+	if len(specs) != 2 {
+		t.Fatalf("got %d roots, want 2", len(specs))
+	}
+	if specs[0].CommonName != "Org Root CA 1" {
+		t.Errorf("root 0 CN = %q", specs[0].CommonName)
+	}
+	if specs[1].CommonName != "Org Root CA 2" {
+		t.Errorf("root 1 CN = %q", specs[1].CommonName)
+	}
+}
+
+func TestChainToSpec_ZeroWidth(t *testing.T) {
+	t.Parallel()
+	for _, widths := range [][]int{{0}, {1, 0, 3}, {-2}} {
+		if _, err := ChainToSpec(widths, "", "", ""); err == nil {
+			t.Errorf("ChainToSpec(%v) = nil error, want error", widths)
+		}
 	}
 }
 
@@ -565,5 +701,211 @@ func TestGenerateFromSpec_Stress(t *testing.T) {
 	wantFiles := wantTotal * 2
 	if len(entries) != wantFiles {
 		t.Errorf("output dir has %d files, want %d", len(entries), wantFiles)
+	}
+}
+
+func TestChainToSpec_SingleWidthProducesLeaves(t *testing.T) {
+	t.Parallel()
+	specs, err := ChainToSpec([]int{3}, "svc", "Org", "")
+	if err != nil {
+		t.Fatalf("ChainToSpec() err = %v", err)
+	}
+	if len(specs) != 3 {
+		t.Fatalf("got %d certificates, want 3", len(specs))
+	}
+	for i, spec := range specs {
+		if want := fmt.Sprintf("svc %d", i+1); spec.CommonName != want {
+			t.Errorf("certificate %d CN = %q, want %q", i, spec.CommonName, want)
+		}
+		if spec.CertificateAuthority || len(spec.Children) != 0 {
+			t.Errorf("certificate %d = %+v, want a standalone leaf", i, spec)
+		}
+	}
+
+	single, err := ChainToSpec([]int{1}, "", "Org", "")
+	if err != nil {
+		t.Fatalf("ChainToSpec([1]) err = %v", err)
+	}
+	if len(single) != 1 || single[0].CommonName != "Org" || single[0].CertificateAuthority {
+		t.Errorf("ChainToSpec([1]) = %+v, want one leaf named %q", single, "Org")
+	}
+}
+
+// collectNames returns the common names of the whole hierarchy in the same
+// shape as the spec tree, one slice per layer, in depth-first order.
+func collectNames(specs []CertificateSpec, layers [][]string, depth int) [][]string {
+	for i := range specs {
+		for len(layers) <= depth {
+			layers = append(layers, nil)
+		}
+		layers[depth] = append(layers[depth], specs[i].CommonName)
+		layers = collectNames(specs[i].Children, layers, depth+1)
+	}
+	return layers
+}
+
+func TestChainToSpec_LineageNames(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name   string
+		widths []int
+		want   [][]string // common names per layer, depth-first order
+	}{
+		{
+			name:   "single root and intermediate number only the leaves",
+			widths: []int{1, 1, 3},
+			want: [][]string{
+				{"Org Root CA"},
+				{"Org Intermediate CA"},
+				{"svc 1", "svc 2", "svc 3"},
+			},
+		},
+		{
+			name:   "singular root omits its number and leaves carry the intermediate",
+			widths: []int{1, 2, 2},
+			want: [][]string{
+				{"Org Root CA"},
+				{"Org Intermediate CA 1", "Org Intermediate CA 2"},
+				{"svc 1.1", "svc 1.2", "svc 2.1", "svc 2.2"},
+			},
+		},
+		{
+			name:   "multiple roots number every descendant with its lineage",
+			widths: []int{2, 2, 1},
+			want: [][]string{
+				{"Org Root CA 1", "Org Root CA 2"},
+				{"Org Intermediate CA 1.1", "Org Intermediate CA 1.2", "Org Intermediate CA 2.1", "Org Intermediate CA 2.2"},
+				{"svc 1.1", "svc 1.2", "svc 2.1", "svc 2.2"},
+			},
+		},
+		{
+			name:   "singular layers below a branch inherit the ancestor number",
+			widths: []int{2, 1, 1},
+			want: [][]string{
+				{"Org Root CA 1", "Org Root CA 2"},
+				{"Org Intermediate CA 1", "Org Intermediate CA 2"},
+				{"svc 1", "svc 2"},
+			},
+		},
+		{
+			name:   "multiple intermediate tiers declare their depth",
+			widths: []int{1, 1, 1, 1},
+			want: [][]string{
+				{"Org Root CA"},
+				{"Org Intermediate 1 CA"},
+				{"Org Intermediate 2 CA"},
+				{"svc"},
+			},
+		},
+		{
+			name:   "tier label precedes the lineage",
+			widths: []int{1, 2, 2, 1},
+			want: [][]string{
+				{"Org Root CA"},
+				{"Org Intermediate 1 CA 1", "Org Intermediate 1 CA 2"},
+				{"Org Intermediate 2 CA 1.1", "Org Intermediate 2 CA 1.2", "Org Intermediate 2 CA 2.1", "Org Intermediate 2 CA 2.2"},
+				{"svc 1.1", "svc 1.2", "svc 2.1", "svc 2.2"},
+			},
+		},
+		{
+			name:   "fully branching hierarchy",
+			widths: []int{2, 2, 2},
+			want: [][]string{
+				{"Org Root CA 1", "Org Root CA 2"},
+				{"Org Intermediate CA 1.1", "Org Intermediate CA 1.2", "Org Intermediate CA 2.1", "Org Intermediate CA 2.2"},
+				{"svc 1.1.1", "svc 1.1.2", "svc 1.2.1", "svc 1.2.2", "svc 2.1.1", "svc 2.1.2", "svc 2.2.1", "svc 2.2.2"},
+			},
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			specs, err := ChainToSpec(tc.widths, "svc", "Org", "")
+			if err != nil {
+				t.Fatalf("ChainToSpec(%v) err = %v", tc.widths, err)
+			}
+			got := collectNames(specs, nil, 0)
+			if len(got) != len(tc.want) {
+				t.Fatalf("got %d layers, want %d: %v", len(got), len(tc.want), got)
+			}
+			for layer := range tc.want {
+				if !slices.Equal(got[layer], tc.want[layer]) {
+					t.Errorf("layer %d names = %q, want %q", layer, got[layer], tc.want[layer])
+				}
+			}
+		})
+	}
+}
+
+// TestChainToSpec_NamesUnique checks the reason for lineage and tier labels:
+// no two certificates in a generated hierarchy may share a common name.
+func TestChainToSpec_NamesUnique(t *testing.T) {
+	t.Parallel()
+	for _, widths := range [][]int{{2, 1}, {3, 2, 2}, {1, 3, 1}, {2, 2, 2, 2}, {1, 1, 4}, {1, 1, 1, 1, 1}, {2, 1, 3, 1}, {5}} {
+		specs, err := ChainToSpec(widths, "svc", "Org", "")
+		if err != nil {
+			t.Fatalf("ChainToSpec(%v) err = %v", widths, err)
+		}
+		seen := map[string]bool{}
+		for layer, names := range collectNames(specs, nil, 0) {
+			for _, name := range names {
+				if seen[name] {
+					t.Errorf("widths %v: layer %d repeats common name %q", widths, layer, name)
+				}
+				seen[name] = true
+			}
+		}
+	}
+}
+
+func TestChainToSpec_RejectsCollidingCommonName(t *testing.T) {
+	t.Parallel()
+	for _, cn := range []string{"Org Root CA", "Org Intermediate CA"} {
+		if _, err := ChainToSpec([]int{1, 1, 1}, cn, "Org", ""); err == nil {
+			t.Errorf("ChainToSpec with common name %q = nil error, want a uniqueness error", cn)
+		}
+	}
+}
+
+func TestChainToSpec_NamePrefix(t *testing.T) {
+	t.Parallel()
+	for _, widths := range [][]int{{3}, {1, 1}, {1, 2, 3}, {2, 1, 1, 2}} {
+		plain, err := ChainToSpec(widths, "svc", "Org", "")
+		if err != nil {
+			t.Fatalf("ChainToSpec(%v) err = %v", widths, err)
+		}
+		prefixed, err := ChainToSpec(widths, "svc", "Org", "prod")
+		if err != nil {
+			t.Fatalf("ChainToSpec(%v, prefix) err = %v", widths, err)
+		}
+
+		want := collectNames(plain, nil, 0)
+		got := collectNames(prefixed, nil, 0)
+		if len(got) != len(want) {
+			t.Fatalf("widths %v: got %d layers, want %d", widths, len(got), len(want))
+		}
+		for layer := range want {
+			for i := range want[layer] {
+				if expected := "prod " + want[layer][i]; got[layer][i] != expected {
+					t.Errorf("widths %v: layer %d name = %q, want %q", widths, layer, got[layer][i], expected)
+				}
+			}
+		}
+	}
+}
+
+func TestChainToSpec_BlankNamePrefixIsEmpty(t *testing.T) {
+	t.Parallel()
+	plain, err := ChainToSpec([]int{1, 1}, "svc", "Org", "")
+	if err != nil {
+		t.Fatalf("ChainToSpec() err = %v", err)
+	}
+	blank, err := ChainToSpec([]int{1, 1}, "svc", "Org", "  ")
+	if err != nil {
+		t.Fatalf("ChainToSpec() err = %v", err)
+	}
+	if plain[0].CommonName != blank[0].CommonName || plain[0].Children[0].CommonName != blank[0].Children[0].CommonName {
+		t.Errorf("blank prefix changed names: %q/%q vs %q/%q",
+			blank[0].CommonName, blank[0].Children[0].CommonName, plain[0].CommonName, plain[0].Children[0].CommonName)
 	}
 }
