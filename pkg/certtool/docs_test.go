@@ -15,6 +15,7 @@
 package certtool
 
 import (
+	"bytes"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -31,13 +32,37 @@ func TestSpecDocExamplesAreValid(t *testing.T) {
 		t.Fatalf("ReadFile() err = %v", err)
 	}
 
-	blocks := yamlFence.FindAllSubmatch(doc, -1)
+	blocks := yamlExamples(doc)
 	if len(blocks) == 0 {
 		t.Fatal("no yaml examples found in docs/spec.md")
 	}
 	for i, block := range blocks {
-		if _, err := UnmarshalSpec(block[1]); err != nil {
-			t.Errorf("yaml example #%d in docs/spec.md is invalid: %v\n%s", i+1, err, block[1])
+		if _, err := UnmarshalSpec(block); err != nil {
+			t.Errorf("yaml example #%d in docs/spec.md is invalid: %v\n%s", i+1, err, block)
 		}
 	}
+}
+
+// TestYAMLExamplesCRLF guards against Windows checkouts, where the markdown
+// files have CRLF line endings.
+func TestYAMLExamplesCRLF(t *testing.T) {
+	doc := []byte("text\r\n\r\n```yaml\r\n- commonName: a\r\n```\r\n")
+	blocks := yamlExamples(doc)
+	if len(blocks) != 1 {
+		t.Fatalf("yamlExamples() found %d blocks, want 1", len(blocks))
+	}
+	if _, err := UnmarshalSpec(blocks[0]); err != nil {
+		t.Errorf("UnmarshalSpec() err = %v", err)
+	}
+}
+
+// yamlExamples returns the contents of every fenced yaml block in a markdown
+// document, regardless of its line-ending style.
+func yamlExamples(doc []byte) [][]byte {
+	doc = bytes.ReplaceAll(doc, []byte("\r\n"), []byte("\n"))
+	var blocks [][]byte
+	for _, m := range yamlFence.FindAllSubmatch(doc, -1) {
+		blocks = append(blocks, m[1])
+	}
+	return blocks
 }
