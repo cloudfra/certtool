@@ -60,8 +60,9 @@ func TestYAMLExamplesCRLF(t *testing.T) {
 // document, regardless of its line-ending style.
 func yamlExamples(doc []byte) [][]byte {
 	doc = bytes.ReplaceAll(doc, []byte("\r\n"), []byte("\n"))
-	var blocks [][]byte
-	for _, m := range yamlFence.FindAllSubmatch(doc, -1) {
+	matches := yamlFence.FindAllSubmatch(doc, -1)
+	blocks := make([][]byte, 0, len(matches))
+	for _, m := range matches {
 		blocks = append(blocks, m[1])
 	}
 	return blocks
