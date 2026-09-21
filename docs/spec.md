@@ -210,3 +210,235 @@ certtool --spec mixed-roots.yaml --output-dir ./certs
 #   certs/backend.cert, certs/backend.key
 #   certs/release-sign.cert, certs/release-sign.key, certs/release-sign.pfx
 ```
+
+## Real-World Use Cases
+
+### Active Directory / LDAPS
+
+Active Directory Domain Controllers require certificates for LDAP over TLS (LDAPS). In production these come from an enterprise CA like AD CS, but for lab environments or testing you can generate them with a spec. Each DC needs a certificate with its FQDN in the SANs.
+
+```yaml
+- commonName: "Contoso Enterprise Root CA"
+  certificateAuthority: true
+  keyType: "RSA-4096"
+  validity: "87600h"
+  organization: "Contoso Ltd"
+  country: "US"
+  filename: "contoso-root-ca"
+  children:
+    - commonName: "dc01.contoso.local"
+      keyType: "RSA-2048"
+      validity: "8760h"
+      hostnames:
+        - dc01.contoso.local
+        - contoso.local
+        - ldap.contoso.local
+      ports: [636, 3269]
+      filename: "dc01"
+    - commonName: "dc02.contoso.local"
+      keyType: "RSA-2048"
+      validity: "8760h"
+      hostnames:
+        - dc02.contoso.local
+        - contoso.local
+        - ldap.contoso.local
+      ports: [636, 3269]
+      filename: "dc02"
+```
+
+```bash
+certtool --spec ad-ldaps.yaml --output-dir certs/
+```
+
+Import `contoso-root-ca.cert` into the Trusted Root store on domain members, and install each DC's cert/key pair on the corresponding server.
+
+### Kubernetes Cluster
+
+A Kubernetes cluster uses TLS throughout: the API server, etcd, kubelets, and the front proxy each need certificates from a shared root. This mirrors what `kubeadm` generates, useful for testing or custom cluster bootstrapping.
+
+```yaml
+- commonName: "kubernetes-ca"
+  certificateAuthority: true
+  keyType: "RSA-4096"
+  validity: "87600h"
+  organization: "kubernetes"
+  filename: "ca"
+  children:
+    - commonName: "kube-apiserver"
+      keyType: "RSA-2048"
+      validity: "8760h"
+      hostnames:
+        - kubernetes
+        - kubernetes.default
+        - kubernetes.default.svc
+        - kubernetes.default.svc.cluster.local
+        - 10.96.0.1
+        - 192.168.1.100
+      ports: [6443]
+      filename: "apiserver"
+    - commonName: "kube-apiserver-kubelet-client"
+      keyType: "RSA-2048"
+      validity: "8760h"
+      organization: "system:masters"
+      filename: "apiserver-kubelet-client"
+    - commonName: "etcd-ca"
+      certificateAuthority: true
+      keyType: "RSA-4096"
+      validity: "87600h"
+      filename: "etcd-ca"
+      children:
+        - commonName: "kube-etcd"
+          keyType: "RSA-2048"
+          validity: "8760h"
+          hostnames:
+            - localhost
+            - 127.0.0.1
+            - 192.168.1.100
+          ports: [2379, 2380]
+          filename: "etcd-server"
+        - commonName: "kube-etcd-peer"
+          keyType: "RSA-2048"
+          validity: "8760h"
+          hostnames:
+            - localhost
+            - 127.0.0.1
+            - 192.168.1.100
+          filename: "etcd-peer"
+```
+
+```bash
+certtool --spec k8s-cluster.yaml --output-dir /etc/kubernetes/pki/
+```
+
+### Mutual TLS (mTLS) for Microservices
+
+Service-to-service authentication using mutual TLS. Both sides present certificates from the same CA, so each service can verify the other.
+
+```yaml
+- commonName: "Platform Services CA"
+  certificateAuthority: true
+  keyType: "ECDSA-256"
+  validity: "43800h"
+  organization: "platform"
+  filename: "platform-ca"
+  children:
+    - commonName: "api-gateway"
+      keyType: "ECDSA-256"
+      validity: "8760h"
+      hostnames:
+        - api-gateway
+        - api-gateway.platform.svc.cluster.local
+      ports: [8443]
+      filename: "api-gateway"
+    - commonName: "user-service"
+      keyType: "ECDSA-256"
+      validity: "8760h"
+      hostnames:
+        - user-service
+        - user-service.platform.svc.cluster.local
+      ports: [8443]
+      filename: "user-service"
+    - commonName: "order-service"
+      keyType: "ECDSA-256"
+      validity: "8760h"
+      hostnames:
+        - order-service
+        - order-service.platform.svc.cluster.local
+      ports: [8443]
+      filename: "order-service"
+    - commonName: "payment-service"
+      keyType: "ECDSA-256"
+      validity: "8760h"
+      hostnames:
+        - payment-service
+        - payment-service.platform.svc.cluster.local
+      ports: [8443]
+      filename: "payment-service"
+```
+
+```bash
+certtool --spec mtls-services.yaml --output-dir certs/
+```
+
+Each service loads its own cert/key and the shared `platform-ca.cert` as the trusted root for verifying peers.
+
+### PostgreSQL and Redis with TLS
+
+Database and cache servers that accept TLS connections, with a shared CA so application servers can verify them.
+
+```yaml
+- commonName: "Infrastructure CA"
+  certificateAuthority: true
+  keyType: "RSA-4096"
+  validity: "87600h"
+  organization: "infra"
+  filename: "infra-ca"
+  children:
+    - commonName: "postgres.internal"
+      keyType: "RSA-2048"
+      validity: "8760h"
+      hostnames:
+        - postgres.internal
+        - db-primary.internal
+        - db-replica.internal
+        - localhost
+      ports: [5432]
+      filename: "postgres"
+    - commonName: "redis.internal"
+      keyType: "RSA-2048"
+      validity: "8760h"
+      hostnames:
+        - redis.internal
+        - redis-sentinel.internal
+        - localhost
+      ports: [6379, 26379]
+      filename: "redis"
+```
+
+```bash
+certtool --spec infra-tls.yaml --output-dir /etc/ssl/infra/
+```
+
+Configure PostgreSQL with `ssl_cert_file` / `ssl_key_file` and Redis with `tls-cert-file` / `tls-key-file`, then distribute `infra-ca.cert` to application servers.
+
+### VPN / IPSec Gateway
+
+A VPN root CA that signs gateway and client certificates for site-to-site or remote-access VPN tunnels.
+
+```yaml
+- commonName: "VPN Root CA"
+  certificateAuthority: true
+  keyType: "RSA-4096"
+  validity: "87600h"
+  organization: "Network Operations"
+  filename: "vpn-ca"
+  children:
+    - commonName: "vpn-gateway.example.com"
+      keyType: "RSA-2048"
+      validity: "8760h"
+      hostnames:
+        - vpn-gateway.example.com
+        - vpn.example.com
+        - 203.0.113.10
+      ports: [443, 1194]
+      filename: "vpn-gateway"
+    - commonName: "site-b-gateway.example.com"
+      keyType: "RSA-2048"
+      validity: "8760h"
+      hostnames:
+        - site-b-gateway.example.com
+        - 203.0.113.20
+      filename: "site-b-gateway"
+    - commonName: "remote-user-alice"
+      keyType: "RSA-2048"
+      validity: "4380h"
+      filename: "client-alice"
+    - commonName: "remote-user-bob"
+      keyType: "RSA-2048"
+      validity: "4380h"
+      filename: "client-bob"
+```
+
+```bash
+certtool --spec vpn.yaml --output-dir /etc/openvpn/pki/
+```
