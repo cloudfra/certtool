@@ -43,7 +43,7 @@
 # Nothing is committed and nothing is pushed: the script leaves the changes in
 # the working tree for review.
 #
-# Usage: scripts/update-project.sh [options]
+# Usage: scripts/template-go/update-project.sh [options]
 #
 # Safe to re-run: it converges on "already up to date" every time.
 
@@ -75,7 +75,7 @@ Options:
       --no-tf        Skip the terraform provider bumps
       --no-vendored  Skip the third_party re-vendor
   -t, --target DIR   Project root to update (default: the project this script
-                     sits in, i.e. the parent of its scripts/ directory)
+                     sits in, i.e. two levels above scripts/template-go/)
   -h, --help         Show this help
 
 Environment overrides: TEMPLATE_GO_REPO, GITHUB_TOKEN (raises the GitHub API
@@ -147,10 +147,10 @@ done
 # --- resolve target ---------------------------------------------------------
 
 if [[ -z "$TARGET" ]]; then
-  # This script is expected to live in <project>/scripts/, so the target is
-  # the parent of the directory that holds it.
+  # This script is expected to live in <project>/scripts/template-go/, so the
+  # target is two levels above the directory that holds it.
   SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-  TARGET="$(dirname "$SCRIPT_DIR")"
+  TARGET="$(dirname "$(dirname "$SCRIPT_DIR")")"
 fi
 if [[ ! -d "$TARGET" ]]; then
   echo "Target project root not found: $TARGET" >&2

@@ -17,7 +17,7 @@ name: Sync template-go
 # Pull the template-managed files of a project created from this template
 # back up to the current upstream versions: the Makefile_*.mk includes,
 # the root dotfile configs and the whole .github/ directory. All of that
-# is done by scripts/sync-template.sh, which is safe to re-run and
+# is done by scripts/template-go/sync-template.sh, which is safe to re-run and
 # converges on the upstream tree, so this workflow only has to run it and
 # turn whatever it changed into a pull request. If the sync changes
 # nothing there is nothing to commit and no pull request is opened.
@@ -82,7 +82,7 @@ jobs:
           TEMPLATE_GO_REPO: https://github.com/cloudfra/template-go.git
         # No --dry-run: the changes are wanted, they just go through a
         # pull request instead of being merged automatically.
-        run: ./scripts/sync-template.sh
+        run: ./scripts/template-go/sync-template.sh
       - name: Open pull request
         # https://github.com/peter-evans/create-pull-request
         # A no-op when the sync changed nothing: the action only opens a

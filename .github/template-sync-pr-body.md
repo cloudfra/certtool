@@ -1,7 +1,7 @@
 # Template-managed files re-synced from upstream
 
-Produced by `scripts/sync-template.sh`, run on the Friday-night schedule
-in `.github/workflows/template-sync.yaml`. It replaces this project's
+Produced by `scripts/template-go/sync-template.sh`, run on the Friday-night
+schedule in `.github/workflows/template-sync.yaml`. It replaces this project's
 template-managed files with the current versions from template-go's
 `main` branch:
 
@@ -9,7 +9,9 @@ template-managed files with the current versions from template-go's
   `Makefile_testassets.mk` are preserved),
 - every root dotfile config (`.gitignore`, `.golangci.yml`,
   `.yamllint.yml`, ...),
-- the whole `.github/` directory.
+- the whole `.github/` directory (except `.github/workflows/deploy-*.yaml`,
+  which a project owns and the sync preserves),
+- the whole `scripts/template-go/` directory (the standard scripts).
 
 Files upstream no longer ships are deleted and files it now ships are
 added, so the diff is the whole gap since the last sync rather than a
@@ -21,17 +23,17 @@ Any local edit to a managed file is discarded by the sync, and this PR is
 where that becomes visible. Check the diff for:
 
 - Project-specific edits under `.github/` - workflow triggers, build
-  matrix, artifact names. `deploy.yaml` names its release artifacts
-  after `ALL_APPS` in the root `Makefile`, so a consumer project's
-  `exampleapp-*` to `<app>-*` rename is reverted by the sync and has to
-  be re-applied before merging.
+  matrix. The release artifacts in `deploy.yaml`'s "Create Release" step
+  are regenerated from `ALL_APPS` in the root `Makefile` (one
+  `build/release/<app>-*` set per app), so check they match the binaries
+  the project actually builds. Workflows a project needs to keep should
+  be named `deploy-*.yaml`; those are never touched.
 - Customized root dotfiles - `.gitignore` entries for local paths, lint
   config tweaks.
 
-The per-project CI hooks are the exception and are never overwritten:
-`scripts/prepare-ci.sh` and `scripts/Initialize-CI.ps1` are copied in
-only when missing, so a project's customization of them survives every
-sync. They live under `scripts/`, which the sync does not otherwise
-touch.
+The other files directly under `scripts/` (such as the per-project CI
+hooks `scripts/prepare-ci.sh` and `scripts/Initialize-CI.ps1`) are the
+exception and are never overwritten: they are copied in only when
+missing, so a project's customization of them survives every sync.
 
 Nothing here merges automatically - merging is a human decision.

@@ -67,7 +67,7 @@ jobs:
       # - name: Container Fix
       #   run: git config --system --add safe.directory /__w/
       - name: Install Signing Dependencies
-        run: ./scripts/install-codesign.sh
+        run: ./scripts/template-go/install-codesign.sh
       - name: Clean
         run: make clean
       - name: Build Assets

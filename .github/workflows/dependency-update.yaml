@@ -18,9 +18,9 @@ name: Update Dependencies
 # Makefile_*.mk files, the terraform provider pins under install/terraform,
 # the vendored protos under third_party, and the Go modules in go.mod
 # (moved through this repo's own "make deps" target). All of that lives in
-# scripts/update-project.sh, which updates every one of those areas in a
-# single pass, so a scheduled run resolves versions exactly the way a local
-# run does and no area is left lagging a day behind another.
+# scripts/template-go/update-project.sh, which updates every one of those
+# areas in a single pass, so a scheduled run resolves versions exactly the way
+# a local run does and no area is left lagging a day behind another.
 #
 # GitHub only runs "schedule:" triggers from the default branch, and delays
 # scheduled runs on private repos at peak times, so the time below is
@@ -77,7 +77,7 @@ jobs:
           # runner has no key for. actions/checkout leaves a token-backed
           # https remote behind, so sync over https instead.
           TEMPLATE_GO_REPO: https://github.com/${{ github.repository }}.git
-        run: ./scripts/update-project.sh
+        run: ./scripts/template-go/update-project.sh
       - name: Open pull request
         # https://github.com/peter-evans/create-pull-request
         # PRs opened with GITHUB_TOKEN don't start workflow runs (GitHub's

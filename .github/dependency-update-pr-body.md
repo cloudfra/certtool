@@ -1,7 +1,7 @@
 # Periodic dependency refresh
 
-Produced by `scripts/update-project.sh`, run on the Wednesday, Friday and
-Saturday schedule in `.github/workflows/dependency-update.yaml`. The script
+Produced by `scripts/template-go/update-project.sh`, run on the Wednesday,
+Friday and Saturday schedule in `.github/workflows/dependency-update.yaml`. The script
 updates every area below in one pass, so the pins in this PR move together
 rather than one surface lagging behind another.
 
