@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-name: dependency-update
+name: Update Dependencies
 
 # Periodic refresh of everything this repo pins: the tool versions in the
 # Makefile_*.mk files, the terraform provider pins under install/terraform,
