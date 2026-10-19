@@ -23,7 +23,8 @@
 #   3. bump the terraform provider pins in any *.tf, and keep the
 #      required_version constraint aligned with TERRAFORM_VERSION
 #   4. re-vendor third_party/ from the upstream archives the makefiles fetch
-#   5. run a `go mod tidy` / `go mod verify` sanity pass
+#   5. move the Go modules to their latest releases through the repo's own
+#      `make deps` target, then verify the checksums
 #
 # Step 2 only touches pins that hold a concrete version. Pins set to `latest`
 # (actionlint, gofumpt, golangci-lint, revive, tflint, gocover-cobertura) are
@@ -59,7 +60,8 @@ usage() {
 Usage: $0 [options]
 
 Update the checkout to the newest template-go release, bump the pinned tool
-versions in Makefile_toolchain.mk, and tidy go.mod. Changes are left
+versions in Makefile_toolchain.mk, and move the Go modules to their latest
+releases with the repo's own "make deps" target. Changes are left
 uncommitted for review.
 
 Options:
@@ -697,9 +699,13 @@ refresh_vendored() {
   fi
 }
 
-# --- step 6: go.mod sanity pass ---------------------------------------------
+# --- step 6: move the Go modules to their latest releases -------------------
 
-tidy_go() {
+# The bump is delegated to the repo's own "make deps" target (go get -u
+# ./... + go mod tidy + go mod download) so a scheduled run moves Go modules
+# exactly the way a local "make deps" does. "go mod verify" runs afterwards
+# because the deps target checks nothing about the downloaded checksums.
+update_go() {
   echo
   echo "== go.mod =="
   if [[ ! -f "$TARGET/go.mod" ]]; then
@@ -711,14 +717,23 @@ tidy_go() {
     return 0
   fi
   if [[ "$DRY_RUN" == true ]]; then
-    echo "  would run: go mod tidy && go mod verify"
+    echo "  would run: make deps && go mod verify"
     return 0
   fi
-  (
+  if ! (
     cd "$TARGET" &&
-      go mod tidy &&
+      make deps &&
       go mod verify
-  )
+  ); then
+    echo "  error: go module update failed" >&2
+    return 1
+  fi
+  if [[ -n "$(git_in status --porcelain -- go.mod go.sum 2>/dev/null)" ]]; then
+    echo "  go modules: updated"
+    UPDATE_COUNT=$((UPDATE_COUNT + 1))
+  else
+    echo "  go modules: already current"
+  fi
 }
 
 # --- run --------------------------------------------------------------------
@@ -755,7 +770,7 @@ fi
 if [[ "$DO_VENDORED" == true ]]; then
   refresh_vendored
 fi
-tidy_go
+update_go
 
 echo
 if [[ "$UPDATE_COUNT" -eq 0 ]]; then

@@ -26,6 +26,11 @@
 # with the upstream equivalents. Files upstream no longer ships are deleted,
 # files it now ships are added, and shared files are overwritten.
 #
+# The per-project CI hooks in SEED_FILES below are the exception: they are
+# copied in only when the target does not already have one and are never
+# overwritten, because the whole point of them is to be customized. A project
+# can edit them freely and re-running the sync keeps its version.
+#
 # This is a HARD replace: local edits to any of those files are discarded and
 # project-specific versions (e.g. a customized .gitignore) are clobbered.
 # Prefer running it on a branch/PR, or with --dry-run first, so the change is
@@ -50,7 +55,8 @@ Usage: $0 [options]
 
 Sync template-managed files (Makefile_*.mk, root dotfiles, .github/) from
 upstream template-go into the target project. This is a hard replace and is
-safe to re-run.
+safe to re-run. The per-project CI hooks (scripts/prepare-ci.sh,
+scripts/Initialize-CI.ps1) are added only when missing and never overwritten.
 
 Options:
   -s, --source DIR   Read upstream files from local DIR instead of cloning
@@ -209,11 +215,32 @@ S_HAS_GITHUB=0
 [[ -d "$TARGET/.github" ]] && T_HAS_GITHUB=1
 [[ -d "$SOURCE/.github" ]] && S_HAS_GITHUB=1
 
+# Seed files are per-project customization points, so they are treated
+# differently from everything above: copied in only when the target has no
+# copy of its own, and never overwritten once it does.
+SEED_FILES=(
+  "scripts/prepare-ci.sh"
+  "scripts/Initialize-CI.ps1"
+)
+
 # --- compute the plan -------------------------------------------------------
 
 ADD=()
 UPDATE=()
 DELETE=()
+SEED=()
+KEEP=()
+
+for f in "${SEED_FILES[@]}"; do
+  if [[ ! -f "$SOURCE/$f" ]]; then
+    continue
+  fi
+  if [[ -e "$TARGET/$f" ]]; then
+    KEEP+=("$f")
+  else
+    SEED+=("$f")
+  fi
+done
 
 for f in "${TARGET_FILES[@]}"; do
   if [[ -n "${S_SET["$f"]:-}" ]]; then
@@ -241,6 +268,16 @@ act() {
     add | update)
       cp -a -- "$SOURCE/$label" "$TARGET/$label"
       ;;
+    seed)
+      # A fresh project may not have a scripts/ directory yet.
+      mkdir -p -- "$(dirname "$TARGET/$label")"
+      cp -a -- "$SOURCE/$label" "$TARGET/$label"
+      ;;
+    keep)
+      # Printed in both modes: it tells the caller that a file they are
+      # expected to customize survived the sync untouched.
+      printf '  %-7s %s\n' "$action" "$label"
+      ;;
     delete)
       rm -f -- "$TARGET/$label"
       ;;
@@ -261,6 +298,12 @@ for f in ${UPDATE[@]+"${UPDATE[@]}"}; do
 done
 for f in ${DELETE[@]+"${DELETE[@]}"}; do
   act delete "$f"
+done
+for f in ${SEED[@]+"${SEED[@]}"}; do
+  act seed "$f"
+done
+for f in ${KEEP[@]+"${KEEP[@]}"}; do
+  act keep "$f"
 done
 if (( S_HAS_GITHUB )); then
   act replace ".github"
