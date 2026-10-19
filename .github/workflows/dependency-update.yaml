@@ -14,19 +14,23 @@
 
 name: dependency-update
 
-# Weekly refresh of everything this repo pins: the tool versions in the
+# Periodic refresh of everything this repo pins: the tool versions in the
 # Makefile_*.mk files, the terraform provider pins under install/terraform,
-# the vendored protos under third_party, and go.mod. All of that lives in
-# scripts/update-project.sh so a scheduled run resolves versions exactly the
-# way a local run does.
+# the vendored protos under third_party, and the Go modules in go.mod
+# (moved through this repo's own "make deps" target). All of that lives in
+# scripts/update-project.sh, which updates every one of those areas in a
+# single pass, so a scheduled run resolves versions exactly the way a local
+# run does and no area is left lagging a day behind another.
 #
 # GitHub only runs "schedule:" triggers from the default branch, and delays
 # scheduled runs on private repos at peak times, so the time below is
 # approximate. workflow_dispatch allows an on-demand run of the same job.
 on:
   schedule:
-    # 09:00 UTC on Mondays.
-    - cron: "0 9 * * 1"
+    # 09:00 UTC on Wednesday, Friday and Saturday. Three spread-out days
+    # rather than every day: enough that a pin is never more than a few days
+    # stale, without a PR churn on days nothing has changed.
+    - cron: "0 9 * * 3,5,6"
   workflow_dispatch:
 
 concurrency:
@@ -40,8 +44,8 @@ jobs:
     name: "Update dependencies"
     # Standard GitHub-hosted runner rather than this repo's self-hosted
     # "large" fleet: the job is network-bound (version lookups plus the
-    # ~26 MB of vendored archives the third_party step re-downloads) and
-    # only runs weekly, so it has no business occupying the build runners.
+    # ~26 MB of vendored archives the third_party step re-downloads), so it
+    # has no business occupying the build runners.
     runs-on: ubuntu-latest
     # contents: write pushes the update branch, pull-requests: write opens
     # the PR. Nothing here merges, so the result still goes through review.
@@ -83,19 +87,22 @@ jobs:
         with:
           token: ${{ github.token }}
           base: main
-          # One reused branch: a weekly run updates the open PR in place
-          # instead of stacking another one on top of it. delete-branch
-          # cleans the branch up once the PR merges.
-          branch: chore/weekly-dependency-update
+          # One reused branch: each scheduled run updates the open PR in
+          # place instead of stacking another one on top of it.
+          # delete-branch cleans the branch up once the PR merges.
+          branch: chore/periodic-dependency-update
           delete-branch: true
           commit-message: "chore: update dependencies"
           title: "chore: update dependencies"
           # Mirrors the set of paths update-project.sh writes to. Keeping it
           # explicit stops build leftovers from landing in the PR, and keeps
-          # the diff reviewable. Comma-separated rather than a block scalar:
-          # workflow YAML in this repo stays free of inline multi-line
-          # payloads (see "GitHub Actions workflows" in CONTRIBUTING.md).
-          add-paths: Makefile*.mk,install/terraform/*.tf,third_party/,go.mod
+          # the diff reviewable. "go.*" covers go.mod plus go.sum, which
+          # "make deps" rewrites in checkouts that have module requirements
+          # (this template's go.mod has none, so no go.sum exists here).
+          # Comma-separated rather than a block scalar: workflow YAML in this
+          # repo stays free of inline multi-line payloads (see "GitHub
+          # Actions workflows" in CONTRIBUTING.md).
+          add-paths: Makefile*.mk,install/terraform/*.tf,third_party/,go.*
           # Same convention: the PR body is a file in the repo, not a YAML
           # block scalar in this workflow.
           body-path: .github/dependency-update-pr-body.md

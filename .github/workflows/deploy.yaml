@@ -60,6 +60,12 @@ jobs:
         with:
           go-version: stable
           cache: false
+      - name: Prepare CI
+        # Project-specific hook. It is empty in the template and
+        # sync-template.sh never overwrites a project's copy, so each repo
+        # can install whatever its runners need without editing this file.
+        # See scripts/prepare-ci.sh.
+        run: ./scripts/prepare-ci.sh
       - name: System Information
         run: make system-info
       # - name: Container Fix
@@ -215,6 +221,15 @@ jobs:
         with:
           go-version: stable
           cache: false
+      - name: Initialize CI
+        # Windows counterpart of scripts/prepare-ci.sh: empty in the
+        # template, never overwritten by sync-template.sh, and the place
+        # for project-specific runner setup. See scripts/Initialize-CI.ps1.
+        # shell: powershell (Windows PowerShell 5.1), not pwsh: the
+        # self-hosted Windows runners have no PowerShell Core installed,
+        # so pwsh fails with "command not found".
+        shell: powershell
+        run: ./scripts/Initialize-CI.ps1
       - name: System Information
         run: make system-info
       - name: Clean
