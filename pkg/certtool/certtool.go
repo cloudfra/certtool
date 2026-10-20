@@ -16,6 +16,7 @@
 package certtool
 
 import (
+	"crypto"
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/rand"
@@ -70,6 +71,9 @@ type Args struct {
 	Validity time.Duration
 	// ParentKeyPair is the root public certificate within the chain of trust.
 	ParentKeyPair *KeyPair
+	// Issuer signs the certificate with a CA key held outside of certtool,
+	// such as on a YubiKey. Mutually exclusive with ParentKeyPair.
+	Issuer *Issuer
 	// Ports are a list of ports that are applied to every hostname that is not specified by a port.
 	Ports []int
 
@@ -137,6 +141,16 @@ type KeyType struct {
 	Algorithm string
 	// KeyLength is the length in bytes of the key.
 	KeyLength int
+}
+
+// Issuer is a certificate authority whose private key is held outside of
+// certtool, such as on a hardware security token. Certificates generated with
+// an Issuer are signed by Signer and chain to Certificate.
+type Issuer struct {
+	// Certificate is the public certificate of the issuing CA.
+	Certificate *x509.Certificate
+	// Signer signs with the private key of the issuing CA.
+	Signer crypto.Signer
 }
 
 // KeyPair is the X.509 public certificate/private key pair
@@ -211,76 +225,11 @@ func createCertificateAndPrivateKeyPEM(args *Args) (*KeyPair, error) {
 		}
 	}
 
-	var sigAlg x509.SignatureAlgorithm
-
-	startTimestamp := time.Now()
-	expirationTimestamp := startTimestamp.Add(args.Validity)
-	serialNumberLimit := new(big.Int).Lsh(big.NewInt(1), 128)
-
-	serialNumber, err := rand.Int(rand.Reader, serialNumberLimit)
-	if err != nil {
-		return nil, fmt.Errorf("cannot create serial number for X.509 certificate, %w", err)
-	}
-
-	pkixName := argsToPkixName(args, serialNumber.String())
-
 	keyType := args.GetKeyType()
 	switch strings.ToUpper(keyType.Algorithm) {
-	case rsaAlgorithm:
-		if args.CodeSigning {
-			sigAlg = x509.SHA256WithRSA
-		} else {
-			sigAlg = x509.SHA512WithRSA
-		}
-	case ecdsaAlgorithm:
-		if args.CodeSigning {
-			sigAlg = x509.ECDSAWithSHA256
-		} else {
-			sigAlg = x509.ECDSAWithSHA512
-		}
+	case rsaAlgorithm, ecdsaAlgorithm:
 	default:
 		return nil, fmt.Errorf("key algorithm, %s, is not valid", keyType.Algorithm)
-	}
-
-	var keyUsage x509.KeyUsage
-	var extKeyUsage []x509.ExtKeyUsage
-	if args.CodeSigning {
-		keyUsage = x509.KeyUsageDigitalSignature
-		extKeyUsage = []x509.ExtKeyUsage{x509.ExtKeyUsageCodeSigning}
-	} else {
-		keyUsage = x509.KeyUsageDigitalSignature
-		if strings.ToUpper(keyType.Algorithm) == rsaAlgorithm {
-			keyUsage |= x509.KeyUsageKeyEncipherment
-		}
-		extKeyUsage = []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth, x509.ExtKeyUsageClientAuth}
-	}
-
-	certTemplate := x509.Certificate{
-		SerialNumber:          serialNumber,
-		Subject:               pkixName,
-		Issuer:                pkixName,
-		NotBefore:             startTimestamp,
-		NotAfter:              expirationTimestamp,
-		KeyUsage:              keyUsage,
-		ExtKeyUsage:           extKeyUsage,
-		BasicConstraintsValid: true,
-		SignatureAlgorithm:    sigAlg,
-		IsCA:                  args.CA,
-	}
-
-	if args.CA {
-		certTemplate.KeyUsage |= x509.KeyUsageCertSign
-	}
-
-	if !args.CodeSigning {
-		allHostnames := expandHostnames(append(args.Hostnames, "localhost", "127.0.0.1"), args.Ports)
-		for _, hostname := range allHostnames {
-			if ipAddress := net.ParseIP(hostname); ipAddress != nil {
-				certTemplate.IPAddresses = append(certTemplate.IPAddresses, ipAddress)
-			} else {
-				certTemplate.DNSNames = append(certTemplate.DNSNames, hostname)
-			}
-		}
 	}
 
 	privateKey, err := generatePrivateKeyFromType(*keyType)
@@ -288,8 +237,30 @@ func createCertificateAndPrivateKeyPEM(args *Args) (*KeyPair, error) {
 		return nil, fmt.Errorf("cannot generate private key, %w", err)
 	}
 
-	parentPrivateKey := privateKey
+	pubKey, err := publicKey(privateKey)
+	if err != nil {
+		return nil, err
+	}
+
+	certTemplate, err := newCertificateTemplate(args, pubKey)
+	if err != nil {
+		return nil, err
+	}
+
+	var parentSigner crypto.Signer
 	parentTemplate := certTemplate
+
+	if args.Issuer != nil && args.ParentKeyPair != nil {
+		return nil, fmt.Errorf("issuer and parent key pair are mutually exclusive")
+	}
+
+	if args.Issuer != nil {
+		if args.Issuer.Certificate == nil || args.Issuer.Signer == nil {
+			return nil, fmt.Errorf("issuer must have both a certificate and a signer")
+		}
+		parentTemplate = args.Issuer.Certificate
+		parentSigner = args.Issuer.Signer
+	}
 
 	if args.ParentKeyPair != nil {
 		hasPublicCertificate := len(args.ParentKeyPair.PublicCertificate) > 0
@@ -304,17 +275,27 @@ func createCertificateAndPrivateKeyPEM(args *Args) (*KeyPair, error) {
 			if readErr != nil {
 				return nil, readErr
 			}
-			parentTemplate = *parentPublicCertificateT
-			parentPrivateKey = parentPrivateKeyT
+			signer, ok := parentPrivateKeyT.(crypto.Signer)
+			if !ok {
+				return nil, fmt.Errorf("parent private key of type %T cannot sign certificates", parentPrivateKeyT)
+			}
+			parentTemplate = parentPublicCertificateT
+			parentSigner = signer
 		}
 	}
 
-	pubKey, err := publicKey(privateKey)
+	if parentSigner == nil {
+		parentSigner, _ = privateKey.(crypto.Signer)
+	}
+
+	// The signature algorithm must match the key that signs the certificate,
+	// which is the parent's key unless the certificate is self-signed.
+	certTemplate.SignatureAlgorithm, err = signatureAlgorithm(parentSigner.Public(), args.CodeSigning)
 	if err != nil {
 		return nil, err
 	}
 
-	cert, err := x509.CreateCertificate(rand.Reader, &certTemplate, &parentTemplate, pubKey, parentPrivateKey)
+	cert, err := x509.CreateCertificate(rand.Reader, certTemplate, parentTemplate, pubKey, parentSigner)
 	if err != nil {
 		return nil, fmt.Errorf("cannot create X.509 public certificate, %w", err)
 	}
@@ -355,6 +336,113 @@ func createCertificateAndPrivateKeyPEM(args *Args) (*KeyPair, error) {
 	}
 
 	return kp, nil
+}
+
+// newCertificateTemplate builds the certificate template described by args for
+// a certificate that certifies pub.
+func newCertificateTemplate(args *Args, pub crypto.PublicKey) (*x509.Certificate, error) {
+	startTimestamp := time.Now()
+	expirationTimestamp := startTimestamp.Add(args.Validity)
+	serialNumberLimit := new(big.Int).Lsh(big.NewInt(1), 128)
+
+	serialNumber, err := rand.Int(rand.Reader, serialNumberLimit)
+	if err != nil {
+		return nil, fmt.Errorf("cannot create serial number for X.509 certificate, %w", err)
+	}
+
+	pkixName := argsToPkixName(args, serialNumber.String())
+
+	var keyUsage x509.KeyUsage
+	var extKeyUsage []x509.ExtKeyUsage
+	if args.CodeSigning {
+		keyUsage = x509.KeyUsageDigitalSignature
+		extKeyUsage = []x509.ExtKeyUsage{x509.ExtKeyUsageCodeSigning}
+	} else {
+		keyUsage = x509.KeyUsageDigitalSignature
+		if _, isRSA := pub.(*rsa.PublicKey); isRSA {
+			keyUsage |= x509.KeyUsageKeyEncipherment
+		}
+		extKeyUsage = []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth, x509.ExtKeyUsageClientAuth}
+	}
+
+	certTemplate := &x509.Certificate{
+		SerialNumber:          serialNumber,
+		Subject:               pkixName,
+		Issuer:                pkixName,
+		NotBefore:             startTimestamp,
+		NotAfter:              expirationTimestamp,
+		KeyUsage:              keyUsage,
+		ExtKeyUsage:           extKeyUsage,
+		BasicConstraintsValid: true,
+		IsCA:                  args.CA,
+	}
+
+	if args.CA {
+		certTemplate.KeyUsage |= x509.KeyUsageCertSign
+	}
+
+	if !args.CodeSigning {
+		allHostnames := expandHostnames(append(args.Hostnames, "localhost", "127.0.0.1"), args.Ports)
+		for _, hostname := range allHostnames {
+			if ipAddress := net.ParseIP(hostname); ipAddress != nil {
+				certTemplate.IPAddresses = append(certTemplate.IPAddresses, ipAddress)
+			} else {
+				certTemplate.DNSNames = append(certTemplate.DNSNames, hostname)
+			}
+		}
+	}
+
+	return certTemplate, nil
+}
+
+// signatureAlgorithm returns the algorithm used to sign certificates with the
+// private key belonging to pub.
+func signatureAlgorithm(pub crypto.PublicKey, codeSigning bool) (x509.SignatureAlgorithm, error) {
+	switch pub.(type) {
+	case *rsa.PublicKey:
+		if codeSigning {
+			return x509.SHA256WithRSA, nil
+		}
+		return x509.SHA512WithRSA, nil
+	case *ecdsa.PublicKey:
+		if codeSigning {
+			return x509.ECDSAWithSHA256, nil
+		}
+		return x509.ECDSAWithSHA512, nil
+	}
+	return x509.UnknownSignatureAlgorithm, fmt.Errorf("signing key type %T is not supported", pub)
+}
+
+// CreateSelfSignedCertificate creates a self-signed certificate for a private
+// key held outside of certtool, such as on a hardware security token. Only the
+// public certificate is produced because the private key never leaves signer.
+func CreateSelfSignedCertificate(args *Args, signer crypto.Signer) (*x509.Certificate, error) {
+	fillDefaults(args)
+
+	certTemplate, err := newCertificateTemplate(args, signer.Public())
+	if err != nil {
+		return nil, err
+	}
+
+	certTemplate.SignatureAlgorithm, err = signatureAlgorithm(signer.Public(), args.CodeSigning)
+	if err != nil {
+		return nil, err
+	}
+
+	der, err := x509.CreateCertificate(rand.Reader, certTemplate, certTemplate, signer.Public(), signer)
+	if err != nil {
+		return nil, fmt.Errorf("cannot create X.509 public certificate, %w", err)
+	}
+
+	return x509.ParseCertificate(der)
+}
+
+// EncodeCertificatePEM returns the PEM encoding of cert.
+func EncodeCertificatePEM(cert *x509.Certificate) []byte {
+	return pem.EncodeToMemory(&pem.Block{
+		Type:  "CERTIFICATE",
+		Bytes: cert.Raw,
+	})
 }
 
 func argsToPkixName(args *Args, serialNumber string) pkix.Name {
@@ -559,6 +647,11 @@ func WriteKeyPair(kp *KeyPair, publicCertificateFile string, privateKeyFile stri
 		return err
 	}
 	return nil
+}
+
+// WriteCertificate writes the PEM encoding of cert to publicCertificateFile with mode 0644.
+func WriteCertificate(cert *x509.Certificate, publicCertificateFile string) error {
+	return writeFile(publicCertificateFile, EncodeCertificatePEM(cert), 0o644)
 }
 
 // WritePFX writes the PKCS#12 bundle from kp to pfxFile with mode 0600.

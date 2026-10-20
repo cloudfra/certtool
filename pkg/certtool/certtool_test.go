@@ -242,13 +242,18 @@ func TestCreateCertificateAndPrivateKeyPEMErrors(t *testing.T) {
 		},
 		{
 			args: &Args{
-				KeyType: &KeyType{
-					Algorithm: ecdsaAlgorithm,
-					KeyLength: 224,
-				},
+				KeyType:       defaultKeyType(),
 				ParentKeyPair: ca,
+				Issuer:        &Issuer{},
 			},
-			wantErr: "cannot create X.509 public certificate, x509: requested SignatureAlgorithm does not match private key type",
+			wantErr: "issuer and parent key pair are mutually exclusive",
+		},
+		{
+			args: &Args{
+				KeyType: defaultKeyType(),
+				Issuer:  &Issuer{},
+			},
+			wantErr: "issuer must have both a certificate and a signer",
 		},
 	}
 	for _, tc := range testCases {

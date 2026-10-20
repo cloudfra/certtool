@@ -323,6 +323,13 @@ type GenerationOutput struct {
 
 // GenerateFromSpec generates certificates for all specs and writes them to outputDir.
 func GenerateFromSpec(specs []CertificateSpec, outputDir string) ([]GenerationOutput, error) {
+	return GenerateFromSpecWithIssuer(specs, outputDir, nil)
+}
+
+// GenerateFromSpecWithIssuer generates certificates for all specs and writes
+// them to outputDir. When issuer is not nil it signs the top-level specs, so
+// every generated tree chains to the issuer instead of being self-signed.
+func GenerateFromSpecWithIssuer(specs []CertificateSpec, outputDir string, issuer *Issuer) ([]GenerationOutput, error) {
 	if err := os.MkdirAll(outputDir, 0o750); err != nil {
 		return nil, fmt.Errorf("cannot create output directory (%s): %w", outputDir, err)
 	}
@@ -331,7 +338,7 @@ func GenerateFromSpec(specs []CertificateSpec, outputDir string) ([]GenerationOu
 	var results []GenerationOutput
 
 	for i := range specs {
-		out, err := generateSpec(&specs[i], nil, outputDir, nil, filenames)
+		out, err := generateSpec(&specs[i], nil, issuer, outputDir, nil, filenames)
 		if err != nil {
 			return nil, err
 		}
@@ -361,9 +368,10 @@ func specFilename(ancestorCNs []string, spec *CertificateSpec) string {
 	return strings.Join(parts, "-")
 }
 
-func generateSpec(spec *CertificateSpec, parentKP *KeyPair, outputDir string, ancestorCNs []string, filenames map[string]string) ([]GenerationOutput, error) {
+func generateSpec(spec *CertificateSpec, parentKP *KeyPair, issuer *Issuer, outputDir string, ancestorCNs []string, filenames map[string]string) ([]GenerationOutput, error) {
 	args := specToArgs(spec)
 	args.ParentKeyPair = parentKP
+	args.Issuer = issuer
 
 	kp, err := GenerateKeyPair(args)
 	if err != nil {
@@ -402,7 +410,7 @@ func generateSpec(spec *CertificateSpec, parentKP *KeyPair, outputDir string, an
 
 	childAncestors := append(append([]string{}, ancestorCNs...), spec.CommonName)
 	for i := range spec.Children {
-		childResults, err := generateSpec(&spec.Children[i], kp, outputDir, childAncestors, filenames)
+		childResults, err := generateSpec(&spec.Children[i], kp, nil, outputDir, childAncestors, filenames)
 		if err != nil {
 			return nil, err
 		}

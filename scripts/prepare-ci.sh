@@ -21,10 +21,21 @@
 # install or configure whatever a specific project needs on its runners:
 # distribution packages, extra toolchain, runner-local fixes.
 #
-# It deliberately does nothing here. scripts/sync-template.sh copies this file
-# into a project only when the project does not already have one and never
-# overwrites an existing copy, so anything added below survives a template
-# re-sync. A non-zero exit status fails the job, which is the intended way to
+# The template version does nothing; this project installs pcsclite below.
+# scripts/sync-template.sh copies this file into a project only when the
+# project does not already have one and never overwrites an existing copy, so
+# anything added below survives a template re-sync. A non-zero exit status fails the job, which is the intended way to
 # make a prerequisite failure visible.
 
 set -euo pipefail
+
+# pkg/yubikey links piv-go against pcsclite when cgo is enabled, so lint and
+# test need its development headers on Linux. macOS ships the PCSC framework.
+if [[ "$(uname -s)" == "Linux" ]] && ! pkg-config --exists libpcsclite 2>/dev/null; then
+  SUDO=""
+  if [[ "$(id -u)" -ne 0 ]]; then
+    SUDO="sudo"
+  fi
+  ${SUDO} apt-get update
+  ${SUDO} apt-get install -y --no-install-recommends libpcsclite-dev pkg-config
+fi
