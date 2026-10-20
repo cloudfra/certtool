@@ -177,8 +177,14 @@ func validateModeFlags() error {
 	if *useYubiKey && (*parentPublicCertificate != "" || *parentPrivateKey != "") {
 		return fmt.Errorf("--yubikey and --parent-public-certificate/--parent-private-key are mutually exclusive")
 	}
-	if *yubiKeyGenerateRoot && (hasChain || hasSpec || *exportSpec != "" || *codeSigning || *parentPublicCertificate != "") {
-		return fmt.Errorf("--yubikey-generate-root cannot be combined with --chain, --spec, --export-spec, --code-sign, or --parent-public-certificate")
+	if *yubiKeyGenerateRoot && (hasChain || hasSpec || *exportSpec != "" || *codeSigning || *parentPublicCertificate != "" || *parentPrivateKey != "") {
+		return fmt.Errorf("--yubikey-generate-root cannot be combined with --chain, --spec, --export-spec, --code-sign, or --parent-public-certificate/--parent-private-key")
+	}
+	if !*yubiKeyGenerateRoot && (*yubiKeyOverwriteSlot || *yubiKeyTouchPolicy != string(yubikey.TouchCached)) {
+		return fmt.Errorf("--yubikey-touch-policy and --yubikey-overwrite only apply to --yubikey-generate-root")
+	}
+	if !*useYubiKey && !*yubiKeyGenerateRoot && (*yubiKeySerial != "" || *yubiKeySlot != yubikey.DefaultSlot || *yubiKeyPIN != "" || *yubiKeyManagementKey != "") {
+		return fmt.Errorf("the --yubikey-* options need --yubikey or --yubikey-generate-root")
 	}
 	return nil
 }

@@ -86,6 +86,31 @@ func TestValidateModeFlagsYubiKey(t *testing.T) {
 			flags: map[string]string{"yubikey-generate-root": "true", "export-spec": "out.yaml"},
 			want:  "--yubikey-generate-root cannot be combined with",
 		},
+		{
+			name:  "generate with parent key",
+			flags: map[string]string{"yubikey-generate-root": "true", "parent-private-key": "ca.key"},
+			want:  "--yubikey-generate-root cannot be combined with",
+		},
+		{
+			name:  "touch policy without generate",
+			flags: map[string]string{"yubikey": "true", "yubikey-touch-policy": "always"},
+			want:  "only apply to --yubikey-generate-root",
+		},
+		{
+			name:  "overwrite without generate",
+			flags: map[string]string{"yubikey-overwrite": "true"},
+			want:  "only apply to --yubikey-generate-root",
+		},
+		{
+			name:  "slot without yubikey",
+			flags: map[string]string{"yubikey-slot": "82"},
+			want:  "need --yubikey or --yubikey-generate-root",
+		},
+		{
+			name:  "pin without yubikey",
+			flags: map[string]string{"yubikey-pin": "123456"},
+			want:  "need --yubikey or --yubikey-generate-root",
+		},
 	}
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -104,6 +129,8 @@ func TestValidateModeFlagsYubiKeyAllowed(t *testing.T) {
 		{"yubikey": "true", "chain": "1,1"},
 		{"yubikey": "true", "spec": "certs.yaml"},
 		{"yubikey-generate-root": "true"},
+		{"yubikey-generate-root": "true", "yubikey-touch-policy": "always", "yubikey-overwrite": "true", "yubikey-slot": "82"},
+		{"yubikey": "true", "yubikey-serial": "1234567", "yubikey-pin": "123456"},
 	} {
 		t.Run(fmt.Sprint(flags), func(t *testing.T) {
 			setFlags(t, flags)

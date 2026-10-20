@@ -57,12 +57,13 @@ type fakeCard struct {
 	certs map[uint32]*x509.Certificate
 	keys  map[uint32]crypto.Signer
 
-	openErr     error
-	certErr     error
-	generateErr error
-	setCertErr  error
-	signErr     error
-	closeErr    error
+	openErr      error
+	certErr      error
+	pinPolicyErr error
+	generateErr  error
+	setCertErr   error
+	signErr      error
+	closeErr     error
 
 	generated []piv.Key
 	signs     int
@@ -165,6 +166,10 @@ func (c *fakeCard) GenerateKey(key []byte, slot piv.Slot, opts piv.Key) (crypto.
 }
 
 func (c *fakeCard) PrivateKey(slot piv.Slot, _ crypto.PublicKey, auth piv.KeyAuth) (crypto.PrivateKey, error) {
+	// Like piv-go, look up the PIN policy unless it is given.
+	if auth.PINPolicy == 0 && c.pinPolicyErr != nil {
+		return nil, c.pinPolicyErr
+	}
 	key, ok := c.keys[slot.Key]
 	if !ok {
 		return nil, fmt.Errorf("command failed: %w", piv.ErrNotFound)

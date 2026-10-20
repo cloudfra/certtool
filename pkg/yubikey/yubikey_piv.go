@@ -108,6 +108,7 @@ func Open(cfg Config) (*Token, error) {
 	var matches []match
 	var others []string
 	var serials []string
+	var unreadable []error
 	for _, card := range cards {
 		if !strings.Contains(strings.ToLower(card), "yubikey") {
 			others = append(others, card)
@@ -115,7 +116,8 @@ func Open(cfg Config) (*Token, error) {
 		}
 		serial, err := cardSerial(card)
 		if err != nil {
-			return nil, err
+			unreadable = append(unreadable, err)
+			continue
 		}
 		serials = append(serials, fmt.Sprint(serial))
 		if cfg.Serial == 0 || cfg.Serial == serial {
@@ -124,6 +126,10 @@ func Open(cfg Config) (*Token, error) {
 	}
 
 	switch {
+	case len(unreadable) > 0 && (cfg.Serial == 0 || len(matches) == 0):
+		// A YubiKey whose serial number cannot be read might be the one
+		// wanted, unless another YubiKey has the requested serial number.
+		return nil, errors.Join(unreadable...)
 	case len(matches) == 0 && cfg.Serial != 0 && len(serials) > 0:
 		return nil, fmt.Errorf("YubiKey with serial number %d is not connected, the connected YubiKeys have serial numbers %s", cfg.Serial, strings.Join(serials, ", "))
 	case len(matches) == 0 && len(others) > 0:
@@ -296,6 +302,13 @@ func versionAtLeast(v piv.Version, major, minor int) bool {
 func (t *Token) signer(pub crypto.PublicKey, auth piv.KeyAuth) (crypto.Signer, error) {
 	auth.PINPrompt = t.getPIN
 	priv, err := t.yk.PrivateKey(t.slot, pub, auth)
+	if err != nil && auth.PINPolicy == 0 {
+		// piv-go looks up the key's PIN policy, which fails for keys imported
+		// onto firmware older than 5.3. Verifying the PIN before every
+		// signature works whatever the policy is.
+		auth.PINPolicy = piv.PINPolicyAlways
+		priv, err = t.yk.PrivateKey(t.slot, pub, auth)
+	}
 	if err != nil {
 		return nil, t.errorf(err, "cannot use the private key")
 	}

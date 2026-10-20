@@ -166,6 +166,19 @@ func TestOpen_Errors(t *testing.T) {
 			want:    []string{"cannot open YubiKey", yubiKeyReader, "gpg-agent", "sharing violation"},
 		},
 		{
+			name:    "one of several in use",
+			readers: []string{yubiKeyReader, yubiKeyReader2},
+			cards:   map[string]*fakeCard{yubiKeyReader: {openErr: errors.New("sharing violation")}, yubiKeyReader2: newFakeCard(222)},
+			want:    []string{"cannot open YubiKey", yubiKeyReader, "sharing violation"},
+		},
+		{
+			name:    "serial not connected and another in use",
+			readers: []string{yubiKeyReader, yubiKeyReader2},
+			cards:   map[string]*fakeCard{yubiKeyReader: {openErr: errors.New("sharing violation")}, yubiKeyReader2: newFakeCard(222)},
+			cfg:     Config{Serial: 999},
+			want:    []string{"cannot open YubiKey", yubiKeyReader, "sharing violation"},
+		},
+		{
 			name:    "serial unreadable",
 			readers: []string{yubiKeyReader},
 			cards:   map[string]*fakeCard{yubiKeyReader: {serialErr: errors.New("transmit failed")}},
@@ -221,6 +234,43 @@ func TestIssuer(t *testing.T) {
 	if signs != 2 || card.signs != 2 {
 		t.Errorf("BeforeSign called %d times and YubiKey signed %d times, want 2 and 2", signs, card.signs)
 	}
+}
+
+// A YubiKey that cannot be opened does not stop another one from being
+// selected by serial number.
+func TestOpen_SelectsBySerialWhileAnotherIsInUse(t *testing.T) {
+	want := newFakeCard(222)
+	installFakes(t, []string{yubiKeyReader, yubiKeyReader2}, map[string]*fakeCard{
+		yubiKeyReader:  {openErr: errors.New("sharing violation")},
+		yubiKeyReader2: want,
+	}, nil)
+
+	token, err := Open(Config{Serial: 222})
+	if err != nil {
+		t.Fatalf("Open() err = %v", err)
+	}
+	if token.Serial() != 222 || token.yk != want {
+		t.Errorf("Open() opened YubiKey %d, want 222", token.Serial())
+	}
+}
+
+// Looking up the PIN policy fails for keys imported onto firmware older than
+// 5.3, so the PIN is then verified before every signature.
+func TestIssuer_UnknownPINPolicy(t *testing.T) {
+	card := newFakeCard(fakeSerial)
+	card.pinPolicyErr = errors.New("get attestation cert: smart card error 6a80")
+	root := putRoot(t, card, piv.SlotSignature, nil)
+	token := openFake(t, card, pinConfig())
+
+	issuer, err := token.Issuer()
+	if err != nil {
+		t.Fatalf("Issuer() err = %v", err)
+	}
+	leaf, err := signLeaf(t, issuer)
+	if err != nil {
+		t.Fatal(err)
+	}
+	verifyChain(t, root, leaf)
 }
 
 func TestIssuer_OtherSlot(t *testing.T) {

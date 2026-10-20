@@ -75,8 +75,11 @@ func TestCreateSelfSignedCertificate(t *testing.T) {
 	if !cert.IsCA {
 		t.Error("IsCA = false, want true")
 	}
-	if cert.KeyUsage&x509.KeyUsageCertSign == 0 {
-		t.Error("KeyUsage does not include CertSign")
+	if want := x509.KeyUsageCertSign | x509.KeyUsageCRLSign | x509.KeyUsageDigitalSignature; cert.KeyUsage != want {
+		t.Errorf("KeyUsage = %v, want %v", cert.KeyUsage, want)
+	}
+	if len(cert.ExtKeyUsage) != 0 || len(cert.DNSNames) != 0 || len(cert.IPAddresses) != 0 {
+		t.Errorf("root CA has ExtKeyUsage %v, DNSNames %v, and IPAddresses %v, want none", cert.ExtKeyUsage, cert.DNSNames, cert.IPAddresses)
 	}
 	if cert.SignatureAlgorithm != x509.ECDSAWithSHA512 {
 		t.Errorf("SignatureAlgorithm = %v, want %v", cert.SignatureAlgorithm, x509.ECDSAWithSHA512)
@@ -180,5 +183,26 @@ func TestGenerateFromSpecWithIssuer(t *testing.T) {
 	verifyChain(t, issuer.Certificate, standalone)
 	if err := leaf.CheckSignatureFrom(intermediate); err != nil {
 		t.Errorf("leaf not signed by intermediate: %v", err)
+	}
+}
+
+func TestGenerateKeyPair_IssuerCodeSigning(t *testing.T) {
+	issuer := newTestIssuer(t)
+
+	kp, err := GenerateKeyPair(&Args{
+		CommonName:  "Acme Code Signing",
+		CodeSigning: true,
+		KeyType:     &KeyType{Algorithm: ecdsaAlgorithm, KeyLength: 256},
+		Issuer:      issuer,
+	})
+	if err != nil {
+		t.Fatalf("GenerateKeyPair() err = %v", err)
+	}
+
+	leaf := parsePEMCertificate(t, kp.PublicCertificate)
+	roots := x509.NewCertPool()
+	roots.AddCert(issuer.Certificate)
+	if _, err := leaf.Verify(x509.VerifyOptions{Roots: roots, KeyUsages: []x509.ExtKeyUsage{x509.ExtKeyUsageCodeSigning}}); err != nil {
+		t.Errorf("code signing certificate does not verify for code signing: %v", err)
 	}
 }

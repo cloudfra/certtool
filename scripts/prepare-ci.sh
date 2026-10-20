@@ -24,8 +24,9 @@
 # The template version does nothing; this project installs pcsclite below.
 # scripts/sync-template.sh copies this file into a project only when the
 # project does not already have one and never overwrites an existing copy, so
-# anything added below survives a template re-sync. A non-zero exit status fails the job, which is the intended way to
-# make a prerequisite failure visible.
+# anything added below survives a template re-sync. A non-zero exit status
+# fails the job, which is the intended way to make a prerequisite failure
+# visible.
 
 set -euo pipefail
 

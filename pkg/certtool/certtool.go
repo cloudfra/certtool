@@ -416,12 +416,25 @@ func signatureAlgorithm(pub crypto.PublicKey, codeSigning bool) (x509.SignatureA
 // CreateSelfSignedCertificate creates a self-signed certificate for a private
 // key held outside of certtool, such as on a hardware security token. Only the
 // public certificate is produced because the private key never leaves signer.
+//
+// When args.CA is set the certificate is a root CA that is not restricted to
+// particular extended key usages or names, so it can issue certificates for any
+// purpose, including code signing.
 func CreateSelfSignedCertificate(args *Args, signer crypto.Signer) (*x509.Certificate, error) {
 	fillDefaults(args)
 
 	certTemplate, err := newCertificateTemplate(args, signer.Public())
 	if err != nil {
 		return nil, err
+	}
+
+	if args.CA {
+		// Clients check extended key usages along the whole chain, so a root
+		// limited to TLS could not issue code signing certificates.
+		certTemplate.KeyUsage = x509.KeyUsageCertSign | x509.KeyUsageCRLSign | x509.KeyUsageDigitalSignature
+		certTemplate.ExtKeyUsage = nil
+		certTemplate.DNSNames = nil
+		certTemplate.IPAddresses = nil
 	}
 
 	certTemplate.SignatureAlgorithm, err = signatureAlgorithm(signer.Public(), args.CodeSigning)
