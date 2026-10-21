@@ -93,7 +93,9 @@ type CertificateSpec struct {
 
 	// Filename overrides the default output filename (without extension).
 	// By default filenames are derived from the slugified common name path
-	// through the tree (e.g. "root-ca-leaf-example-com").
+	// through the tree (e.g. "root-ca-leaf-example-com"). It must be a plain
+	// file name: no directories, "..", or absolute paths, so every file stays
+	// in the output directory.
 	Filename string `yaml:"filename,omitempty"`
 
 	// Children are certificate specs signed by this certificate. This spec
@@ -137,6 +139,9 @@ func validateSpec(spec *CertificateSpec) error {
 	if len(spec.Children) > 0 && !spec.CertificateAuthority {
 		return fmt.Errorf("spec %q has children but certificateAuthority is not true", spec.CommonName)
 	}
+	if err := validateFilename(spec); err != nil {
+		return err
+	}
 	for _, hostname := range spec.Hostnames {
 		if err := ValidateHostname(hostname); err != nil {
 			return fmt.Errorf("spec %q: %w", spec.CommonName, err)
@@ -150,6 +155,32 @@ func validateSpec(spec *CertificateSpec) error {
 			return fmt.Errorf("spec %q has codeSigning %t but its parent %q has codeSigning %t; clients reject a certificate whose purpose its CA does not allow, so make code signing certificates top-level entries", child.CommonName, child.CodeSigning, spec.CommonName, spec.CodeSigning)
 		}
 		if err := validateSpec(child); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// validateFilename returns an error unless the spec's filename is empty or a
+// single file name, so the files it names cannot be written outside the
+// output directory.
+func validateFilename(spec *CertificateSpec) error {
+	if spec.Filename == "" {
+		return nil
+	}
+	if strings.ContainsAny(spec.Filename, `/\`) || !filepath.IsLocal(spec.Filename) {
+		return fmt.Errorf("spec %q has filename %q, which must be a file name without directories, \"..\", or an absolute path", spec.CommonName, spec.Filename)
+	}
+	return nil
+}
+
+// validateFilenames runs validateFilename on every spec in the tree.
+func validateFilenames(specs []CertificateSpec) error {
+	for i := range specs {
+		if err := validateFilename(&specs[i]); err != nil {
+			return err
+		}
+		if err := validateFilenames(specs[i].Children); err != nil {
 			return err
 		}
 	}
@@ -334,6 +365,11 @@ func GenerateFromSpec(specs []CertificateSpec, outputDir string) ([]GenerationOu
 // them to outputDir. When issuer is not nil it signs the top-level specs, so
 // every generated tree chains to the issuer instead of being self-signed.
 func GenerateFromSpecWithIssuer(specs []CertificateSpec, outputDir string, issuer *Issuer) ([]GenerationOutput, error) {
+	// Specs built in code skip UnmarshalSpec, so check every filename before
+	// anything is generated or written.
+	if err := validateFilenames(specs); err != nil {
+		return nil, err
+	}
 	if err := os.MkdirAll(outputDir, 0o750); err != nil {
 		return nil, fmt.Errorf("cannot create output directory (%s): %w", outputDir, err)
 	}
@@ -373,15 +409,6 @@ func specFilename(ancestorCNs []string, spec *CertificateSpec) string {
 }
 
 func generateSpec(spec *CertificateSpec, parentKP *KeyPair, issuer *Issuer, outputDir string, ancestorCNs []string, filenames map[string]string) ([]GenerationOutput, error) {
-	args := specToArgs(spec)
-	args.ParentKeyPair = parentKP
-	args.Issuer = issuer
-
-	kp, err := GenerateKeyPair(args)
-	if err != nil {
-		return nil, fmt.Errorf("cannot generate certificate for %q: %w", spec.CommonName, err)
-	}
-
 	basename := specFilename(ancestorCNs, spec)
 	certPath := filepath.Join(outputDir, basename+".cert")
 	keyPath := filepath.Join(outputDir, basename+".key")
@@ -390,6 +417,15 @@ func generateSpec(spec *CertificateSpec, parentKP *KeyPair, issuer *Issuer, outp
 		return nil, fmt.Errorf("filename collision: %q and %q both resolve to %q", existingCN, spec.CommonName, basename)
 	}
 	filenames[basename] = spec.CommonName
+
+	args := specToArgs(spec)
+	args.ParentKeyPair = parentKP
+	args.Issuer = issuer
+
+	kp, err := GenerateKeyPair(args)
+	if err != nil {
+		return nil, fmt.Errorf("cannot generate certificate for %q: %w", spec.CommonName, err)
+	}
 
 	if err := WriteKeyPair(kp, certPath, keyPath); err != nil {
 		return nil, fmt.Errorf("cannot write certificate for %q: %w", spec.CommonName, err)

@@ -30,7 +30,7 @@ A spec file is a YAML list of `CertificateSpec` entries. Each entry defines one 
 | `locality` | string | | Subject locality (L). |
 | `province` | string | | Subject state/province (ST). |
 | `hostnames` | list | | DNS names and IPs added as SANs. A port suffix is removed; a wildcard must be the leftmost label with at least two labels after it (`*.example.com`). |
-| `filename` | string | | Override the output filename (without extension). |
+| `filename` | string | | Override the output filename (without extension). Must be a plain file name: directories, `..`, and absolute paths are rejected so every file stays in `--output-dir`. |
 | `children` | list | | Child specs signed by this certificate. |
 
 ### Output filenames

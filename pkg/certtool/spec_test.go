@@ -209,6 +209,36 @@ func TestUnmarshalSpec_Errors(t *testing.T) {
 			wantErr: `spec "web" has codeSigning false but its parent "Root" has codeSigning true`,
 		},
 		{
+			name:    "filename with parent directory",
+			yaml:    "- commonName: x\n  filename: ../../escaped\n",
+			wantErr: `has filename "../../escaped", which must be a file name`,
+		},
+		{
+			name:    "filename with directory",
+			yaml:    "- commonName: x\n  filename: sub/x\n",
+			wantErr: "must be a file name",
+		},
+		{
+			name:    "filename with backslash",
+			yaml:    "- commonName: x\n  filename: ..\\x\n",
+			wantErr: "must be a file name",
+		},
+		{
+			name:    "absolute filename",
+			yaml:    "- commonName: x\n  filename: /etc/x\n",
+			wantErr: "must be a file name",
+		},
+		{
+			name:    "dot-dot filename",
+			yaml:    "- commonName: x\n  filename: ..\n",
+			wantErr: "must be a file name",
+		},
+		{
+			name:    "nested filename with parent directory",
+			yaml:    "- commonName: Root\n  certificateAuthority: true\n  children:\n    - commonName: Leaf\n      filename: ../leaf\n",
+			wantErr: `spec "Leaf" has filename "../leaf"`,
+		},
+		{
 			name:    "invalid YAML",
 			yaml:    "not: valid: yaml: [",
 			wantErr: "cannot parse spec YAML",
@@ -523,6 +553,36 @@ func TestGenerateFromSpec_FilenameCollision(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "filename collision") {
 		t.Errorf("err = %q, want containing %q", err.Error(), "filename collision")
+	}
+}
+
+// Specs built in code skip UnmarshalSpec, so GenerateFromSpec must reject a
+// filename that leaves the output directory before it writes anything, even
+// the output directory itself.
+func TestGenerateFromSpec_FilenameOutsideOutputDir(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	outputDir := filepath.Join(root, "out", "certs")
+	specs := []CertificateSpec{
+		{
+			CommonName:           testSpecRootCA,
+			CertificateAuthority: true,
+			KeyType:              "ECDSA-256",
+			Filename:             "root",
+			Children: []CertificateSpec{
+				{CommonName: "leaf", KeyType: "ECDSA-256", Filename: "../../escaped"},
+			},
+		},
+	}
+
+	_, err := GenerateFromSpec(specs, outputDir)
+	if err == nil || !strings.Contains(err.Error(), "must be a file name") {
+		t.Fatalf("GenerateFromSpec() err = %v, want a filename error", err)
+	}
+	for _, path := range []string{filepath.Join(root, "escaped.cert"), filepath.Join(root, "escaped.key"), outputDir} {
+		if _, err := os.Stat(path); !os.IsNotExist(err) {
+			t.Errorf("%s exists (stat err = %v), want nothing written", path, err)
+		}
 	}
 }
 
