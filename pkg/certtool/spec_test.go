@@ -203,6 +203,16 @@ func TestUnmarshalSpec_Errors(t *testing.T) {
 			wantErr: "must have a commonName",
 		},
 		{
+			name:    "code signing under a TLS CA",
+			yaml:    "- commonName: Root\n  certificateAuthority: true\n  children:\n    - commonName: Sign\n      codeSigning: true\n",
+			wantErr: `spec "Sign" has codeSigning true but its parent "Root" has codeSigning false`,
+		},
+		{
+			name:    "TLS under a code signing CA",
+			yaml:    "- commonName: Root\n  certificateAuthority: true\n  codeSigning: true\n  children:\n    - commonName: web\n",
+			wantErr: `spec "web" has codeSigning false but its parent "Root" has codeSigning true`,
+		},
+		{
 			name:    "invalid YAML",
 			yaml:    "not: valid: yaml: [",
 			wantErr: "cannot parse spec YAML",

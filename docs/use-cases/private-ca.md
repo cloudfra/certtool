@@ -113,4 +113,4 @@ See the [certificate spec documentation](../spec.md) for naming, YAML specs, and
 
 ## Limitation
 
-CA certificates made with `--ca` are limited to TLS server and client authentication, and verifiers apply that limit to everything they sign. Code signing certificates signed by them are rejected for code signing. Use a self-signed code signing certificate or a [YubiKey root CA](yubikey-root-ca.md) instead; see [Code signing](code-signing.md).
+CA certificates made with `--ca` are limited to TLS server and client authentication, and verifiers apply that limit to everything they sign. certtool refuses to sign a code signing certificate with one, because verifiers would reject it. Use a self-signed code signing certificate or a [YubiKey root CA](yubikey-root-ca.md) instead; see [Code signing](code-signing.md).
