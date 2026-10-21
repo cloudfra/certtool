@@ -137,8 +137,12 @@ jobs:
           mkdir yubikey && cd yubikey
           # The spec from the guide is valid and names files as documented.
           awk '/^```yaml/{f=1;next} /^```/{if(f){exit}} f' "$GITHUB_WORKSPACE/docs/use-cases/yubikey-root-ca.md" > certs.yaml
+          diff certs.yaml "$GITHUB_WORKSPACE/pkg/certtool/testdata/yubikey-intermediate.yaml" || exit 1
           certtool --spec certs.yaml --output-dir certs || exit 1
-          test -f certs/acme-issuing-ca.cert && test -f certs/acme-issuing-ca-api-internal-example-com.cert || exit 1
+          ls certs
+          for f in issuing-ca api web billing-client release-sign; do test -f "certs/$f.cert" || exit 1; done
+          test -f certs/release-sign.pfx || exit 1
+          openssl verify -CAfile certs/issuing-ca.cert certs/api.cert certs/web.cert certs/billing-client.cert || exit 1
           # Without a YubiKey, every YubiKey command fails cleanly and writes nothing.
           for bin in certtool certtool-nocgo; do
             for args in "--yubikey --ca --common-name x --public-certificate i.crt --private-key i.key" \
@@ -149,7 +153,12 @@ jobs:
               test ! -e i.crt && test ! -e root.crt || exit 1
             done
           done
-          certtool-nocgo --yubikey 2>&1 | grep -q "does not support YubiKeys" || exit 1
+          out=$(certtool-nocgo --yubikey 2>&1)
+          [[ "$out" == *"does not support YubiKeys"* ]] || exit 1
+          # --yubikey with a spec fails before generating anything
+          out=$(certtool --yubikey --spec certs.yaml --output-dir yk-certs 2>&1); code=$?
+          echo "--yubikey --spec -> exit $code: $out"
+          test "$code" -eq 1 && test ! -e yk-certs || exit 1
 
   windows:
     name: "Docs on Windows"
@@ -337,6 +346,18 @@ jobs:
             if ($out -match "does not support YubiKeys") { throw "the Windows build should support YubiKeys" }
           }
           if ((Test-Path issuing-ca.crt) -or (Test-Path root.crt)) { throw "files were written" }
+
+          # The YAML spec from the guide, without and with --yubikey
+          Copy-Item "$env:GITHUB_WORKSPACE\pkg\certtool\testdata\yubikey-intermediate.yaml" certs.yaml
+          certtool --spec certs.yaml --output-dir certs
+          if ($LASTEXITCODE -ne 0) { throw "spec failed" }
+          Get-ChildItem -Name certs
+          foreach ($f in "issuing-ca", "api", "web", "billing-client", "release-sign") { if (-not (Test-Path "certs\$f.cert")) { throw "missing $f.cert" } }
+          openssl verify -CAfile certs\issuing-ca.cert certs\api.cert certs\web.cert certs\billing-client.cert
+          if ($LASTEXITCODE -ne 0) { throw "chain does not verify" }
+          $out = & certtool --yubikey --spec certs.yaml --output-dir yk-certs 2>&1 | Out-String
+          "--yubikey --spec -> exit ${LASTEXITCODE}: $out"
+          if ($LASTEXITCODE -ne 1 -or (Test-Path yk-certs)) { throw "--yubikey --spec should fail without writing files" }
 
           # With the Smart Card service running but no YubiKey plugged in
           Set-Service SCardSvr -StartupType Manual
