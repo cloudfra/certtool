@@ -1,0 +1,340 @@
+# TEMPORARY: runs the command lines from README.md and docs/use-cases on
+# Linux and Windows. Remove before merging.
+name: Docs smoke test
+
+on:
+  push:
+    branches: [feature/yubikey-root-ca]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  linux:
+    name: "Docs on Linux"
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version: stable
+          cache: false
+      - name: Install packages
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends libpcsclite-dev pkg-config osslsigncode
+      - name: Build
+        run: |
+          mkdir -p "$RUNNER_TEMP/bin"
+          CGO_ENABLED=1 go build -o "$RUNNER_TEMP/bin/certtool" ./cmd/certtool
+          CGO_ENABLED=0 go build -o "$RUNNER_TEMP/bin/certtool-nocgo" ./cmd/certtool
+          printf 'package main\n\nfunc main() {}\n' > "$RUNNER_TEMP/hello.go"
+          GOOS=windows go build -o "$RUNNER_TEMP/app.exe" "$RUNNER_TEMP/hello.go"
+          echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
+      - name: README examples
+        working-directory: ${{ runner.temp }}
+        run: |
+          set -euxo pipefail
+          mkdir readme && cd readme
+          certtool
+          test -f app.cert && test -f app.key
+          certtool --code-sign
+          test -f codesign.pfx
+          certtool --common-name myapp.localhost --hostnames myapp.localhost,192.168.1.20 \
+            --key-type ECDSA-256 --public-certificate dev.crt --private-key dev.key
+          certtool --ca --common-name "Acme Root CA" --organization Acme --key-type ECDSA-384 --validity 87600h \
+            --public-certificate root-ca.crt --private-key root-ca.key
+          certtool --common-name api.example.com --hostnames api.example.com \
+            --parent-public-certificate root-ca.crt --parent-private-key root-ca.key \
+            --public-certificate api.crt --private-key api.key
+          openssl verify -CAfile root-ca.crt api.crt
+          certtool --code-sign --common-name "Acme Internal Software" --pfx-password "change-me"
+          certtool --code-sign --target windows7 --pfx-output codesign-legacy.pfx
+          certtool --code-sign --target linux --public-certificate codesign.crt --private-key codesign.key
+          certtool --chain 1,2,3 --common-name svc --organization Acme --output-dir certs
+          test "$(ls certs/*.cert | wc -l)" -eq 9
+          certtool --chain 1,2,1 --export-spec certs.yaml
+          certtool --spec certs.yaml --output-dir certs-spec
+          ls certs certs-spec
+      - name: Local development HTTPS
+        working-directory: ${{ runner.temp }}
+        run: |
+          set -euxo pipefail
+          mkdir local && cd local
+          certtool --common-name myapp.localhost --hostnames myapp.localhost --key-type ECDSA-256 \
+            --public-certificate dev.crt --private-key dev.key
+          openssl s_server -quiet -accept 8443 -cert dev.crt -key dev.key -www &
+          server=$!
+          sleep 1
+          curl -fsS -o /dev/null --cacert dev.crt https://localhost:8443/
+          curl -fsS -o /dev/null --cacert dev.crt --resolve myapp.localhost:8443:127.0.0.1 https://myapp.localhost:8443/
+          # Trust it, then curl works without --cacert
+          sudo cp dev.crt /usr/local/share/ca-certificates/certtool-dev.crt
+          sudo update-ca-certificates
+          curl -fsS -o /dev/null --resolve myapp.localhost:8443:127.0.0.1 https://myapp.localhost:8443/
+          sudo rm /usr/local/share/ca-certificates/certtool-dev.crt
+          sudo update-ca-certificates --fresh
+          if curl -fsS -o /dev/null --resolve myapp.localhost:8443:127.0.0.1 https://myapp.localhost:8443/; then
+            echo "certificate is still trusted after removal"; exit 1
+          fi
+          kill "$server"
+      - name: Private CA and mutual TLS
+        working-directory: ${{ runner.temp }}
+        run: |
+          set -euxo pipefail
+          mkdir private && cd private
+          certtool --ca --common-name "Acme Root CA" --organization Acme \
+            --key-type ECDSA-384 --validity 87600h \
+            --public-certificate root-ca.crt --private-key root-ca.key
+          certtool --ca --common-name "Acme Issuing CA" --organization Acme \
+            --key-type ECDSA-256 --validity 26280h \
+            --parent-public-certificate root-ca.crt --parent-private-key root-ca.key \
+            --public-certificate issuing-ca.crt --private-key issuing-ca.key
+          certtool --common-name api.internal.example.com --organization Acme \
+            --hostnames api.internal.example.com,10.0.0.12 --key-type ECDSA-256 --validity 2160h \
+            --parent-public-certificate issuing-ca.crt --parent-private-key issuing-ca.key \
+            --public-certificate api.crt --private-key api.key
+          cat api.crt issuing-ca.crt > api-chain.crt
+          certtool --common-name billing-client --organization Acme --key-type ECDSA-256 --validity 2160h \
+            --parent-public-certificate issuing-ca.crt --parent-private-key issuing-ca.key \
+            --public-certificate billing-client.crt --private-key billing-client.key
+          openssl verify -CAfile root-ca.crt -untrusted issuing-ca.crt -purpose sslserver api.crt
+          openssl verify -CAfile root-ca.crt -untrusted issuing-ca.crt -purpose sslclient billing-client.crt
+          cat billing-client.crt issuing-ca.crt > billing-client-chain.crt
+          openssl s_server -quiet -accept 8444 -cert api.crt -cert_chain issuing-ca.crt -key api.key \
+            -CAfile root-ca.crt -verify_return_error -Verify 1 -www &
+          server=$!
+          sleep 1
+          curl -fsS -o /dev/null --cacert root-ca.crt --cert billing-client-chain.crt --key billing-client.key https://localhost:8444/
+          if curl -fsS -o /dev/null --cacert root-ca.crt https://localhost:8444/; then
+            echo "server accepted a client without a certificate"; exit 1
+          fi
+          kill "$server"
+          certtool --chain 1,1,2 --common-name svc --organization Acme --output-dir certs
+          ls certs
+      - name: Code signing with osslsigncode
+        working-directory: ${{ runner.temp }}
+        run: |
+          set -euxo pipefail
+          mkdir codesign && cd codesign
+          certtool --code-sign --target linux --common-name "Acme Internal Software" \
+            --public-certificate codesign.crt --private-key codesign.key
+          osslsigncode sign -certs codesign.crt -key codesign.key -n "My App" -h sha256 \
+            -in ../app.exe -out app-signed.exe
+          osslsigncode verify -CAfile codesign.crt -in app-signed.exe
+          certtool --code-sign --common-name "Acme Internal Software" \
+            --pfx-output codesign.pfx --pfx-password "change-me"
+          osslsigncode sign -pkcs12 codesign.pfx -pass "change-me" -h sha256 -in ../app.exe -out app-signed2.exe
+      - name: YubiKey spec and errors without a YubiKey
+        working-directory: ${{ runner.temp }}
+        run: |
+          set -uxo pipefail
+          mkdir yubikey && cd yubikey
+          # The spec from the guide is valid and names files as documented.
+          awk '/^```yaml/{f=1;next} /^```/{if(f){exit}} f' "$GITHUB_WORKSPACE/docs/use-cases/yubikey-root-ca.md" > certs.yaml
+          certtool --spec certs.yaml --output-dir certs || exit 1
+          test -f certs/acme-issuing-ca.cert && test -f certs/acme-issuing-ca-api-internal-example-com.cert || exit 1
+          # Without a YubiKey, every YubiKey command fails cleanly and writes nothing.
+          for bin in certtool certtool-nocgo; do
+            for args in "--yubikey --ca --common-name x --public-certificate i.crt --private-key i.key" \
+                        "--yubikey-generate-root --common-name x --public-certificate root.crt"; do
+              out=$($bin $args 2>&1); code=$?
+              echo "$bin $args -> exit $code: $out"
+              test "$code" -eq 1 || exit 1
+              test ! -e i.crt && test ! -e root.crt || exit 1
+            done
+          done
+          certtool-nocgo --yubikey 2>&1 | grep -q "does not support YubiKeys" || exit 1
+
+  windows:
+    name: "Docs on Windows"
+    runs-on: windows-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version: stable
+          cache: false
+      - name: Build
+        run: |
+          $bin = Join-Path $env:RUNNER_TEMP bin
+          New-Item -ItemType Directory -Force $bin | Out-Null
+          $env:CGO_ENABLED = "0"
+          go build -o (Join-Path $bin certtool.exe) ./cmd/certtool
+          Set-Content -Path (Join-Path $env:RUNNER_TEMP hello.go) -Value "package main`n`nfunc main() {}`n"
+          go build -o (Join-Path $env:RUNNER_TEMP app.exe) (Join-Path $env:RUNNER_TEMP hello.go)
+          Add-Content $env:GITHUB_PATH $bin
+          $signtool = Get-ChildItem "${env:ProgramFiles(x86)}\Windows Kits\10\bin\*\x64\signtool.exe" | Sort-Object FullName | Select-Object -Last 1
+          Add-Content $env:GITHUB_PATH $signtool.DirectoryName
+          Add-Content $env:GITHUB_PATH "$env:ProgramFiles\Git\usr\bin"
+      - name: README examples
+        working-directory: ${{ runner.temp }}
+        run: |
+          $ErrorActionPreference = "Stop"
+          $PSNativeCommandUseErrorActionPreference = $true
+          New-Item -ItemType Directory readme | Out-Null; Set-Location readme
+          certtool
+          certtool --code-sign
+          certtool --common-name myapp.localhost --hostnames myapp.localhost,192.168.1.20 `
+            --key-type ECDSA-256 --public-certificate dev.crt --private-key dev.key
+          certtool --ca --common-name "Acme Root CA" --organization Acme --key-type ECDSA-384 --validity 87600h `
+            --public-certificate root-ca.crt --private-key root-ca.key
+          certtool --common-name api.example.com --hostnames api.example.com `
+            --parent-public-certificate root-ca.crt --parent-private-key root-ca.key `
+            --public-certificate api.crt --private-key api.key
+          openssl verify -CAfile root-ca.crt api.crt
+          certtool --code-sign --common-name "Acme Internal Software" --pfx-password "change-me"
+          certtool --code-sign --target windows7 --pfx-output codesign-legacy.pfx
+          certtool --code-sign --target linux --public-certificate codesign.crt --private-key codesign.key
+          certtool --chain 1,2,3 --common-name svc --organization Acme --output-dir certs
+          if ((Get-ChildItem certs\*.cert).Count -ne 9) { throw "expected 9 certificates" }
+          certtool --chain 1,2,1 --export-spec certs.yaml
+          certtool --spec certs.yaml --output-dir certs-spec
+          Get-ChildItem -Name . , certs, certs-spec
+      - name: Local development HTTPS
+        working-directory: ${{ runner.temp }}
+        run: |
+          $ErrorActionPreference = "Stop"
+          $PSNativeCommandUseErrorActionPreference = $true
+          New-Item -ItemType Directory local | Out-Null; Set-Location local
+          certtool --common-name myapp.localhost --hostnames myapp.localhost --key-type ECDSA-256 `
+            --public-certificate dev.crt --private-key dev.key
+          $server = Start-Process openssl -ArgumentList "s_server -quiet -accept 8443 -cert dev.crt -key dev.key -www" -PassThru -NoNewWindow
+          Start-Sleep 2
+          # Not trusted yet
+          $untrusted = $false
+          try { Invoke-WebRequest https://localhost:8443/ -UseBasicParsing | Out-Null } catch { $untrusted = $true; "untrusted as expected: $($_.Exception.Message)" }
+          if (-not $untrusted) { throw "certificate was trusted before importing it" }
+          # The guide imports into CurrentUser\Root, which shows a confirmation dialog;
+          # CI uses the machine store, which does not.
+          Import-Certificate -FilePath dev.crt -CertStoreLocation Cert:\LocalMachine\Root
+          (Invoke-WebRequest https://localhost:8443/ -UseBasicParsing).StatusCode
+          Get-ChildItem Cert:\LocalMachine\Root | Where-Object Subject -like '*CN=myapp.localhost*' | Remove-Item
+          if (Get-ChildItem Cert:\LocalMachine\Root | Where-Object Subject -like '*CN=myapp.localhost*') { throw "certificate was not removed" }
+          Stop-Process $server.Id
+      - name: Private CA
+        working-directory: ${{ runner.temp }}
+        run: |
+          $ErrorActionPreference = "Stop"
+          $PSNativeCommandUseErrorActionPreference = $true
+          New-Item -ItemType Directory private | Out-Null; Set-Location private
+          certtool --ca --common-name "Acme Root CA" --organization Acme `
+            --key-type ECDSA-384 --validity 87600h `
+            --public-certificate root-ca.crt --private-key root-ca.key
+          certtool --ca --common-name "Acme Issuing CA" --organization Acme `
+            --key-type ECDSA-256 --validity 26280h `
+            --parent-public-certificate root-ca.crt --parent-private-key root-ca.key `
+            --public-certificate issuing-ca.crt --private-key issuing-ca.key
+          certtool --common-name api.internal.example.com --organization Acme `
+            --hostnames api.internal.example.com,10.0.0.12 --key-type ECDSA-256 --validity 2160h `
+            --parent-public-certificate issuing-ca.crt --parent-private-key issuing-ca.key `
+            --public-certificate api.crt --private-key api.key
+          Get-Content api.crt, issuing-ca.crt | Set-Content api-chain.crt
+          openssl crl2pkcs7 -nocrl -certfile api-chain.crt | openssl pkcs7 -print_certs -noout
+          openssl verify -CAfile root-ca.crt -untrusted issuing-ca.crt -purpose sslserver api.crt
+          Import-Certificate -FilePath root-ca.crt -CertStoreLocation Cert:\LocalMachine\Root
+          certutil -verify api-chain.crt
+          Get-ChildItem Cert:\LocalMachine\Root | Where-Object Subject -like '*CN=Acme Root CA*' | Remove-Item
+      - name: Code signing with signtool and PowerShell
+        working-directory: ${{ runner.temp }}
+        run: |
+          $ErrorActionPreference = "Stop"
+          $PSNativeCommandUseErrorActionPreference = $true
+          New-Item -ItemType Directory codesign | Out-Null; Set-Location codesign
+          Copy-Item ..\app.exe app.exe
+          Copy-Item ..\app.exe app-ts.exe
+          certtool --code-sign --common-name "Acme Internal Software" --organization Acme `
+            --pfx-output codesign.pfx --pfx-password "change-me"
+          signtool sign /fd SHA256 /f codesign.pfx /p change-me app.exe
+          signtool sign /fd SHA256 /f codesign.pfx /p change-me /tr http://timestamp.digicert.com /td SHA256 app-ts.exe
+          $before = Get-AuthenticodeSignature app.exe
+          "Before trusting: Status=$($before.Status) Message=$($before.StatusMessage)"
+
+          # Trust, as in the guide (Read-Host replaced for CI)
+          $password = ConvertTo-SecureString "change-me" -AsPlainText -Force
+          $cert = (Get-PfxData -FilePath codesign.pfx -Password $password).EndEntityCertificates[0]
+          $cer = "$env:TEMP\codesign.cer"
+          Export-Certificate -Cert $cert -FilePath $cer | Out-Null
+          Import-Certificate -FilePath $cer -CertStoreLocation Cert:\LocalMachine\Root
+          Import-Certificate -FilePath $cer -CertStoreLocation Cert:\LocalMachine\TrustedPublisher
+
+          signtool verify /pa /v app.exe
+          signtool verify /pa app-ts.exe
+          $after = Get-AuthenticodeSignature app.exe
+          $after | Format-List Status, StatusMessage, SignerCertificate
+          if ($after.Status -ne "Valid") { throw "signature is $($after.Status) after trusting" }
+
+          # PowerShell scripts
+          Set-Content script.ps1 'Write-Output "hello"'
+          $signing = Import-PfxCertificate -FilePath codesign.pfx -CertStoreLocation Cert:\CurrentUser\My -Password $password
+          $result = Set-AuthenticodeSignature -FilePath script.ps1 -Certificate $signing -HashAlgorithm SHA256
+          $result | Format-List Status, StatusMessage
+          if ($result.Status -ne "Valid") { throw "script signature is $($result.Status)" }
+          if ((Get-AuthenticodeSignature script.ps1).Status -ne "Valid") { throw "script signature does not verify" }
+      - name: Code signing guide in Windows PowerShell 5.1
+        shell: powershell
+        working-directory: ${{ runner.temp }}
+        run: |
+          $ErrorActionPreference = "Stop"
+          Set-Location codesign
+          $password = ConvertTo-SecureString "change-me" -AsPlainText -Force
+          $cert = (Get-PfxData -FilePath codesign.pfx -Password $password).EndEntityCertificates[0]
+          "PowerShell $($PSVersionTable.PSVersion): $($cert.Subject)"
+          $signing = Import-PfxCertificate -FilePath codesign.pfx -CertStoreLocation Cert:\CurrentUser\My -Password $password
+          Set-Content script51.ps1 'Write-Output "hello"'
+          $result = Set-AuthenticodeSignature -FilePath script51.ps1 -Certificate $signing -HashAlgorithm SHA256
+          $result | Format-List Status, StatusMessage
+          if ($result.Status -ne "Valid") { throw "script signature is $($result.Status)" }
+      - name: Windows 7 target signs
+        working-directory: ${{ runner.temp }}
+        run: |
+          $ErrorActionPreference = "Stop"
+          $PSNativeCommandUseErrorActionPreference = $true
+          Set-Location codesign
+          certtool --code-sign --target windows7 --common-name "Acme Internal Software" `
+            --pfx-output codesign-legacy.pfx --pfx-password "change-me"
+          Copy-Item ..\app.exe app7.exe
+          signtool sign /fd SHA256 /f codesign-legacy.pfx /p change-me app7.exe
+      - name: Code signing under a --ca root is rejected (documented limitation)
+        working-directory: ${{ runner.temp }}
+        run: |
+          $ErrorActionPreference = "Stop"
+          New-Item -ItemType Directory limit | Out-Null; Set-Location limit
+          certtool --ca --common-name "Limit Root CA" --public-certificate root.crt --private-key root.key
+          certtool --code-sign --common-name "Limit Signing" --parent-public-certificate root.crt --parent-private-key root.key `
+            --pfx-output limit.pfx --pfx-password "change-me"
+          Copy-Item ..\app.exe app.exe
+          signtool sign /fd SHA256 /f limit.pfx /p change-me app.exe
+          Import-Certificate -FilePath root.crt -CertStoreLocation Cert:\LocalMachine\Root
+          signtool verify /pa app.exe
+          $code = $LASTEXITCODE
+          "signtool verify exit code: $code"
+          (Get-AuthenticodeSignature app.exe) | Format-List Status, StatusMessage
+          Get-ChildItem Cert:\LocalMachine\Root | Where-Object Subject -like '*CN=Limit Root CA*' | Remove-Item
+          if ($code -eq 0) { throw "a code signing certificate under a --ca root verified; the guide says it does not" }
+          $global:LASTEXITCODE = 0
+      - name: YubiKey without a YubiKey
+        working-directory: ${{ runner.temp }}
+        run: |
+          New-Item -ItemType Directory yubikey | Out-Null; Set-Location yubikey
+          Get-Service SCardSvr | Format-List Name, Status, StartType
+          foreach ($cmd in @(
+              @("--yubikey", "--ca", "--common-name", "Acme Issuing CA", "--public-certificate", "issuing-ca.crt", "--private-key", "issuing-ca.key"),
+              @("--yubikey-generate-root", "--common-name", "Acme Root CA", "--public-certificate", "root.crt"))) {
+            $out = & certtool @cmd 2>&1 | Out-String
+            $code = $LASTEXITCODE
+            "certtool $($cmd -join ' ') -> exit ${code}: $out"
+            if ($code -ne 1) { throw "expected exit code 1" }
+            if ($out -match "does not support YubiKeys") { throw "the Windows build should support YubiKeys" }
+          }
+          if (Test-Path issuing-ca.crt, root.crt) { throw "files were written" }
+          $global:LASTEXITCODE = 0
