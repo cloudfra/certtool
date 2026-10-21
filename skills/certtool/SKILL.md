@@ -22,8 +22,8 @@ description: Use when a task needs X.509 certificates or private keys - self-sig
 Check `certtool --version` first. Otherwise download a release build, or install with Go:
 
 ```bash
-# Linux amd64. Other builds: certtool-arm64, certtool-amd64-darwin, certtool-arm64-darwin, certtool-amd64.exe
-curl -fsSL -o certtool https://github.com/cloudfra/certtool/releases/latest/download/certtool-amd64 && chmod +x certtool
+# Linux amd64. Other builds: certtool-linux_arm64, certtool-darwin_arm64, certtool-windows_amd64.exe, certtool-windows_arm64.exe
+curl -fsSL -o certtool https://github.com/cloudfra/certtool/releases/latest/download/certtool-linux_amd64 && chmod +x certtool
 
 go install github.com/cloudfra/certtool/cmd/certtool@latest
 ```

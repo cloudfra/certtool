@@ -8,7 +8,7 @@ A simple tool for generating self-signed X.509 certificates and private keys for
 
 ```bash
 # Download (Linux amd64, see Downloads for other builds)
-curl -L -o certtool https://github.com/cloudfra/certtool/releases/latest/download/certtool-amd64 && chmod +x certtool
+curl -fLo certtool https://github.com/cloudfra/certtool/releases/latest/download/certtool-linux_amd64 && chmod +x certtool
 
 # Self-signed TLS certificate for localhost (writes app.cert and app.key)
 ./certtool
@@ -192,22 +192,22 @@ Claude Code versions before 2.1.275 take two steps: `/plugin marketplace add clo
 
 | OS | Arch | Link |
 | -- | ---- | ---- |
-| Linux | amd64 | `curl -O -L https://github.com/cloudfra/certtool/releases/latest/download/certtool-amd64` |
-| Linux | arm | `curl -O -L https://github.com/cloudfra/certtool/releases/latest/download/certtool-arm` |
-| Linux | arm64 | `curl -O -L https://github.com/cloudfra/certtool/releases/latest/download/certtool-arm64` |
-| Linux | 386 | `curl -O -L https://github.com/cloudfra/certtool/releases/latest/download/certtool-386` |
-| Windows | amd64 | `$ProgressPreference = 'SilentlyContinue'; Invoke-WebRequest -Uri "https://github.com/cloudfra/certtool/releases/latest/download/certtool-amd64.exe" -OutFile "certtool-amd64.exe" -UseBasicParsing` |
-| Windows | 386 | `$ProgressPreference = 'SilentlyContinue'; Invoke-WebRequest -Uri "https://github.com/cloudfra/certtool/releases/latest/download/certtool-386.exe" -OutFile "certtool-386.exe" -UseBasicParsing` |
-| Windows | arm64 | `$ProgressPreference = 'SilentlyContinue'; Invoke-WebRequest -Uri "https://github.com/cloudfra/certtool/releases/latest/download/certtool-arm64.exe" -OutFile "certtool-arm64.exe" -UseBasicParsing` |
-| macOS | amd64 | `curl -O -L https://github.com/cloudfra/certtool/releases/latest/download/certtool-amd64-darwin` |
-| macOS | arm64 | `curl -O -L https://github.com/cloudfra/certtool/releases/latest/download/certtool-arm64-darwin` |
+| Linux | amd64 | `curl -fLo certtool https://github.com/cloudfra/certtool/releases/latest/download/certtool-linux_amd64 && chmod +x certtool` |
+| Linux | arm64 | `curl -fLo certtool https://github.com/cloudfra/certtool/releases/latest/download/certtool-linux_arm64 && chmod +x certtool` |
+| macOS | arm64 | `curl -fLo certtool https://github.com/cloudfra/certtool/releases/latest/download/certtool-darwin_arm64 && chmod +x certtool` |
+| Windows | amd64 | `$ProgressPreference = 'SilentlyContinue'; Invoke-WebRequest -Uri "https://github.com/cloudfra/certtool/releases/latest/download/certtool-windows_amd64.exe" -OutFile "certtool.exe" -UseBasicParsing` |
+| Windows | arm64 | `$ProgressPreference = 'SilentlyContinue'; Invoke-WebRequest -Uri "https://github.com/cloudfra/certtool/releases/latest/download/certtool-windows_arm64.exe" -OutFile "certtool.exe" -UseBasicParsing` |
+
+For other platforms, install with Go: `go install github.com/cloudfra/certtool/cmd/certtool@latest`.
 
 ## Docker Images
 
 * [certtool](https://hub.docker.com/r/cloudfra/certtool/tags)
 
+Images are tagged by release (there is no `latest` tag):
+
 ```bash
-docker pull docker.io/cloudfra/certtool
+docker run --rm docker.io/cloudfra/certtool:v0.7.0 --version
 ```
 
 ## Build

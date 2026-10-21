@@ -2,7 +2,7 @@
 
 > certtool is a non-interactive CLI and Go library that generates X.509 certificates and private keys: self-signed TLS certificates, private CA hierarchies, Windows and Linux code signing certificates, and certificates signed by a root CA kept on a YubiKey. It never prompts; inputs come from flags or environment variables, logs go to stderr, and a failure exits with status 1 and an error naming the flag at fault.
 
-Install a release build from <https://github.com/cloudfra/certtool/releases/latest> (for example `certtool-amd64`, `certtool-arm64-darwin`, `certtool-amd64.exe`) or run `go install github.com/cloudfra/certtool/cmd/certtool@latest`. `certtool --help` lists every flag.
+Install a release build from <https://github.com/cloudfra/certtool/releases/latest> (`certtool-linux_amd64`, `certtool-linux_arm64`, `certtool-darwin_arm64`, `certtool-windows_amd64.exe`, `certtool-windows_arm64.exe`) or run `go install github.com/cloudfra/certtool/cmd/certtool@latest`. `certtool --help` lists every flag.
 
 ## Agent guides
 
