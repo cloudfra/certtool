@@ -923,7 +923,7 @@ func TestSpecWithYubiKey(t *testing.T) {
 	}
 
 	certs := map[string]*x509.Certificate{}
-	var files []string
+	files := make([]string, 0, len(results))
 	for _, r := range results {
 		certs[r.CommonName] = parseCertificate(t, r.KeyPair.PublicCertificate)
 		files = append(files, filepath.Base(r.CertPath))
