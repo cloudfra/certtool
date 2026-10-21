@@ -4,6 +4,9 @@ The `--spec` flag lets you define an entire certificate hierarchy in a single YA
 
 ```bash
 certtool --spec certs.yaml --output-dir ./certs
+
+# Sign the top-level certificates with a root CA on a YubiKey
+certtool --yubikey --spec certs.yaml --output-dir ./certs
 ```
 
 ## Spec Format
@@ -210,6 +213,63 @@ certtool --spec mixed-roots.yaml --output-dir ./certs
 #   certs/backend.cert, certs/backend.key
 #   certs/release-sign.cert, certs/release-sign.key, certs/release-sign.pfx
 ```
+
+### YubiKey root CA
+
+With `--yubikey`, the root CA on a YubiKey signs every top-level entry instead of it being self-signed. Each entry still signs its own children. The spec itself is unchanged; leave the root out, because it is already on the YubiKey.
+
+```yaml
+# testdata/yubikey-intermediate.yaml
+# Generate with: certtool --yubikey --spec yubikey-intermediate.yaml --output-dir ./certs
+# The YubiKey root CA signs each top-level entry: an intermediate CA, which
+# signs the leaf certificates, and a code signing certificate. The root itself
+# stays on the YubiKey and is not part of the spec.
+- commonName: "Acme Issuing CA"
+  certificateAuthority: true
+  organization: "Acme"
+  keyType: "ECDSA-256"
+  validity: "26280h"
+  filename: "issuing-ca"
+  children:
+    - commonName: "api.internal.example.com"
+      organization: "Acme"
+      keyType: "ECDSA-256"
+      validity: "2160h"
+      hostnames:
+        - api.internal.example.com
+        - 10.0.0.12
+      filename: "api"
+    - commonName: "web.internal.example.com"
+      organization: "Acme"
+      keyType: "ECDSA-256"
+      validity: "2160h"
+      hostnames:
+        - web.internal.example.com
+      filename: "web"
+    - commonName: "billing-client"
+      organization: "Acme"
+      keyType: "ECDSA-256"
+      validity: "2160h"
+      filename: "billing-client"
+- commonName: "Acme Release Signing"
+  codeSigning: true
+  organization: "Acme"
+  target: "windows10"
+  validity: "8760h"
+  filename: "release-sign"
+```
+
+```bash
+certtool --yubikey --spec yubikey-intermediate.yaml --output-dir ./certs
+# Produces:
+#   certs/issuing-ca.cert, certs/issuing-ca.key         (signed by the YubiKey)
+#   certs/api.cert, certs/api.key                        (signed by Acme Issuing CA)
+#   certs/web.cert, certs/web.key                        (signed by Acme Issuing CA)
+#   certs/billing-client.cert, certs/billing-client.key  (signed by Acme Issuing CA)
+#   certs/release-sign.cert, certs/release-sign.key, certs/release-sign.pfx  (signed by the YubiKey)
+```
+
+The `--yubikey-*` flags select the YubiKey, slot, and PIN. See the [YubiKey root CA guide](use-cases/yubikey-root-ca.md) for setting up the YubiKey.
 
 ## Generating a hierarchy with --chain
 

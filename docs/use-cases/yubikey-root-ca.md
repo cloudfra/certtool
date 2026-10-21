@@ -14,6 +14,7 @@ YubiKey slot 9c: Acme Root CA            10 years, signs only when the YubiKey i
 
 * [Scenario 1: certtool generates the root on the YubiKey](#scenario-1-certtool-generates-the-root). Start here if the YubiKey has no CA yet.
 * [Scenario 2: the YubiKey already holds a CA](#scenario-2-the-yubikey-already-holds-a-ca). Start here if a root CA is already in a slot, whether certtool, ykman, or another tool put it there.
+* [YAML spec](#yaml-spec-the-intermediate-and-its-leaves-in-one-command). Either scenario, with the intermediate and leaves described in one file.
 
 `--yubikey` only signs with a root CA that is already on the YubiKey. It never creates one by itself, and fails with `there is no certificate in the slot` if the slot is empty.
 
@@ -186,41 +187,77 @@ certtool --common-name billing-client --organization Acme --key-type ECDSA-256 -
 openssl verify -CAfile root.crt -untrusted issuing-ca.crt api.crt web.crt billing-client.crt
 ```
 
-## The intermediate and its leaves in one command
+## YAML spec: the intermediate and its leaves in one command
 
-Instead of steps 3 and 4 (scenario 1) or steps 2 and 3 (scenario 2), describe the intermediate and its leaves in a spec. With `--yubikey`, the YubiKey signs each top-level entry, and each entry signs its children:
+Both scenarios also work with a [YAML spec](../spec.md) in place of the separate commands for the intermediate and the leaves. The spec doesn't mention the YubiKey: `--yubikey` on the command line makes the YubiKey root sign each top-level entry, and each entry signs its children as usual. Here the YubiKey signs the intermediate CA and a code signing certificate, and the intermediate signs three leaves:
 
 ```yaml
-# certs.yaml
-- commonName: Acme Issuing CA
+# Generate with: certtool --yubikey --spec yubikey-intermediate.yaml --output-dir ./certs
+# The YubiKey root CA signs each top-level entry: an intermediate CA, which
+# signs the leaf certificates, and a code signing certificate. The root itself
+# stays on the YubiKey and is not part of the spec.
+- commonName: "Acme Issuing CA"
   certificateAuthority: true
-  organization: Acme
-  keyType: ECDSA-256
-  validity: 26280h
+  organization: "Acme"
+  keyType: "ECDSA-256"
+  validity: "26280h"
+  filename: "issuing-ca"
   children:
-    - commonName: api.internal.example.com
-      organization: Acme
-      keyType: ECDSA-256
-      validity: 2160h
-      hostnames: [api.internal.example.com, 10.0.0.12]
-    - commonName: web.internal.example.com
-      organization: Acme
-      keyType: ECDSA-256
-      validity: 2160h
-      hostnames: [web.internal.example.com]
-    - commonName: billing-client
-      organization: Acme
-      keyType: ECDSA-256
-      validity: 2160h
+    - commonName: "api.internal.example.com"
+      organization: "Acme"
+      keyType: "ECDSA-256"
+      validity: "2160h"
+      hostnames:
+        - api.internal.example.com
+        - 10.0.0.12
+      filename: "api"
+    - commonName: "web.internal.example.com"
+      organization: "Acme"
+      keyType: "ECDSA-256"
+      validity: "2160h"
+      hostnames:
+        - web.internal.example.com
+      filename: "web"
+    - commonName: "billing-client"
+      organization: "Acme"
+      keyType: "ECDSA-256"
+      validity: "2160h"
+      filename: "billing-client"
+- commonName: "Acme Release Signing"
+  codeSigning: true
+  organization: "Acme"
+  target: "windows10"
+  validity: "8760h"
+  filename: "release-sign"
 ```
 
 ```bash
 certtool --yubikey --spec certs.yaml --output-dir certs
+
+# Use another slot or YubiKey with the same flags as the other commands
+certtool --yubikey --yubikey-slot 82 --yubikey-serial 12345678 --spec certs.yaml --output-dir certs
 ```
 
-The files are named after the certificates, for example `certs/acme-issuing-ca.cert` and `certs/acme-issuing-ca-api-internal-example-com.cert`. See the [certificate spec documentation](../spec.md) for the format.
+The YubiKey asks for the PIN once and signs twice, once for each top-level entry. It writes:
 
-`--chain` also works with `--yubikey`, but it names its top layer as a root (`Acme Root CA`) even though the YubiKey signed it. Use `--spec` to name the certificates under a YubiKey root accurately.
+```text
+certs/issuing-ca.cert, certs/issuing-ca.key           signed by the YubiKey root
+certs/api.cert, certs/api.key                          signed by Acme Issuing CA
+certs/web.cert, certs/web.key                          signed by Acme Issuing CA
+certs/billing-client.cert, certs/billing-client.key    signed by Acme Issuing CA
+certs/release-sign.cert, certs/release-sign.key, certs/release-sign.pfx   signed by the YubiKey root
+```
+
+Verify the result against the root:
+
+```bash
+openssl verify -CAfile root.crt -untrusted certs/issuing-ca.cert \
+  certs/api.cert certs/web.cert certs/billing-client.cert certs/release-sign.cert
+```
+
+Without `--yubikey`, the same spec makes `Acme Issuing CA` and `Acme Release Signing` self-signed, which is handy for trying it out first. This file is [`pkg/certtool/testdata/yubikey-intermediate.yaml`](../../pkg/certtool/testdata/yubikey-intermediate.yaml), and the test suite signs it with a simulated YubiKey.
+
+`--chain` also works with `--yubikey`, but it names its top layer as a root (`Acme Root CA`) even though the YubiKey signed it. Use a spec to name the certificates under a YubiKey root accurately.
 
 ## Sign certificates directly with the YubiKey
 

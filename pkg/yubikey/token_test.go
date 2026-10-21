@@ -28,6 +28,7 @@ import (
 	"encoding/hex"
 	"encoding/pem"
 	"errors"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -899,4 +900,60 @@ func parseCertificate(t *testing.T, data []byte) *x509.Certificate {
 		t.Fatal(err)
 	}
 	return cert
+}
+
+// TestSpecWithYubiKey signs the spec from pkg/certtool/testdata, which the
+// docs use as the YubiKey YAML example, with a YubiKey root.
+func TestSpecWithYubiKey(t *testing.T) {
+	card := newFakeCard(fakeSerial)
+	root := putRoot(t, card, piv.SlotSignature, nil)
+	token := openFake(t, card, pinConfig())
+	issuer, err := token.Issuer()
+	if err != nil {
+		t.Fatalf("Issuer() err = %v", err)
+	}
+
+	specs, err := certtool.ReadSpec(filepath.Join("..", "certtool", "testdata", "yubikey-intermediate.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	results, err := certtool.GenerateFromSpecWithIssuer(specs, t.TempDir(), issuer)
+	if err != nil {
+		t.Fatalf("GenerateFromSpecWithIssuer() err = %v", err)
+	}
+
+	certs := map[string]*x509.Certificate{}
+	var files []string
+	for _, r := range results {
+		certs[r.CommonName] = parseCertificate(t, r.KeyPair.PublicCertificate)
+		files = append(files, filepath.Base(r.CertPath))
+	}
+	if want := []string{"issuing-ca.cert", "api.cert", "web.cert", "billing-client.cert", "release-sign.cert"}; strings.Join(files, " ") != strings.Join(want, " ") {
+		t.Errorf("wrote %q, want %q", files, want)
+	}
+
+	roots := x509.NewCertPool()
+	roots.AddCert(root)
+	intermediates := x509.NewCertPool()
+	intermediates.AddCert(certs["Acme Issuing CA"])
+	for cn, usage := range map[string]x509.ExtKeyUsage{
+		"Acme Issuing CA":          x509.ExtKeyUsageServerAuth,
+		"api.internal.example.com": x509.ExtKeyUsageServerAuth,
+		"web.internal.example.com": x509.ExtKeyUsageServerAuth,
+		"billing-client":           x509.ExtKeyUsageClientAuth,
+		"Acme Release Signing":     x509.ExtKeyUsageCodeSigning,
+	} {
+		opts := x509.VerifyOptions{Roots: roots, Intermediates: intermediates, KeyUsages: []x509.ExtKeyUsage{usage}}
+		if _, err := certs[cn].Verify(opts); err != nil {
+			t.Errorf("%s does not chain to the YubiKey root: %v", cn, err)
+		}
+	}
+	for _, cn := range []string{"Acme Issuing CA", "Acme Release Signing"} {
+		if err := certs[cn].CheckSignatureFrom(root); err != nil {
+			t.Errorf("%s is not signed by the YubiKey root: %v", cn, err)
+		}
+	}
+	if card.signs != 2 {
+		t.Errorf("the YubiKey signed %d certificates, want the 2 top-level entries", card.signs)
+	}
 }

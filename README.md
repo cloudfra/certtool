@@ -109,6 +109,8 @@ Every certificate gets a unique name (for example `Acme Root CA`, `Acme Intermed
   --public-certificate api.crt --private-key api.key
 ```
 
+`--yubikey --spec certs.yaml` does the same from a YAML spec: the YubiKey signs each top-level entry ([example](docs/spec.md#yubikey-root-ca)).
+
 `--yubikey` signs with a root CA that is already on the YubiKey, made by `--yubikey-generate-root` or by any other tool. It works on Windows with the prebuilt downloads, and on Linux, macOS, FreeBSD, and OpenBSD when certtool is built with `CGO_ENABLED=1`. Guide: [YubiKey root CA](docs/use-cases/yubikey-root-ca.md), covering both a new and an existing root, requirements, automation, and troubleshooting.
 
 ### Flags

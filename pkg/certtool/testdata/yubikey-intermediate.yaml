@@ -1,0 +1,37 @@
+# Generate with: certtool --yubikey --spec yubikey-intermediate.yaml --output-dir ./certs
+# The YubiKey root CA signs each top-level entry: an intermediate CA, which
+# signs the leaf certificates, and a code signing certificate. The root itself
+# stays on the YubiKey and is not part of the spec.
+- commonName: "Acme Issuing CA"
+  certificateAuthority: true
+  organization: "Acme"
+  keyType: "ECDSA-256"
+  validity: "26280h"
+  filename: "issuing-ca"
+  children:
+    - commonName: "api.internal.example.com"
+      organization: "Acme"
+      keyType: "ECDSA-256"
+      validity: "2160h"
+      hostnames:
+        - api.internal.example.com
+        - 10.0.0.12
+      filename: "api"
+    - commonName: "web.internal.example.com"
+      organization: "Acme"
+      keyType: "ECDSA-256"
+      validity: "2160h"
+      hostnames:
+        - web.internal.example.com
+      filename: "web"
+    - commonName: "billing-client"
+      organization: "Acme"
+      keyType: "ECDSA-256"
+      validity: "2160h"
+      filename: "billing-client"
+- commonName: "Acme Release Signing"
+  codeSigning: true
+  organization: "Acme"
+  target: "windows10"
+  validity: "8760h"
+  filename: "release-sign"
