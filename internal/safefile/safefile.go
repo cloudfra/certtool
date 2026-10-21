@@ -13,6 +13,15 @@
 // limitations under the License.
 
 // Package safefile writes files that may hold secrets, such as private keys.
+//
+// Each file is written to a new temporary file in the same directory, which is
+// then renamed over the destination. So, unlike os.WriteFile:
+//   - the destination always ends up with the intended mode, even when it
+//     already existed with looser permissions;
+//   - a symbolic link at the destination is replaced, not followed, so the
+//     data is never written to wherever the link points;
+//   - readers see either the old file or the complete new one, never a
+//     partial write.
 package safefile
 
 import (
@@ -22,22 +31,29 @@ import (
 	"path/filepath"
 )
 
-// Write replaces path with data and gives it mode perm.
-//
-// The data is written to a new temporary file in the same directory, which is
-// then renamed over path. So, unlike os.WriteFile:
-//   - path always ends up with mode perm, even when it already existed with
-//     looser permissions;
-//   - a symbolic link at path is replaced, not followed, so the data is never
-//     written to wherever the link points;
-//   - readers see either the old file or the complete new one, never a
-//     partial write.
-func Write(path string, data []byte, perm os.FileMode) (err error) {
+const (
+	privateMode os.FileMode = 0o600
+	publicMode  os.FileMode = 0o644
+)
+
+// WritePrivate replaces path with data that only its owner may read, such as a
+// private key, a PKCS#12 bundle, or a spec holding a password.
+func WritePrivate(path string, data []byte) error {
+	return write(path, data, privateMode)
+}
+
+// WritePublic replaces path with data that anyone may read, such as a
+// certificate.
+func WritePublic(path string, data []byte) error {
+	return write(path, data, publicMode)
+}
+
+func write(path string, data []byte, perm os.FileMode) error {
 	dir, base := filepath.Split(path)
 	if dir == "" {
 		dir = "."
 	}
-	if info, statErr := os.Lstat(path); statErr == nil && info.IsDir() {
+	if info, err := os.Lstat(path); err == nil && info.IsDir() {
 		return fmt.Errorf("cannot write %s: it is a directory", path)
 	}
 
@@ -47,29 +63,33 @@ func Write(path string, data []byte, perm os.FileMode) (err error) {
 	if err != nil {
 		return fmt.Errorf("cannot create a temporary file for %s: %w", path, err)
 	}
-	defer func() {
-		if err != nil {
-			_ = tmp.Close() //nolint:errcheck // The write already failed; that error is the one to report.
-			if removeErr := os.Remove(tmp.Name()); removeErr != nil {
-				err = errors.Join(err, fmt.Errorf("cannot remove the temporary file: %w", removeErr))
-			}
-		}
-	}()
+	if err := fill(tmp, data, perm); err != nil {
+		return errors.Join(fmt.Errorf("cannot write %s: %w", path, err), removeTemp(tmp.Name()))
+	}
+	if err := os.Rename(tmp.Name(), path); err != nil {
+		return errors.Join(fmt.Errorf("cannot replace %s: %w", path, err), removeTemp(tmp.Name()))
+	}
+	return nil
+}
 
-	if _, err = tmp.Write(data); err != nil {
-		return fmt.Errorf("cannot write %s: %w", path, err)
+// fill writes data to f, gives it mode perm, flushes it to disk, and closes it.
+// f is closed even when an earlier step fails.
+func fill(f *os.File, data []byte, perm os.FileMode) error {
+	if _, err := f.Write(data); err != nil {
+		return errors.Join(err, f.Close())
 	}
-	if err = tmp.Chmod(perm); err != nil {
-		return fmt.Errorf("cannot set the permissions of %s: %w", path, err)
+	if err := f.Chmod(perm); err != nil {
+		return errors.Join(fmt.Errorf("cannot set the file mode: %w", err), f.Close())
 	}
-	if err = tmp.Sync(); err != nil {
-		return fmt.Errorf("cannot write %s: %w", path, err)
+	if err := f.Sync(); err != nil {
+		return errors.Join(err, f.Close())
 	}
-	if err = tmp.Close(); err != nil {
-		return fmt.Errorf("cannot write %s: %w", path, err)
-	}
-	if err = os.Rename(tmp.Name(), path); err != nil {
-		return fmt.Errorf("cannot replace %s: %w", path, err)
+	return f.Close()
+}
+
+func removeTemp(name string) error {
+	if err := os.Remove(name); err != nil {
+		return fmt.Errorf("cannot remove the temporary file %s: %w", name, err)
 	}
 	return nil
 }

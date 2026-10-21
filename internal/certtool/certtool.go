@@ -396,7 +396,7 @@ func writeSpecFile(specs []certlib.CertificateSpec, path string) error {
 	if err != nil {
 		return err
 	}
-	if err := safefile.Write(filepath.Clean(path), data, 0o600); err != nil {
+	if err := safefile.WritePrivate(filepath.Clean(path), data); err != nil {
 		return err
 	}
 	slog.Info("spec written", "path", path)

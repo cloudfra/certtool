@@ -15,22 +15,24 @@
 package safefile
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"testing"
 )
 
-func TestWrite(t *testing.T) {
+func TestWritePrivate(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "app.key")
-	if err := Write(path, []byte("secret"), 0o600); err != nil {
-		t.Fatalf("Write() err = %v", err)
+	if err := WritePrivate(path, []byte("secret")); err != nil {
+		t.Fatalf("WritePrivate() err = %v", err)
 	}
 	assertFile(t, path, "secret", 0o600)
 	assertOnlyFile(t, path)
 }
 
-// An existing file keeps its permissions with os.WriteFile; Write must not, or
+// An existing file keeps its permissions with os.WriteFile; WritePrivate must not, or
 // a regenerated private key could be world-readable.
 func TestWriteTightensExistingPermissions(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "app.key")
@@ -41,16 +43,16 @@ func TestWriteTightensExistingPermissions(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if err := Write(path, []byte("new"), 0o600); err != nil {
-		t.Fatalf("Write() err = %v", err)
+	if err := WritePrivate(path, []byte("new")); err != nil {
+		t.Fatalf("WritePrivate() err = %v", err)
 	}
 	assertFile(t, path, "new", 0o600)
 }
 
-func TestWriteSetsRequestedMode(t *testing.T) {
+func TestWritePublic(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "app.cert")
-	if err := Write(path, []byte("cert"), 0o644); err != nil {
-		t.Fatalf("Write() err = %v", err)
+	if err := WritePublic(path, []byte("cert")); err != nil {
+		t.Fatalf("WritePublic() err = %v", err)
 	}
 	assertFile(t, path, "cert", 0o644)
 }
@@ -67,8 +69,8 @@ func TestWriteReplacesSymlink(t *testing.T) {
 		t.Skipf("cannot create symlinks here: %v", err)
 	}
 
-	if err := Write(link, []byte("secret"), 0o600); err != nil {
-		t.Fatalf("Write() err = %v", err)
+	if err := WritePrivate(link, []byte("secret")); err != nil {
+		t.Fatalf("WritePrivate() err = %v", err)
 	}
 	assertFile(t, target, "untouched", 0o600)
 	info, err := os.Lstat(link)
@@ -90,8 +92,8 @@ func TestWriteDoesNotCreateSymlinkTarget(t *testing.T) {
 		t.Skipf("cannot create symlinks here: %v", err)
 	}
 
-	if err := Write(link, []byte("secret"), 0o600); err != nil {
-		t.Fatalf("Write() err = %v", err)
+	if err := WritePrivate(link, []byte("secret")); err != nil {
+		t.Fatalf("WritePrivate() err = %v", err)
 	}
 	if _, err := os.Lstat(target); !os.IsNotExist(err) {
 		t.Errorf("%s was created through the symlink (stat err = %v)", target, err)
@@ -100,8 +102,8 @@ func TestWriteDoesNotCreateSymlinkTarget(t *testing.T) {
 
 func TestWriteRelativePath(t *testing.T) {
 	t.Chdir(t.TempDir())
-	if err := Write("app.key", []byte("secret"), 0o600); err != nil {
-		t.Fatalf("Write() err = %v", err)
+	if err := WritePrivate("app.key", []byte("secret")); err != nil {
+		t.Fatalf("WritePrivate() err = %v", err)
 	}
 	assertFile(t, "app.key", "secret", 0o600)
 }
@@ -109,18 +111,40 @@ func TestWriteRelativePath(t *testing.T) {
 func TestWriteErrors(t *testing.T) {
 	dir := t.TempDir()
 	missing := filepath.Join(dir, "missing", "app.key")
-	if err := Write(missing, []byte("x"), 0o600); err == nil {
-		t.Error("Write() into a missing directory err = nil, want an error")
+	if err := WritePrivate(missing, []byte("x")); err == nil {
+		t.Error("WritePrivate() into a missing directory err = nil, want an error")
 	}
 	sub := filepath.Join(dir, "sub")
 	if err := os.Mkdir(sub, 0o750); err != nil {
 		t.Fatal(err)
 	}
-	if err := Write(sub, []byte("x"), 0o600); err == nil {
-		t.Error("Write() over a directory err = nil, want an error")
+	if err := WritePublic(sub, []byte("x")); err == nil {
+		t.Error("WritePrivate() over a directory err = nil, want an error")
 	}
 	if entries, err := os.ReadDir(sub); err != nil || len(entries) != 0 {
 		t.Errorf("ReadDir(%s) = %v, %v; want it empty", sub, entries, err)
+	}
+}
+
+// fill must report the first failure and still close the file.
+func TestFillErrors(t *testing.T) {
+	f, err := os.CreateTemp(t.TempDir(), "fill")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := f.Close(); err != nil {
+		t.Fatal(err)
+	}
+	err = fill(f, []byte("x"), privateMode)
+	if !errors.Is(err, os.ErrClosed) {
+		t.Errorf("fill() on a closed file err = %v, want os.ErrClosed", err)
+	}
+}
+
+func TestRemoveTemp(t *testing.T) {
+	missing := filepath.Join(t.TempDir(), "missing")
+	if err := removeTemp(missing); err == nil || !strings.Contains(err.Error(), "cannot remove the temporary file") {
+		t.Errorf("removeTemp() err = %v, want a removal error", err)
 	}
 }
 
