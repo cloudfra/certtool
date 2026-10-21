@@ -77,11 +77,6 @@ type Args struct {
 	// Issuer signs the certificate with a CA key held outside of certtool,
 	// such as on a YubiKey. Mutually exclusive with ParentKeyPair.
 	Issuer *Issuer
-	// Ports is ignored. Certificate names cannot hold ports, so the
-	// "hostname:port" names it used to add never matched in TLS clients.
-	//
-	// Deprecated: certificates are valid for every port of their hostnames.
-	Ports []int
 
 	// KeyType is the type of key to generate.
 	KeyType *KeyType

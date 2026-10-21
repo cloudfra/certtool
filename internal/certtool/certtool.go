@@ -76,8 +76,6 @@ type Args struct {
 	// KeyType is --key-type. Empty selects RSA-2048, or the key type of the
 	// --target profile with --code-sign.
 	KeyType string
-	// Ports is --ports, comma separated.
-	Ports string
 
 	// ParentPublicCertificate is --parent-public-certificate.
 	ParentPublicCertificate string
@@ -157,9 +155,6 @@ func Run(args Args) error {
 	}
 	if args.NamePrefix != "" && args.Chain == "" {
 		slog.Warn("--name-prefix is set but --chain is not; --name-prefix will be ignored")
-	}
-	if args.Ports != "" {
-		slog.Warn(portsIgnored("--ports"))
 	}
 
 	if err := validateModes(args); err != nil {
@@ -361,9 +356,6 @@ func runExportSpec(args Args) error {
 }
 
 func argsToSpec(args Args) ([]certlib.CertificateSpec, error) {
-	if _, err := splitPorts(args.Ports); err != nil {
-		return nil, err
-	}
 	hostnames, err := splitHostnames(args.Hostnames)
 	if err != nil {
 		return nil, err
@@ -428,19 +420,11 @@ func runSpec(args Args, issuer *certlib.Issuer) error {
 	if err != nil {
 		return err
 	}
-	if certlib.SpecUsesPorts(specs) {
-		slog.Warn(portsIgnored("the spec field ports"))
-	}
 
 	if args.ExportSpec != "" {
 		return writeSpecFile(specs, args.ExportSpec)
 	}
 	return generateAndLogResults(specs, args.OutputDir, issuer)
-}
-
-// portsIgnored is the warning for the deprecated ports option named by what.
-func portsIgnored(what string) string {
-	return what + " is deprecated and ignored: certificate names cannot hold ports, and a certificate is valid on every port of its hostnames"
 }
 
 func generateAndWriteKeyPair(args Args, certArgs *certlib.Args) error {
@@ -491,10 +475,6 @@ func certificateArgs(args Args) (*certlib.Args, error) {
 		return nil, fmt.Errorf("--validity must be a positive duration, got %s", args.Validity)
 	}
 
-	// --ports is ignored, but a malformed value is still an error.
-	if _, err := splitPorts(args.Ports); err != nil {
-		return nil, err
-	}
 	hostnames, err := splitHostnames(args.Hostnames)
 	if err != nil {
 		return nil, err
@@ -588,23 +568,4 @@ func splitHostnames(csv string) ([]string, error) {
 		}
 	}
 	return hostnames, nil
-}
-
-func splitPorts(csv string) ([]int, error) {
-	if csv == "" {
-		return nil, nil
-	}
-	vals := splitStrings(csv)
-	result := make([]int, len(vals))
-	for i, v := range vals {
-		iv, err := strconv.Atoi(v)
-		if err != nil {
-			return nil, fmt.Errorf("--ports value %q is not an integer, %w", v, err)
-		}
-		if iv < 1 || iv > 65535 {
-			return nil, fmt.Errorf("--ports value %d is not valid, must be between 1 and 65535", iv)
-		}
-		result[i] = iv
-	}
-	return result, nil
 }

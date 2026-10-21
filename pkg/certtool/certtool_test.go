@@ -1125,14 +1125,13 @@ func TestValidateHostname(t *testing.T) {
 	}
 }
 
-// Certificate names cannot hold ports, so ports must never reach the SANs.
+// Certificate names cannot hold ports, so a port on a hostname is removed.
 func TestGenerateKeyPair_PortsNotInSANs(t *testing.T) {
 	t.Parallel()
 	hostnames := []string{"api.example.com", "web.example.com:8443"}
 	kp, err := GenerateKeyPair(&Args{
 		KeyType:   &KeyType{Algorithm: ecdsaAlgorithm, KeyLength: 256},
 		Hostnames: hostnames,
-		Ports:     []int{443},
 	})
 	if err != nil {
 		t.Fatalf("GenerateKeyPair() err = %v", err)
@@ -1165,7 +1164,7 @@ func TestGenerateKeyPair_InvalidHostname(t *testing.T) {
 
 func TestGetHostnames(t *testing.T) {
 	t.Parallel()
-	args := &Args{Hostnames: []string{"b.com:443", "a.com", "", "b.com"}, Ports: []int{80}}
+	args := &Args{Hostnames: []string{"b.com:443", "a.com", "", "b.com"}}
 	if diff := cmp.Diff([]string{"a.com", "b.com"}, args.GetHostnames()); diff != "" {
 		t.Errorf("GetHostnames() mismatch (-want +got):\n%s", diff)
 	}

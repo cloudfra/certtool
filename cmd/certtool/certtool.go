@@ -57,7 +57,6 @@ func parseFlags(fs *flag.FlagSet, arguments []string) (certtool.Args, error) {
 	fs.DurationVar(&args.Validity, "validity", args.Validity, "How long the certificate is valid for, as a Go duration (e.g. 8760h, 720h, 24h).")
 	fs.StringVar(&args.Hostnames, "hostnames", args.Hostnames, "Comma-separated list of hostnames and IP addresses to include as Subject Alternative Names (SANs). A wildcard must be the leftmost label of a name with at least two more labels (*.example.com); ports are removed.")
 	fs.StringVar(&args.KeyType, "key-type", args.KeyType, "Key algorithm and length: RSA-2048, RSA-4096, ECDSA-224, ECDSA-256, ECDSA-384, or ECDSA-521. Defaults to RSA-2048, or to the --target profile's key type with --code-sign.")
-	fs.StringVar(&args.Ports, "ports", args.Ports, "Deprecated and ignored: certificate names cannot hold ports, and a certificate is valid on every port of its hostnames.")
 
 	fs.StringVar(&args.ParentPublicCertificate, "parent-public-certificate", args.ParentPublicCertificate, "(optional) Parent public certificate. If set, the output certificate will trust the parent. Requires --parent-private-key.")
 	fs.StringVar(&args.ParentPrivateKey, "parent-private-key", args.ParentPrivateKey, "(optional) Private key of --parent-public-certificate, used to sign the output certificate.")

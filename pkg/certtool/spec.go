@@ -91,12 +91,6 @@ type CertificateSpec struct {
 	// is removed, because SANs cannot hold ports.
 	Hostnames []string `yaml:"hostnames,omitempty"`
 
-	// Ports is ignored. SANs cannot hold ports, so the "hostname:port" names
-	// it used to add never matched in TLS clients.
-	//
-	// Deprecated: certificates are valid for every port of their hostnames.
-	Ports []int `yaml:"ports,omitempty"`
-
 	// Filename overrides the default output filename (without extension).
 	// By default filenames are derived from the slugified common name path
 	// through the tree (e.g. "root-ca-leaf-example-com").
@@ -160,17 +154,6 @@ func validateSpec(spec *CertificateSpec) error {
 		}
 	}
 	return nil
-}
-
-// SpecUsesPorts reports whether any spec in the tree sets the deprecated, and
-// ignored, ports field.
-func SpecUsesPorts(specs []CertificateSpec) bool {
-	for i := range specs {
-		if len(specs[i].Ports) > 0 || SpecUsesPorts(specs[i].Children) {
-			return true
-		}
-	}
-	return false
 }
 
 // MarshalSpec serializes certificate specs to YAML.
