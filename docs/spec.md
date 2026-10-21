@@ -32,6 +32,9 @@ A spec file is a YAML list of `CertificateSpec` entries. Each entry defines one 
 | `province` | string | | Subject state/province (ST). |
 | `hostnames` | list | | DNS names and IPs added as SANs. A port suffix is removed; a wildcard must be the leftmost label with at least two labels after it (`*.example.com`). |
 | `filename` | string | | Override the output filename (without extension). Must be a plain file name: directories, `..`, and absolute paths are rejected so every file stays in `--output-dir`. |
+| `maxPathLen` | int | | CAs only. How many CAs may sit below this one. Default: the number of CA levels below it in the spec, so `--chain 1,2,3` gives the root 1 and the intermediates 0. `-1` means no limit. |
+| `permittedDNSDomains` | list | | CAs only. DNS domains that certificates below the CA may use, as critical name constraints. `example.com` permits it and its subdomains; `.example.com` only its subdomains. |
+| `permittedIPRanges` | list | | CAs only. IP ranges in CIDR notation, such as `10.0.0.0/8`, that certificates below the CA may use. |
 | `children` | list | | Child specs signed by this certificate. |
 
 ### Output filenames

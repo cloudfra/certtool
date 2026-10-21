@@ -57,6 +57,19 @@ type Args struct {
 	// CA indicates we need to create a CA certificate.
 	CA bool
 
+	// MaxPathLen limits how many CAs may sit below a CA certificate: 0 lets it
+	// sign only leaf certificates. Nil means no limit. Ignored unless CA is
+	// set.
+	MaxPathLen *int
+	// PermittedDNSDomains limits the DNS names that certificates below a CA
+	// may hold, as RFC 5280 name constraints: "example.com" permits it and
+	// its subdomains, ".example.com" only its subdomains. Ignored unless CA
+	// is set.
+	PermittedDNSDomains []string
+	// PermittedIPRanges limits the IP addresses that certificates below a CA
+	// may hold. Ignored unless CA is set.
+	PermittedIPRanges []*net.IPNet
+
 	// CommonName of the entity representing the certificate. Defaults to the Organization value when empty.
 	CommonName string
 	// Country of the entity representing the certificate.
@@ -478,7 +491,28 @@ func newCertificateTemplate(args *Args, pub crypto.PublicKey) (*x509.Certificate
 	}
 
 	if args.CA {
-		certTemplate.KeyUsage |= x509.KeyUsageCertSign
+		// A CA only signs certificates and CRLs; it never encrypts keys.
+		certTemplate.KeyUsage = x509.KeyUsageCertSign | x509.KeyUsageCRLSign | x509.KeyUsageDigitalSignature
+		certTemplate.MaxPathLen = -1
+		if args.MaxPathLen != nil {
+			if *args.MaxPathLen < 0 {
+				return nil, fmt.Errorf("the maximum path length must be 0 or more, got %d", *args.MaxPathLen)
+			}
+			certTemplate.MaxPathLen = *args.MaxPathLen
+			certTemplate.MaxPathLenZero = *args.MaxPathLen == 0
+		}
+		for _, domain := range args.PermittedDNSDomains {
+			if err := validateDNSName(strings.TrimPrefix(domain, ".")); err != nil {
+				return nil, fmt.Errorf("permitted DNS domain %q is not valid: %w", domain, err)
+			}
+		}
+		certTemplate.PermittedDNSDomains = args.PermittedDNSDomains
+		certTemplate.PermittedIPRanges = args.PermittedIPRanges
+		// Clients that do not understand name constraints must reject the CA
+		// rather than ignore them.
+		certTemplate.PermittedDNSDomainsCritical = len(args.PermittedDNSDomains) > 0 || len(args.PermittedIPRanges) > 0
+		// A CA is not a server, so it gets no names of its own.
+		return certTemplate, nil
 	}
 
 	if !args.CodeSigning {
@@ -512,6 +546,13 @@ func checkIssuer(issuer *x509.Certificate, template *x509.Certificate, now time.
 		return fmt.Errorf("parent certificate %q has a path length of 0, so it can only sign leaf certificates, not another CA", cn)
 	}
 
+	if err := applyNameConstraints(issuer, template); err != nil {
+		return err
+	}
+	if err := inheritNameConstraints(issuer, template); err != nil {
+		return err
+	}
+
 	if len(issuer.ExtKeyUsage) == 0 || slices.Contains(issuer.ExtKeyUsage, x509.ExtKeyUsageAny) {
 		return nil
 	}
@@ -527,6 +568,121 @@ func checkIssuer(issuer *x509.Certificate, template *x509.Certificate, now time.
 		return err
 	}
 	return nil
+}
+
+// applyNameConstraints makes template's names fit issuer's name constraints:
+// the localhost and 127.0.0.1 names certtool adds itself are dropped when the
+// issuer does not permit them, and any other name it does not permit is an
+// error, because clients would reject the certificate. Names of a kind the
+// issuer does not constrain are left alone.
+func applyNameConstraints(issuer *x509.Certificate, template *x509.Certificate) error {
+	cn := issuer.Subject.CommonName
+	if len(issuer.PermittedDNSDomains) > 0 {
+		var kept []string
+		for _, name := range template.DNSNames {
+			switch {
+			case dnsNamePermitted(name, issuer.PermittedDNSDomains):
+				kept = append(kept, name)
+			case name == "localhost":
+			default:
+				return fmt.Errorf("parent certificate %q only permits the DNS domains %s, so clients would reject the name %q", cn, strings.Join(issuer.PermittedDNSDomains, ", "), name)
+			}
+		}
+		template.DNSNames = kept
+	}
+	if len(issuer.PermittedIPRanges) > 0 {
+		var kept []net.IP
+		for _, ip := range template.IPAddresses {
+			switch {
+			case ipPermitted(ip, issuer.PermittedIPRanges):
+				kept = append(kept, ip)
+			case ip.Equal(net.IPv4(127, 0, 0, 1)):
+			default:
+				return fmt.Errorf("parent certificate %q only permits the IP ranges %s, so clients would reject the address %s", cn, ipRangeNames(issuer.PermittedIPRanges), ip)
+			}
+		}
+		template.IPAddresses = kept
+	}
+	return nil
+}
+
+// inheritNameConstraints gives a CA template its issuer's name constraints when
+// it sets none of its own, so every CA in a chain carries them and certtool can
+// keep each certificate within them. Constraints the template sets itself must
+// lie within the issuer's.
+func inheritNameConstraints(issuer *x509.Certificate, template *x509.Certificate) error {
+	if !template.IsCA {
+		return nil
+	}
+	cn := issuer.Subject.CommonName
+	if len(issuer.PermittedDNSDomains) > 0 {
+		if len(template.PermittedDNSDomains) == 0 {
+			template.PermittedDNSDomains = slices.Clone(issuer.PermittedDNSDomains)
+		}
+		for _, domain := range template.PermittedDNSDomains {
+			if !dnsNamePermitted(strings.TrimPrefix(domain, "."), issuer.PermittedDNSDomains) {
+				return fmt.Errorf("permitted DNS domain %q is outside the DNS domains %s that parent certificate %q permits", domain, strings.Join(issuer.PermittedDNSDomains, ", "), cn)
+			}
+		}
+	}
+	if len(issuer.PermittedIPRanges) > 0 {
+		if len(template.PermittedIPRanges) == 0 {
+			template.PermittedIPRanges = slices.Clone(issuer.PermittedIPRanges)
+		}
+		for _, r := range template.PermittedIPRanges {
+			if !slices.ContainsFunc(issuer.PermittedIPRanges, func(parent *net.IPNet) bool { return ipRangeWithin(r, parent) }) {
+				return fmt.Errorf("permitted IP range %s is outside the IP ranges %s that parent certificate %q permits", r, ipRangeNames(issuer.PermittedIPRanges), cn)
+			}
+		}
+	}
+	if len(template.PermittedDNSDomains) > 0 || len(template.PermittedIPRanges) > 0 {
+		template.PermittedDNSDomainsCritical = true
+	}
+	return nil
+}
+
+// dnsNamePermitted reports whether name is within one of domains, following
+// RFC 5280: "example.com" permits itself and its subdomains, ".example.com"
+// only its subdomains.
+func dnsNamePermitted(name string, domains []string) bool {
+	name = strings.ToLower(name)
+	for _, domain := range domains {
+		domain = strings.ToLower(domain)
+		if strings.HasPrefix(domain, ".") {
+			if strings.HasSuffix(name, domain) {
+				return true
+			}
+			continue
+		}
+		if name == domain || strings.HasSuffix(name, "."+domain) {
+			return true
+		}
+	}
+	return false
+}
+
+// ipRangeWithin reports whether r lies entirely inside parent.
+func ipRangeWithin(r, parent *net.IPNet) bool {
+	ones, bits := r.Mask.Size()
+	parentOnes, parentBits := parent.Mask.Size()
+	return bits == parentBits && parentOnes <= ones && parent.Contains(r.IP)
+}
+
+func ipPermitted(ip net.IP, ranges []*net.IPNet) bool {
+	for _, r := range ranges {
+		if r.Contains(ip) {
+			return true
+		}
+	}
+	return false
+}
+
+func ipRangeNames(ranges []*net.IPNet) string {
+	names := make([]string, 0, len(ranges))
+	for _, r := range ranges {
+		names = append(names, r.String())
+	}
+	return strings.Join(names, ", ")
 }
 
 func extKeyUsageNames(usages []x509.ExtKeyUsage) string {

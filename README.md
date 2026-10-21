@@ -49,6 +49,7 @@ Each example writes its files to the current directory. The [use case guides](do
 
 # Root CA, then a server certificate signed by it
 ./certtool --ca --common-name "Acme Root CA" --organization Acme --key-type ECDSA-384 --validity 87600h \
+  --max-path-len 0 --permitted-dns-domains example.com \
   --public-certificate root-ca.crt --private-key root-ca.key
 ./certtool --common-name api.example.com --hostnames api.example.com \
   --parent-public-certificate root-ca.crt --parent-private-key root-ca.key \
@@ -126,6 +127,9 @@ read -rs -p "YubiKey PIN: " CERTTOOL_YUBIKEY_PIN && export CERTTOOL_YUBIKEY_PIN
 | `--public-certificate` | `app.cert` | X.509 public certificate output file |
 | `--private-key` | `app.key` | Private key output file |
 | `--ca` | `false` | Generate a root/CA certificate |
+| `--max-path-len` | `-1` (no limit) | With `--ca` or `--yubikey-generate-root`: how many CAs may sit below the CA (`0` = it signs only leaves) |
+| `--permitted-dns-domains` | | With `--ca` or `--yubikey-generate-root`: comma-separated DNS domains that certificates below the CA may use, as critical name constraints |
+| `--permitted-ip-ranges` | | With `--ca` or `--yubikey-generate-root`: comma-separated CIDR ranges that certificates below the CA may use |
 | `--key-type` | `RSA-2048` | Key algorithm and length (`RSA-2048`, `RSA-4096`, `ECDSA-224`, `ECDSA-256`, `ECDSA-384`, `ECDSA-521`) |
 | `--hostnames` | | Comma-separated hostnames and IP addresses to add as SANs |
 | `--validity` | `8760h` (1 year) | How long the certificate is valid for, as a Go duration (e.g. `8760h`, `720h`, `24h`) |

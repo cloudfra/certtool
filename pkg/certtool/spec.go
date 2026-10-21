@@ -16,6 +16,7 @@ package certtool
 
 import (
 	"fmt"
+	"net"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -103,6 +104,20 @@ type CertificateSpec struct {
 	// in the output directory.
 	Filename string `yaml:"filename,omitempty"`
 
+	// MaxPathLen limits how many CAs may sit below this CA. When not set it
+	// is the number of CA levels below this one in the spec, so the CA can
+	// sign exactly the hierarchy the spec describes. -1 means no limit.
+	MaxPathLen *int `yaml:"maxPathLen,omitempty"`
+
+	// PermittedDNSDomains limits the DNS names certificates below this CA may
+	// hold: "example.com" permits it and its subdomains, ".example.com" only
+	// its subdomains.
+	PermittedDNSDomains []string `yaml:"permittedDNSDomains,omitempty"`
+
+	// PermittedIPRanges limits the IP addresses certificates below this CA
+	// may hold, in CIDR notation such as "10.0.0.0/8".
+	PermittedIPRanges []string `yaml:"permittedIPRanges,omitempty"`
+
 	// Children are certificate specs signed by this certificate. This spec
 	// must have CertificateAuthority set to true when Children is non-empty.
 	Children []CertificateSpec `yaml:"children,omitempty"`
@@ -154,6 +169,15 @@ func validateSpec(spec *CertificateSpec) error {
 		if err := ValidateHostname(hostname); err != nil {
 			return fmt.Errorf("spec %q: %w", spec.CommonName, err)
 		}
+	}
+	if !spec.CertificateAuthority && (spec.MaxPathLen != nil || len(spec.PermittedDNSDomains) > 0 || len(spec.PermittedIPRanges) > 0) {
+		return fmt.Errorf("spec %q sets maxPathLen, permittedDNSDomains, or permittedIPRanges, which only apply to a CA; set certificateAuthority: true", spec.CommonName)
+	}
+	if spec.MaxPathLen != nil && *spec.MaxPathLen < -1 {
+		return fmt.Errorf("spec %q has maxPathLen %d; use 0 or more, or -1 for no limit", spec.CommonName, *spec.MaxPathLen)
+	}
+	if _, err := ParseIPRanges(spec.PermittedIPRanges); err != nil {
+		return fmt.Errorf("spec %q: %w", spec.CommonName, err)
 	}
 	for i := range spec.Children {
 		child := &spec.Children[i]
@@ -238,6 +262,30 @@ func ReplacePFXPasswords(specs []CertificateSpec, env string) {
 		}
 		ReplacePFXPasswords(specs[i].Children, env)
 	}
+}
+
+// caDepth returns how many levels of CAs the spec tree has below spec.
+func caDepth(spec *CertificateSpec) int {
+	depth := 0
+	for i := range spec.Children {
+		if child := &spec.Children[i]; child.CertificateAuthority {
+			depth = max(depth, 1+caDepth(child))
+		}
+	}
+	return depth
+}
+
+// ParseIPRanges parses IP ranges in CIDR notation, such as "10.0.0.0/8".
+func ParseIPRanges(ranges []string) ([]*net.IPNet, error) {
+	parsed := make([]*net.IPNet, 0, len(ranges))
+	for _, r := range ranges {
+		_, ipNet, err := net.ParseCIDR(strings.TrimSpace(r))
+		if err != nil {
+			return nil, fmt.Errorf("permitted IP range %q is not in CIDR notation such as 10.0.0.0/8: %w", r, err)
+		}
+		parsed = append(parsed, ipNet)
+	}
+	return parsed, nil
 }
 
 // MarshalSpec serializes certificate specs to YAML.
@@ -480,6 +528,21 @@ func generateSpec(spec *CertificateSpec, parentKP *KeyPair, issuer *Issuer, outp
 			return nil, fmt.Errorf("spec %q reads its .pfx password from the environment variable %s, which is not set", spec.CommonName, spec.PFXPasswordEnv)
 		}
 		args.PFXPassword = password
+	}
+	if spec.CertificateAuthority {
+		pathLen := caDepth(spec)
+		if spec.MaxPathLen != nil {
+			pathLen = *spec.MaxPathLen
+		}
+		if pathLen >= 0 {
+			args.MaxPathLen = &pathLen
+		}
+		ranges, err := ParseIPRanges(spec.PermittedIPRanges)
+		if err != nil {
+			return nil, fmt.Errorf("spec %q: %w", spec.CommonName, err)
+		}
+		args.PermittedDNSDomains = spec.PermittedDNSDomains
+		args.PermittedIPRanges = ranges
 	}
 
 	kp, err := GenerateKeyPair(args)

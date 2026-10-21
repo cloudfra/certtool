@@ -46,6 +46,9 @@ func parseFlags(fs *flag.FlagSet, arguments []string) (certtool.Args, error) {
 	fs.StringVar(&args.PrivateKey, "private-key", args.PrivateKey, "Private key file to generate.")
 
 	fs.BoolVar(&args.CA, "ca", args.CA, "Generates a root certificate. Use this to establish a chain of trust with derived certificates.")
+	fs.IntVar(&args.MaxPathLen, "max-path-len", args.MaxPathLen, "How many CAs may sit below the CA made by --ca or --yubikey-generate-root: 0 lets it sign only leaf certificates. -1 means no limit.")
+	fs.StringVar(&args.PermittedDNSDomains, "permitted-dns-domains", args.PermittedDNSDomains, "Comma-separated DNS domains that certificates below the CA may use, as critical name constraints: example.com permits it and its subdomains, .example.com only its subdomains.")
+	fs.StringVar(&args.PermittedIPRanges, "permitted-ip-ranges", args.PermittedIPRanges, "Comma-separated IP ranges in CIDR notation (10.0.0.0/8) that certificates below the CA may use, as critical name constraints.")
 
 	fs.StringVar(&args.CommonName, "common-name", args.CommonName, "Common Name (CN) field of the X.509 certificate subject. Defaults to the --organization value.")
 	fs.StringVar(&args.Country, "country", args.Country, "Country (C) field of the X.509 certificate subject (e.g. US, CA, GB).")

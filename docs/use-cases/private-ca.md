@@ -16,16 +16,22 @@ Acme Root CA          10 years, kept offline, signs only the issuing CA
 ```bash
 certtool --ca --common-name "Acme Root CA" --organization Acme \
   --key-type ECDSA-384 --validity 87600h \
+  --max-path-len 1 --permitted-dns-domains internal.example.com --permitted-ip-ranges 10.0.0.0/8 \
   --public-certificate root-ca.crt --private-key root-ca.key
 ```
 
-`root-ca.key` can sign anything your systems will trust. After step 2, move it somewhere offline. Or keep it on a YubiKey from the start; see [YubiKey root CA](yubikey-root-ca.md).
+The constraints limit the damage if a key below the root ever leaks:
+
+- `--max-path-len 1` allows one level of CAs below the root: the issuing CA, which can only sign leaves.
+- `--permitted-dns-domains` and `--permitted-ip-ranges` are name constraints. Clients reject any certificate in this hierarchy for a name outside `internal.example.com` (and its subdomains) or an address outside `10.0.0.0/8`, even though the root is trusted. certtool refuses to issue such certificates, and leaves out its usual `localhost` and `127.0.0.1` names when they fall outside the constraints.
+
+`root-ca.key` can sign anything within those limits. After step 2, move it somewhere offline. Or keep it on a YubiKey from the start; see [YubiKey root CA](yubikey-root-ca.md).
 
 ## 2. Create the issuing CA
 
 ```bash
 certtool --ca --common-name "Acme Issuing CA" --organization Acme \
-  --key-type ECDSA-256 --validity 26280h \
+  --key-type ECDSA-256 --validity 26280h --max-path-len 0 \
   --parent-public-certificate root-ca.crt --parent-private-key root-ca.key \
   --public-certificate issuing-ca.crt --private-key issuing-ca.key
 ```
@@ -82,11 +88,12 @@ Start a server that trusts only the root and requires a client certificate, then
 openssl s_server -accept 8443 -cert api.crt -cert_chain issuing-ca.crt -key api.key \
   -CAfile root-ca.crt -verify_return_error -Verify 1 -www
 
-# In another terminal. This succeeds:
-curl --cacert root-ca.crt --cert billing-client-chain.crt --key billing-client.key https://localhost:8443/
+# In another terminal. --resolve points the server's name at this machine. This succeeds:
+curl --resolve api.internal.example.com:8443:127.0.0.1 --cacert root-ca.crt \
+  --cert billing-client-chain.crt --key billing-client.key https://api.internal.example.com:8443/
 
 # This fails, because the server requires a client certificate:
-curl --cacert root-ca.crt https://localhost:8443/
+curl --resolve api.internal.example.com:8443:127.0.0.1 --cacert root-ca.crt https://api.internal.example.com:8443/
 ```
 
 ## 7. Trust the root
