@@ -16,30 +16,38 @@ package certtool
 
 import (
 	"bytes"
+	"io/fs"
 	"os"
-	"path/filepath"
 	"regexp"
 	"testing"
 )
 
 var yamlFence = regexp.MustCompile("(?s)```yaml\\n(.*?)```")
 
-// TestSpecDocExamplesAreValid keeps every YAML example in docs/spec.md
-// parseable and valid, so the documentation cannot drift from the spec format.
+// TestSpecDocExamplesAreValid keeps every YAML example in docs/spec.md and the
+// agent skill's spec reference parseable and valid, so the documentation
+// cannot drift from the spec format.
 func TestSpecDocExamplesAreValid(t *testing.T) {
-	doc, err := os.ReadFile(filepath.Join("..", "..", "docs", "spec.md"))
-	if err != nil {
-		t.Fatalf("ReadFile() err = %v", err)
-	}
+	for _, path := range []string{
+		"docs/spec.md",
+		"skills/certtool/references/spec-format.md",
+	} {
+		t.Run(path, func(t *testing.T) {
+			doc, err := fs.ReadFile(os.DirFS("../.."), path)
+			if err != nil {
+				t.Fatalf("ReadFile() err = %v", err)
+			}
 
-	blocks := yamlExamples(doc)
-	if len(blocks) == 0 {
-		t.Fatal("no yaml examples found in docs/spec.md")
-	}
-	for i, block := range blocks {
-		if _, err := UnmarshalSpec(block); err != nil {
-			t.Errorf("yaml example #%d in docs/spec.md is invalid: %v\n%s", i+1, err, block)
-		}
+			blocks := yamlExamples(doc)
+			if len(blocks) == 0 {
+				t.Fatalf("no yaml examples found in %s", path)
+			}
+			for i, block := range blocks {
+				if _, err := UnmarshalSpec(block); err != nil {
+					t.Errorf("yaml example #%d in %s is invalid: %v\n%s", i+1, path, err, block)
+				}
+			}
+		})
 	}
 }
 
