@@ -8,12 +8,12 @@ A simple tool for generating self-signed X.509 certificates and private keys for
 
 ```bash
 # Download (Linux amd64, see Downloads for other builds)
-curl -o certtool -O -L https://github.com/cloudfra/certtool/releases/latest/download/certtool-amd64; chmod +x certtool
+curl -L -o certtool https://github.com/cloudfra/certtool/releases/latest/download/certtool-amd64 && chmod +x certtool
 
-# Generate a self-signed TLS certificate (outputs app.cert and app.key)
+# Self-signed TLS certificate for localhost (writes app.cert and app.key)
 ./certtool
 
-# Generate a code signing certificate for Windows 10/11 (outputs codesign.pfx)
+# Code signing certificate for Windows 10/11 (writes codesign.pfx)
 ./certtool --code-sign
 ```
 
@@ -35,113 +35,81 @@ curl -o certtool -O -L https://github.com/cloudfra/certtool/releases/latest/down
 
 ## Usage
 
+Each example writes its files to the current directory. The [use case guides](docs/use-cases/README.md) walk through complete setups, including trusting the certificates and verifying them.
+
 ### TLS certificates
 
 ```bash
-# Generate a self-signed certificate with defaults (RSA-2048, outputs app.cert and app.key)
+# Self-signed certificate for localhost (RSA-2048, writes app.cert and app.key)
 ./certtool
 
-# Generate a certificate for specific hostnames and IPs
-./certtool --hostnames example.com,192.168.1.1
+# Certificate for your own hostnames and IP addresses
+./certtool --common-name myapp.localhost --hostnames myapp.localhost,192.168.1.20 \
+  --key-type ECDSA-256 --public-certificate dev.crt --private-key dev.key
 
-# Generate an ECDSA-256 certificate with custom output files
-./certtool --key-type ECDSA-256 --public-certificate server.crt --private-key server.key
-
-# Generate a root CA certificate
-./certtool --ca --public-certificate ca.crt --private-key ca.key
-
-# Generate a certificate signed by a parent CA
-./certtool \
-  --parent-public-certificate ca.crt --parent-private-key ca.key \
-  --public-certificate server.crt --private-key server.key
+# Root CA, then a server certificate signed by it
+./certtool --ca --common-name "Acme Root CA" --organization Acme --key-type ECDSA-384 --validity 87600h \
+  --public-certificate root-ca.crt --private-key root-ca.key
+./certtool --common-name api.example.com --hostnames api.example.com \
+  --parent-public-certificate root-ca.crt --parent-private-key root-ca.key \
+  --public-certificate api.crt --private-key api.key
 ```
+
+Guides: [Local development HTTPS](docs/use-cases/local-development.md), [Private CA and mutual TLS](docs/use-cases/private-ca.md).
 
 ### Code signing certificates
 
 ```bash
-# Windows 10/11 — ECDSA P-256, AES-256 PFX (default when --code-sign is set)
-./certtool --code-sign
+# Windows 10 and 11: ECDSA P-256 in an AES-256 encrypted codesign.pfx
+./certtool --code-sign --common-name "Acme Internal Software" --pfx-password "change-me"
 
-# Windows 10/11 with password-protected PFX
-./certtool --code-sign --target=windows10 --pfx-output=codesign.pfx --pfx-password=secret
+# Windows 7 and 8: RSA-2048 in a legacy 3DES encrypted PFX
+./certtool --code-sign --target windows7 --pfx-output codesign-legacy.pfx
 
-# Windows 7/8 — RSA-2048, legacy 3DES PFX (required for Windows 7 import)
-./certtool --code-sign --target=windows7 --pfx-output=codesign-legacy.pfx
-
-# Linux binary signing — ECDSA P-256, PEM output (for use with osslsigncode)
-./certtool --code-sign --target=linux --public-certificate codesign.crt --private-key codesign.key
-
-# Override key type on any target (e.g. RSA-4096 on Windows 10)
-./certtool --code-sign --target=windows10 --key-type=RSA-4096
+# PEM certificate and key for osslsigncode on Linux or macOS
+./certtool --code-sign --target linux --public-certificate codesign.crt --private-key codesign.key
 ```
 
-#### Platform profiles
+| Target | Aliases | Key type | Output | Use with |
+| ------ | ------- | -------- | ------ | -------- |
+| `windows10` *(default)* | `win10` | ECDSA P-256 | PFX, AES-256 | Windows 10/11 `signtool.exe` |
+| `windows11` | `win11` | ECDSA P-256 | PFX, AES-256 | Windows 11 `signtool.exe` |
+| `windows7` | `win7`, `windows8`, `win8`, `windows8.1`, `win8.1` | RSA-2048 | PFX, 3DES (legacy) | Windows 7/8 `signtool.exe` |
+| `linux` | | ECDSA P-256 | PEM certificate and key | `osslsigncode` |
 
-| Target | Aliases | Key type | PFX encoding | Use with |
-| ------ | ------- | -------- | ------------ | -------- |
-| `windows10` *(default)* | `win10` | ECDSA P-256 | AES-256 | Windows 10/11 `signtool.exe` |
-| `windows11` | `win11` | ECDSA P-256 | AES-256 | Windows 11 `signtool.exe` |
-| `windows7` | `win7`, `windows8`, `win8`, `windows8.1`, `win8.1` | RSA-2048 | 3DES (legacy) | Windows 7/8 `signtool.exe` |
-| `linux` | | ECDSA P-256 | PEM (no PFX) | `osslsigncode` |
+`--key-type` overrides the key type of any target. Guide: [Code signing](docs/use-cases/code-signing.md).
 
 ### Certificate hierarchies
 
-Generate a root CA, intermediate CAs, and leaf certificates in one command. `--chain` takes the number of certificates in each layer, from the root down; the last layer is the leaves.
+`--chain` takes the number of certificates in each layer, from the root down. The last layer is the leaves.
 
 ```bash
-# A root CA and one leaf certificate
-./certtool --chain 1,1 --common-name app.example.com --output-dir certs
-
-# One root, two intermediate CAs, and three leaves under each intermediate
+# One root, two intermediate CAs, and three leaves under each intermediate, in certs/
 ./certtool --chain 1,2,3 --common-name svc --organization Acme --output-dir certs
 
-# Three standalone leaf certificates (no CA)
-./certtool --chain 3 --common-name svc --output-dir certs
-
-# Prefix every certificate name, e.g. to keep environments apart in one directory
-./certtool --chain 1,1 --common-name svc --name-prefix prod --output-dir certs
-
-# Write the hierarchy as a YAML spec to edit, instead of generating certificates
+# Write the hierarchy as a YAML spec to edit, then generate from it
 ./certtool --chain 1,2,1 --export-spec certs.yaml
-
-# Generate every certificate from a spec file
 ./certtool --spec certs.yaml --output-dir certs
 ```
 
-Every certificate gets a unique name (for example `Acme Root CA`, `Acme Intermediate CA 1`, `svc 1.2`), so files never overwrite each other. See the [certificate spec documentation](docs/spec.md) for the naming rules, the spec format, and real-world examples.
+Every certificate gets a unique name (for example `Acme Root CA`, `Acme Intermediate CA 1`, `svc 1.2`), so files never overwrite each other. The [certificate spec documentation](docs/spec.md) covers naming, the spec format, `--name-prefix`, and examples for Kubernetes, Active Directory, and databases.
 
 ### YubiKey root CA
 
-The root CA private key can live in a PIV slot of a YubiKey. It is generated on the YubiKey, never leaves it, and every signature needs the PIN (and, by default, a touch).
-
 ```bash
-# Generate a 10 year ECDSA P-384 root CA in slot 9c, and write its public certificate to root.crt
+# Once: generate the root CA key on the YubiKey and write its certificate to root.crt
 ./certtool --yubikey-generate-root --common-name "Acme Root CA" --organization Acme \
   --key-type ECDSA-384 --validity 87600h --public-certificate root.crt
 
-# Sign a certificate with the YubiKey root CA
-./certtool --yubikey --hostnames example.com --public-certificate server.crt --private-key server.key
-
-# Sign the top of a --chain or --spec hierarchy with the YubiKey root CA
-./certtool --yubikey --chain 2,3 --common-name svc --output-dir certs
-./certtool --yubikey --spec certs.yaml --output-dir certs
+# Sign an intermediate CA with the YubiKey, then sign leaves with the intermediate
+./certtool --yubikey --ca --common-name "Acme Issuing CA" --organization Acme \
+  --public-certificate issuing-ca.crt --private-key issuing-ca.key
+./certtool --common-name api.example.com --hostnames api.example.com \
+  --parent-public-certificate issuing-ca.crt --parent-private-key issuing-ca.key \
+  --public-certificate api.crt --private-key api.key
 ```
 
-With `--yubikey`, the top-level certificates of `--chain` and `--spec` are signed by the YubiKey root CA instead of being self-signed. Mark them `certificateAuthority: true` in a spec to use them as intermediates.
-
-The PIN is read from `--yubikey-pin`, the `CERTTOOL_YUBIKEY_PIN` environment variable, or an interactive prompt. `--yubikey-generate-root` also needs the management key. It defaults to the PIN-protected management key stored on the YubiKey, or the factory default if there isn't one. Set it with `--yubikey-management-key` or `CERTTOOL_YUBIKEY_MANAGEMENT_KEY` if you changed it.
-
-YubiKey support uses PC/SC and depends on the platform:
-
-| Platform | Supported | Requirements |
-| -------- | --------- | ------------ |
-| Windows (386, amd64, arm64) | Yes, including the prebuilt downloads | None. Uses the built-in smart card service (`Winscard.dll`) |
-| Linux | Only when built with cgo | `CGO_ENABLED=1` (the default for a native `go build`), the pcsclite headers to build (`libpcsclite-dev` on Debian and Ubuntu), and the `pcscd` service running |
-| macOS | Only when built with cgo | `CGO_ENABLED=1`. Uses the built-in PCSC framework |
-| FreeBSD, OpenBSD | Only when built with cgo | `CGO_ENABLED=1` and pcsc-lite |
-| Android, iOS, and all others | No | |
-
-The prebuilt Linux and macOS downloads are built without cgo, so they don't support YubiKeys and report an error if a `--yubikey` flag is used.
+`--yubikey` signs with a root CA that is already on the YubiKey, made by `--yubikey-generate-root` or by any other tool. It works on Windows with the prebuilt downloads, and on Linux, macOS, FreeBSD, and OpenBSD when certtool is built with `CGO_ENABLED=1`. Guide: [YubiKey root CA](docs/use-cases/yubikey-root-ca.md), covering both a new and an existing root, requirements, automation, and troubleshooting.
 
 ### Flags
 
