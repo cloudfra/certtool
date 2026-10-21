@@ -1,6 +1,6 @@
 # certtool flags
 
-`certtool --help` prints the same list from the binary itself. Lists such as `--hostnames` and `--ports` are comma-separated.
+`certtool --help` prints the same list from the binary itself. Lists such as `--hostnames` and `--chain` are comma-separated.
 
 ## Output and certificate
 
@@ -11,8 +11,8 @@
 | `--ca` | `false` | Make a CA certificate that can sign other TLS certificates. |
 | `--key-type` | RSA-2048, or the `--target` profile's type with `--code-sign` | `RSA-2048`, `RSA-4096`, `ECDSA-224`, `ECDSA-256`, `ECDSA-384`, `ECDSA-521`. |
 | `--validity` | `8760h` | Lifetime as a Go duration (`h`, `m`, `s`; no `d`). |
-| `--hostnames` | | DNS names and IP addresses added as SANs. `localhost` and `127.0.0.1` are always added in TLS mode. |
-| `--ports` | | Ports appended to each hostname as `host:port` SANs. |
+| `--hostnames` | | DNS names and IP addresses added as SANs. `localhost` and `127.0.0.1` are always added in TLS mode. Ports are removed; a wildcard must be the leftmost label of a name with two more labels (`*.example.com`). |
+| `--ports` | | Deprecated and ignored. Certificate names cannot hold ports. |
 | `--parent-public-certificate` | | Issuer certificate. Requires `--parent-private-key`. |
 | `--parent-private-key` | | Issuer private key. Requires `--parent-public-certificate`. |
 

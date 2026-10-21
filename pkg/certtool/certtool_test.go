@@ -32,6 +32,7 @@ import (
 	"time"
 
 	"github.com/google/go-cmp/cmp"
+	"github.com/google/go-cmp/cmp/cmpopts"
 	"software.sslmate.com/src/go-pkcs12"
 )
 
@@ -1054,122 +1055,126 @@ func mustTemp(tb testing.TB) string {
 	return tmpDir
 }
 
-func TestExpandHostnames(t *testing.T) {
+func TestSubjectAltNames(t *testing.T) {
+	t.Parallel()
 	testCases := []struct {
+		name      string
 		hostnames []string
-		ports     []int
-		want      []string
+		wantDNS   []string
+		wantIPs   []string
 	}{
-		{
-			hostnames: []string{""},
-			ports:     nil,
-			want:      []string{},
-		},
-		{
-			hostnames: []string{testLocalhost},
-			ports:     nil,
-			want:      []string{testLocalhost},
-		},
-		{
-			hostnames: []string{testLocalhost, testCloudfra, testLocalhost},
-			ports:     nil,
-			want:      []string{testCloudfra, testLocalhost},
-		},
-		{
-			hostnames: []string{testLocalhost, testLocalhost},
-			ports:     nil,
-			want:      []string{testLocalhost},
-		},
-		{
-			hostnames: []string{testLocalhost},
-			ports:     nil,
-			want:      []string{testLocalhost},
-		},
-		{
-			hostnames: []string{testLocalhost, testCloudfra, testLocalhost},
-			ports:     nil,
-			want:      []string{testCloudfra, testLocalhost},
-		},
-		{
-			hostnames: nil,
-			ports:     nil,
-			want:      []string{},
-		},
-		{
-			hostnames: []string{},
-			ports:     nil,
-			want:      []string{},
-		},
-		{
-			hostnames: []string{"", ""},
-			ports:     nil,
-			want:      []string{},
-		},
-		{
-			hostnames: []string{"", testLocalhost, ""},
-			ports:     nil,
-			want:      []string{testLocalhost},
-		},
-		{
-			hostnames: []string{testExampleCom},
-			ports:     []int{443, 8443},
-			want:      []string{"example.com:443", "example.com:8443"},
-		},
-		{
-			hostnames: []string{testLocalhost},
-			ports:     []int{443},
-			want:      []string{"localhost:443"},
-		},
-		{
-			hostnames: []string{testDupHostPort, testDupHostPort},
-			ports:     []int{443},
-			want:      []string{testDupHostPort},
-		},
-		{
-			hostnames: []string{testMixHostPort, "noport"},
-			ports:     []int{443},
-			want:      []string{testMixHostPort, "noport:443"},
-		},
-		{
-			hostnames: []string{"", testMixHostPort, ""},
-			ports:     []int{8080},
-			want:      []string{testMixHostPort},
-		},
-		{
-			hostnames: []string{"a.com:80", "b.com:80", "c.com"},
-			ports:     []int{443, 1443},
-			want:      []string{"a.com:80", "b.com:80", "c.com:1443", "c.com:443"},
-		},
-		{
-			hostnames: []string{testLoopbackIPPort},
-			ports:     []int{8080},
-			want:      []string{testLoopbackIPPort},
-		},
-		{
-			hostnames: []string{"[::1]:8080"},
-			ports:     []int{443},
-			want:      []string{"[::1]:8080"},
-		},
-		{
-			hostnames: []string{"192.168.1.1"},
-			ports:     []int{443, 8443},
-			want:      []string{testLoopbackIPPort, "192.168.1.1:8443"},
-		},
+		{name: "empty", hostnames: nil},
+		{name: "blank entries", hostnames: []string{"", " "}},
+		{name: "sorted and deduplicated", hostnames: []string{"b.com", testExampleCom, "B.com", testExampleCom}, wantDNS: []string{"b.com", testExampleCom}},
+		{name: "port removed", hostnames: []string{testMixHostPort, "mix.com"}, wantDNS: []string{"mix.com"}},
+		{name: "IPv4 with port", hostnames: []string{testLoopbackIPPort}, wantIPs: []string{"192.168.1.1"}},
+		{name: "IPv6", hostnames: []string{"[::1]:8080", "::1", "2001:db8::1"}, wantIPs: []string{"2001:db8::1", "::1"}},
+		{name: "trailing dot", hostnames: []string{"example.com."}, wantDNS: []string{testExampleCom}},
+		{name: "wildcard", hostnames: []string{"*.example.com"}, wantDNS: []string{"*.example.com"}},
+		{name: "mixed", hostnames: []string{testDupHostPort, "10.0.0.1", "localhost"}, wantDNS: []string{"dup.com", "localhost"}, wantIPs: []string{"10.0.0.1"}},
 	}
-
 	for _, tc := range testCases {
-		t.Run(fmt.Sprintf("%v,%v", tc.hostnames, tc.ports), func(t *testing.T) {
+		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			got := expandHostnames(tc.hostnames, tc.ports)
-			if diff := cmp.Diff(tc.want, got); diff != "" {
-				t.Errorf("expandHostnames() mismatch (-want +got):\n%s", diff)
+			dns, ips, err := subjectAltNames(tc.hostnames)
+			if err != nil {
+				t.Fatalf("subjectAltNames() err = %v", err)
+			}
+			gotIPs := make([]string, 0, len(ips))
+			for _, ip := range ips {
+				gotIPs = append(gotIPs, ip.String())
+			}
+			if diff := cmp.Diff(tc.wantDNS, dns, cmpopts.EquateEmpty()); diff != "" {
+				t.Errorf("DNS names mismatch (-want +got):\n%s", diff)
+			}
+			if diff := cmp.Diff(tc.wantIPs, gotIPs, cmpopts.EquateEmpty()); diff != "" {
+				t.Errorf("IP addresses mismatch (-want +got):\n%s", diff)
 			}
 		})
 	}
 }
 
-func BenchmarkExpandHostnames(b *testing.B) {
+func TestValidateHostname(t *testing.T) {
+	t.Parallel()
+	for _, hostname := range []string{
+		testExampleCom, "a.example.com:443", "localhost", "my-host", "_dmarc.example.com", "xn--bcher-kva.example",
+		"*.example.com", "*.a.example.com", "10.0.0.1", "::1", "[::1]:443", strings.Repeat("a", 63) + ".com",
+	} {
+		if err := ValidateHostname(hostname); err != nil {
+			t.Errorf("ValidateHostname(%q) err = %v, want nil", hostname, err)
+		}
+	}
+
+	for hostname, want := range map[string]string{
+		"*":                              "a wildcard needs at least two labels after it",
+		"*.com":                          "a wildcard needs at least two labels after it",
+		"a*.example.com":                 "a wildcard must be the whole leftmost label",
+		"www.*.example.com":              "a wildcard must be the whole leftmost label",
+		"a..com":                         "it has an empty label",
+		".":                              "it is empty",
+		"-a.com":                         `the label "-a" starts or ends with a hyphen`,
+		"a b.com":                        `has the character ' '`,
+		"bücher.example":                 "punycode",
+		strings.Repeat("a", 64) + ".com": "is longer than 63 characters",
+		strings.Repeat("a.", 127) + "a":  "is longer than 253 characters",
+	} {
+		err := ValidateHostname(hostname)
+		if err == nil || !strings.Contains(err.Error(), want) || !strings.Contains(err.Error(), "is not a valid DNS name or IP address") {
+			t.Errorf("ValidateHostname(%q) err = %v, want it to contain %q", hostname, err, want)
+		}
+	}
+}
+
+// Certificate names cannot hold ports, so ports must never reach the SANs.
+func TestGenerateKeyPair_PortsNotInSANs(t *testing.T) {
+	t.Parallel()
+	hostnames := []string{"api.example.com", "web.example.com:8443"}
+	kp, err := GenerateKeyPair(&Args{
+		KeyType:   &KeyType{Algorithm: ecdsaAlgorithm, KeyLength: 256},
+		Hostnames: hostnames,
+		Ports:     []int{443},
+	})
+	if err != nil {
+		t.Fatalf("GenerateKeyPair() err = %v", err)
+	}
+	cert, _, err := ReadKeyPair(kp.PublicCertificate, kp.PrivateKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if diff := cmp.Diff([]string{"api.example.com", "localhost", "web.example.com"}, cert.DNSNames); diff != "" {
+		t.Errorf("DNSNames mismatch (-want +got):\n%s", diff)
+	}
+	if len(cert.IPAddresses) != 1 || cert.IPAddresses[0].String() != "127.0.0.1" {
+		t.Errorf("IPAddresses = %v, want [127.0.0.1]", cert.IPAddresses)
+	}
+	if err := cert.VerifyHostname("api.example.com"); err != nil {
+		t.Errorf("VerifyHostname() err = %v", err)
+	}
+	if diff := cmp.Diff([]string{"api.example.com", "web.example.com:8443"}, hostnames); diff != "" {
+		t.Errorf("GenerateKeyPair() changed the caller's Hostnames (-want +got):\n%s", diff)
+	}
+}
+
+func TestGenerateKeyPair_InvalidHostname(t *testing.T) {
+	t.Parallel()
+	_, err := GenerateKeyPair(&Args{KeyType: &KeyType{Algorithm: ecdsaAlgorithm, KeyLength: 256}, Hostnames: []string{"*.com"}})
+	if err == nil || !strings.Contains(err.Error(), `hostname "*.com" is not a valid DNS name`) {
+		t.Errorf("GenerateKeyPair() err = %v, want an invalid hostname error", err)
+	}
+}
+
+func TestGetHostnames(t *testing.T) {
+	t.Parallel()
+	args := &Args{Hostnames: []string{"b.com:443", "a.com", "", "b.com"}, Ports: []int{80}}
+	if diff := cmp.Diff([]string{"a.com", "b.com"}, args.GetHostnames()); diff != "" {
+		t.Errorf("GetHostnames() mismatch (-want +got):\n%s", diff)
+	}
+}
+
+func BenchmarkSubjectAltNames(b *testing.B) {
 	for b.Loop() {
-		expandHostnames([]string{testExampleCom, "test.com"}, nil)
+		if _, _, err := subjectAltNames([]string{testExampleCom, "test.com", "localhost", "127.0.0.1"}); err != nil {
+			b.Fatal(err)
+		}
 	}
 }

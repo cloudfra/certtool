@@ -158,6 +158,9 @@ func Run(args Args) error {
 	if args.NamePrefix != "" && args.Chain == "" {
 		slog.Warn("--name-prefix is set but --chain is not; --name-prefix will be ignored")
 	}
+	if args.Ports != "" {
+		slog.Warn(portsIgnored("--ports"))
+	}
 
 	if err := validateModes(args); err != nil {
 		return err
@@ -358,7 +361,10 @@ func runExportSpec(args Args) error {
 }
 
 func argsToSpec(args Args) ([]certlib.CertificateSpec, error) {
-	portList, err := splitPorts(args.Ports)
+	if _, err := splitPorts(args.Ports); err != nil {
+		return nil, err
+	}
+	hostnames, err := splitHostnames(args.Hostnames)
 	if err != nil {
 		return nil, err
 	}
@@ -381,8 +387,7 @@ func argsToSpec(args Args) ([]certlib.CertificateSpec, error) {
 		Country:              args.Country,
 		Locality:             args.Locality,
 		Province:             args.Province,
-		Hostnames:            splitStrings(args.Hostnames),
-		Ports:                portList,
+		Hostnames:            hostnames,
 	}
 	if s.KeyType == "" && !s.CodeSigning {
 		s.KeyType = "RSA-2048"
@@ -423,11 +428,19 @@ func runSpec(args Args, issuer *certlib.Issuer) error {
 	if err != nil {
 		return err
 	}
+	if certlib.SpecUsesPorts(specs) {
+		slog.Warn(portsIgnored("the spec field ports"))
+	}
 
 	if args.ExportSpec != "" {
 		return writeSpecFile(specs, args.ExportSpec)
 	}
 	return generateAndLogResults(specs, args.OutputDir, issuer)
+}
+
+// portsIgnored is the warning for the deprecated ports option named by what.
+func portsIgnored(what string) string {
+	return what + " is deprecated and ignored: certificate names cannot hold ports, and a certificate is valid on every port of its hostnames"
 }
 
 func generateAndWriteKeyPair(args Args, certArgs *certlib.Args) error {
@@ -478,7 +491,11 @@ func certificateArgs(args Args) (*certlib.Args, error) {
 		return nil, fmt.Errorf("--validity must be a positive duration, got %s", args.Validity)
 	}
 
-	portList, err := splitPorts(args.Ports)
+	// --ports is ignored, but a malformed value is still an error.
+	if _, err := splitPorts(args.Ports); err != nil {
+		return nil, err
+	}
+	hostnames, err := splitHostnames(args.Hostnames)
 	if err != nil {
 		return nil, err
 	}
@@ -491,8 +508,7 @@ func certificateArgs(args Args) (*certlib.Args, error) {
 		Locality:           args.Locality,
 		Province:           args.Province,
 		Validity:           args.Validity,
-		Hostnames:          splitStrings(args.Hostnames),
-		Ports:              portList,
+		Hostnames:          hostnames,
 		KeyType:            kt,
 		ParentKeyPair:      parent,
 		CodeSigning:        args.CodeSigning,
@@ -560,6 +576,18 @@ func splitStrings(csv string) []string {
 		parts[i] = strings.TrimSpace(p)
 	}
 	return parts
+}
+
+// splitHostnames splits the --hostnames list and checks that each entry can be
+// a certificate name.
+func splitHostnames(csv string) ([]string, error) {
+	hostnames := splitStrings(csv)
+	for _, hostname := range hostnames {
+		if err := certlib.ValidateHostname(hostname); err != nil {
+			return nil, fmt.Errorf("--hostnames: %w", err)
+		}
+	}
+	return hostnames, nil
 }
 
 func splitPorts(csv string) ([]int, error) {

@@ -87,15 +87,14 @@ type CertificateSpec struct {
 	Province string `yaml:"province,omitempty"`
 
 	// Hostnames lists DNS names and IP addresses added as Subject
-	// Alternative Names (SANs). Entries may include a port suffix
-	// (e.g. "app.example.com:443"); entries without ports are expanded
-	// against the Ports list.
+	// Alternative Names (SANs). A port suffix (e.g. "app.example.com:443")
+	// is removed, because SANs cannot hold ports.
 	Hostnames []string `yaml:"hostnames,omitempty"`
 
-	// Ports lists port numbers applied to every hostname that does not
-	// already specify a port. For example, hostnames ["app.example.com"]
-	// with ports [443, 8443] produces SANs "app.example.com:443" and
-	// "app.example.com:8443".
+	// Ports is ignored. SANs cannot hold ports, so the "hostname:port" names
+	// it used to add never matched in TLS clients.
+	//
+	// Deprecated: certificates are valid for every port of their hostnames.
 	Ports []int `yaml:"ports,omitempty"`
 
 	// Filename overrides the default output filename (without extension).
@@ -144,6 +143,11 @@ func validateSpec(spec *CertificateSpec) error {
 	if len(spec.Children) > 0 && !spec.CertificateAuthority {
 		return fmt.Errorf("spec %q has children but certificateAuthority is not true", spec.CommonName)
 	}
+	for _, hostname := range spec.Hostnames {
+		if err := ValidateHostname(hostname); err != nil {
+			return fmt.Errorf("spec %q: %w", spec.CommonName, err)
+		}
+	}
 	for i := range spec.Children {
 		child := &spec.Children[i]
 		// A CA's extended key usage limits what it can issue, so a TLS CA
@@ -156,6 +160,17 @@ func validateSpec(spec *CertificateSpec) error {
 		}
 	}
 	return nil
+}
+
+// SpecUsesPorts reports whether any spec in the tree sets the deprecated, and
+// ignored, ports field.
+func SpecUsesPorts(specs []CertificateSpec) bool {
+	for i := range specs {
+		if len(specs[i].Ports) > 0 || SpecUsesPorts(specs[i].Children) {
+			return true
+		}
+	}
+	return false
 }
 
 // MarshalSpec serializes certificate specs to YAML.
@@ -439,7 +454,6 @@ func specToArgs(spec *CertificateSpec) *Args {
 		Locality:           spec.Locality,
 		Province:           spec.Province,
 		Hostnames:          spec.Hostnames,
-		Ports:              spec.Ports,
 	}
 
 	if spec.Validity != "" {

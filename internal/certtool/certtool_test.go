@@ -91,6 +91,25 @@ func TestRunErrors(t *testing.T) {
 			want: "--key-type 'not-a-real-key-type' is not a valid key type",
 		},
 		{
+			name: "invalid hostname",
+			set:  func(_ *testing.T, a *Args) { a.Hostnames = "api.example.com,*.com" },
+			want: `--hostnames: hostname "*.com" is not a valid DNS name or IP address`,
+		},
+		{
+			name: "invalid hostname exported",
+			set: func(t *testing.T, a *Args) {
+				a.Hostnames, a.ExportSpec = "a b", filepath.Join(t.TempDir(), "out.yaml")
+			},
+			want: `--hostnames: hostname "a b"`,
+		},
+		{
+			name: "invalid hostname in spec",
+			set: func(t *testing.T, a *Args) {
+				a.Spec = writeSpec(t, t.TempDir(), "certs.yaml", "- commonName: x\n  hostnames: [\"*\"]\n")
+			},
+			want: `spec "x": hostname "*" is not a valid DNS name`,
+		},
+		{
 			name: "write failure",
 			set: func(t *testing.T, a *Args) {
 				a.PublicCertificate = filepath.Join(t.TempDir(), "does-not-exist", "app.cert")
@@ -239,9 +258,6 @@ func TestCertificateArgsFields(t *testing.T) {
 	}
 	if strings.Join(certArgs.Hostnames, " ") != "a.example.com b.example.com" {
 		t.Errorf("Hostnames = %q, want a.example.com and b.example.com", certArgs.Hostnames)
-	}
-	if len(certArgs.Ports) != 2 || certArgs.Ports[0] != 443 || certArgs.Ports[1] != 8443 {
-		t.Errorf("Ports = %v, want [443 8443]", certArgs.Ports)
 	}
 }
 

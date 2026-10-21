@@ -66,7 +66,9 @@ type Args struct {
 	// Province (or state) of the entity representing the certificate.
 	Province string
 
-	// Hostnames is a list of hostname (optional :port) of the endpoint used by the certificate.
+	// Hostnames are the DNS names and IP addresses the certificate is for. A
+	// port on a hostname ("a.com:443") is removed, because certificate names
+	// cannot hold ports.
 	Hostnames []string
 	// Validity is how long the certificate should be valid for.
 	Validity time.Duration
@@ -75,7 +77,10 @@ type Args struct {
 	// Issuer signs the certificate with a CA key held outside of certtool,
 	// such as on a YubiKey. Mutually exclusive with ParentKeyPair.
 	Issuer *Issuer
-	// Ports are a list of ports that are applied to every hostname that is not specified by a port.
+	// Ports is ignored. Certificate names cannot hold ports, so the
+	// "hostname:port" names it used to add never matched in TLS clients.
+	//
+	// Deprecated: certificates are valid for every port of their hostnames.
 	Ports []int
 
 	// KeyType is the type of key to generate.
@@ -102,38 +107,124 @@ func (args *Args) GetKeyType() *KeyType {
 	return args.KeyType
 }
 
-// GetHostnames returns the full set of host names based on hostname * port combinations.
-//
-// Hostnames that are specified with a port will not be expanded.
+// GetHostnames returns the hostnames with any port removed and duplicates
+// dropped, in sorted order.
 func (args *Args) GetHostnames() []string {
-	return expandHostnames(args.Hostnames, args.Ports)
-}
-
-func hostnameHasPort(hostname string) bool {
-	_, _, err := net.SplitHostPort(hostname)
-	return err == nil
-}
-
-func expandHostnames(hostnames []string, ports []int) []string {
-	expanded := map[string]any{}
-	for _, hostname := range hostnames {
-		if hostname != "" {
-			if len(ports) > 0 && !hostnameHasPort(hostname) {
-				for _, port := range ports {
-					expanded[fmt.Sprintf("%s:%d", hostname, port)] = nil
-				}
-			} else {
-				expanded[hostname] = nil
-			}
+	seen := map[string]bool{}
+	all := []string{}
+	for _, hostname := range args.Hostnames {
+		host := hostWithoutPort(strings.TrimSpace(hostname))
+		if host != "" && !seen[host] {
+			seen[host] = true
+			all = append(all, host)
 		}
-	}
-
-	all := make([]string, 0, len(expanded))
-	for hn := range expanded {
-		all = append(all, hn)
 	}
 	sort.Strings(all)
 	return all
+}
+
+// hostWithoutPort returns hostname without a trailing port, so "a.com:443"
+// and "[::1]:443" become "a.com" and "::1". X.509 names cannot hold ports.
+func hostWithoutPort(hostname string) string {
+	if host, _, err := net.SplitHostPort(hostname); err == nil {
+		return host
+	}
+	return hostname
+}
+
+// ValidateHostname returns an error unless hostname, with any port removed, is
+// an IP address or a DNS name that can be a certificate's subject alternative
+// name. A wildcard is allowed only as the whole leftmost label of a name with
+// at least two more labels, such as *.example.com.
+func ValidateHostname(hostname string) error {
+	host := hostWithoutPort(strings.TrimSpace(hostname))
+	if net.ParseIP(host) != nil {
+		return nil
+	}
+	if err := validateDNSName(host); err != nil {
+		return fmt.Errorf("hostname %q is not a valid DNS name or IP address: %w", hostname, err)
+	}
+	return nil
+}
+
+const (
+	maxDNSNameLength  = 253
+	maxDNSLabelLength = 63
+)
+
+func validateDNSName(name string) error {
+	name = strings.TrimSuffix(name, ".")
+	switch {
+	case name == "":
+		return fmt.Errorf("it is empty")
+	case len(name) > maxDNSNameLength:
+		return fmt.Errorf("it is longer than %d characters", maxDNSNameLength)
+	}
+
+	labels := strings.Split(name, ".")
+	for i, label := range labels {
+		if label == "*" && i == 0 {
+			if len(labels) < 3 {
+				return fmt.Errorf("a wildcard needs at least two labels after it, such as *.example.com")
+			}
+			continue
+		}
+		if err := validateDNSLabel(label); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func validateDNSLabel(label string) error {
+	switch {
+	case label == "":
+		return fmt.Errorf("it has an empty label")
+	case len(label) > maxDNSLabelLength:
+		return fmt.Errorf("the label %q is longer than %d characters", label, maxDNSLabelLength)
+	case strings.Contains(label, "*"):
+		return fmt.Errorf("a wildcard must be the whole leftmost label, such as *.example.com")
+	case label[0] == '-' || label[len(label)-1] == '-':
+		return fmt.Errorf("the label %q starts or ends with a hyphen", label)
+	}
+	for _, r := range label {
+		ok := r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9' || r == '-' || r == '_'
+		if !ok {
+			return fmt.Errorf("the label %q has the character %q; use letters, digits, and hyphens, and punycode (xn--) for international names", label, r)
+		}
+	}
+	return nil
+}
+
+// subjectAltNames returns the DNS names and IP addresses for hostnames, with
+// ports removed and duplicates dropped, each in sorted order.
+func subjectAltNames(hostnames []string) ([]string, []net.IP, error) {
+	var dnsNames []string
+	var ips []net.IP
+	seen := map[string]bool{}
+	for _, hostname := range hostnames {
+		if strings.TrimSpace(hostname) == "" {
+			continue
+		}
+		if err := ValidateHostname(hostname); err != nil {
+			return nil, nil, err
+		}
+		host := strings.TrimSuffix(hostWithoutPort(strings.TrimSpace(hostname)), ".")
+		if ip := net.ParseIP(host); ip != nil {
+			if !seen[ip.String()] {
+				seen[ip.String()] = true
+				ips = append(ips, ip)
+			}
+			continue
+		}
+		if key := strings.ToLower(host); !seen[key] {
+			seen[key] = true
+			dnsNames = append(dnsNames, host)
+		}
+	}
+	sort.Strings(dnsNames)
+	sort.Slice(ips, func(i, j int) bool { return ips[i].String() < ips[j].String() })
+	return dnsNames, ips, nil
 }
 
 // KeyType is the key descriptor.
@@ -392,13 +483,11 @@ func newCertificateTemplate(args *Args, pub crypto.PublicKey) (*x509.Certificate
 	}
 
 	if !args.CodeSigning {
-		allHostnames := expandHostnames(append(args.Hostnames, "localhost", "127.0.0.1"), args.Ports)
-		for _, hostname := range allHostnames {
-			if ipAddress := net.ParseIP(hostname); ipAddress != nil {
-				certTemplate.IPAddresses = append(certTemplate.IPAddresses, ipAddress)
-			} else {
-				certTemplate.DNSNames = append(certTemplate.DNSNames, hostname)
-			}
+		// Clone so the caller's Hostnames are never appended to in place.
+		hostnames := append(slices.Clone(args.Hostnames), "localhost", "127.0.0.1")
+		certTemplate.DNSNames, certTemplate.IPAddresses, err = subjectAltNames(hostnames)
+		if err != nil {
+			return nil, err
 		}
 	}
 
