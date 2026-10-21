@@ -76,8 +76,6 @@ type Args struct {
 	// KeyType is --key-type. Empty selects RSA-2048, or the key type of the
 	// --target profile with --code-sign.
 	KeyType string
-	// Ports is --ports, comma separated.
-	Ports string
 
 	// ParentPublicCertificate is --parent-public-certificate.
 	ParentPublicCertificate string
@@ -358,7 +356,7 @@ func runExportSpec(args Args) error {
 }
 
 func argsToSpec(args Args) ([]certlib.CertificateSpec, error) {
-	portList, err := splitPorts(args.Ports)
+	hostnames, err := splitHostnames(args.Hostnames)
 	if err != nil {
 		return nil, err
 	}
@@ -381,8 +379,7 @@ func argsToSpec(args Args) ([]certlib.CertificateSpec, error) {
 		Country:              args.Country,
 		Locality:             args.Locality,
 		Province:             args.Province,
-		Hostnames:            splitStrings(args.Hostnames),
-		Ports:                portList,
+		Hostnames:            hostnames,
 	}
 	if s.KeyType == "" && !s.CodeSigning {
 		s.KeyType = "RSA-2048"
@@ -478,7 +475,7 @@ func certificateArgs(args Args) (*certlib.Args, error) {
 		return nil, fmt.Errorf("--validity must be a positive duration, got %s", args.Validity)
 	}
 
-	portList, err := splitPorts(args.Ports)
+	hostnames, err := splitHostnames(args.Hostnames)
 	if err != nil {
 		return nil, err
 	}
@@ -491,8 +488,7 @@ func certificateArgs(args Args) (*certlib.Args, error) {
 		Locality:           args.Locality,
 		Province:           args.Province,
 		Validity:           args.Validity,
-		Hostnames:          splitStrings(args.Hostnames),
-		Ports:              portList,
+		Hostnames:          hostnames,
 		KeyType:            kt,
 		ParentKeyPair:      parent,
 		CodeSigning:        args.CodeSigning,
@@ -562,21 +558,14 @@ func splitStrings(csv string) []string {
 	return parts
 }
 
-func splitPorts(csv string) ([]int, error) {
-	if csv == "" {
-		return nil, nil
-	}
-	vals := splitStrings(csv)
-	result := make([]int, len(vals))
-	for i, v := range vals {
-		iv, err := strconv.Atoi(v)
-		if err != nil {
-			return nil, fmt.Errorf("--ports value %q is not an integer, %w", v, err)
+// splitHostnames splits the --hostnames list and checks that each entry can be
+// a certificate name.
+func splitHostnames(csv string) ([]string, error) {
+	hostnames := splitStrings(csv)
+	for _, hostname := range hostnames {
+		if err := certlib.ValidateHostname(hostname); err != nil {
+			return nil, fmt.Errorf("--hostnames: %w", err)
 		}
-		if iv < 1 || iv > 65535 {
-			return nil, fmt.Errorf("--ports value %d is not valid, must be between 1 and 65535", iv)
-		}
-		result[i] = iv
 	}
-	return result, nil
+	return hostnames, nil
 }

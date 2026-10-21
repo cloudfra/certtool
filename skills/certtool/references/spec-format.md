@@ -12,7 +12,6 @@ A spec is a YAML list of certificates. An entry with `children` is a CA that sig
 | `keyType` | `RSA-2048`, `RSA-4096`, `ECDSA-256`, `ECDSA-384`. |
 | `validity` | Go duration, for example `8760h`. Default `8760h`. |
 | `hostnames` | DNS names and IP addresses added as SANs. |
-| `ports` | Ports applied to each hostname, as `host:port` SANs. |
 | `organization`, `organizationalUnit`, `country`, `locality`, `province` | Subject fields. |
 | `codeSigning` | `true` for a code signing certificate. Keep these at the top level of the spec: a child must have the same `codeSigning` value as its CA, so a TLS CA cannot hold code signing children. |
 | `target` | Code signing profile: `windows7`, `windows10` (default), `windows11`, `linux`. |
@@ -39,7 +38,6 @@ Without `filename`, each file is named after the slugified common names on the p
       hostnames:
         - api.internal.example.com
         - 10.0.0.12
-      ports: [8443]
       filename: "api"
     - commonName: "billing-client"
       keyType: "ECDSA-256"

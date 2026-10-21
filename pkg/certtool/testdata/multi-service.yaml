@@ -12,7 +12,6 @@
       hostnames:
         - api.acme.dev
         - api.acme.local
-      ports: [443, 8443]
       filename: "api"
     - commonName: "web.acme.dev"
       keyType: "RSA-2048"

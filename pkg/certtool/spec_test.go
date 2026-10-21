@@ -124,7 +124,6 @@ func TestUnmarshalSpec_AllFields(t *testing.T) {
   hostnames:
     - app.example.com
     - localhost
-  ports: [443, 8443]
   filename: "my-cert"
   children:
     - commonName: "Child"
@@ -163,9 +162,6 @@ func TestUnmarshalSpec_AllFields(t *testing.T) {
 	}
 	if len(s.Hostnames) != 2 {
 		t.Errorf("Hostnames = %v", s.Hostnames)
-	}
-	if len(s.Ports) != 2 || s.Ports[0] != 443 || s.Ports[1] != 8443 {
-		t.Errorf("Ports = %v", s.Ports)
 	}
 	if s.Filename != "my-cert" {
 		t.Errorf("Filename = %q", s.Filename)

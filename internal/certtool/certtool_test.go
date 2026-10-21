@@ -91,6 +91,25 @@ func TestRunErrors(t *testing.T) {
 			want: "--key-type 'not-a-real-key-type' is not a valid key type",
 		},
 		{
+			name: "invalid hostname",
+			set:  func(_ *testing.T, a *Args) { a.Hostnames = "api.example.com,*.com" },
+			want: `--hostnames: hostname "*.com" is not a valid DNS name or IP address`,
+		},
+		{
+			name: "invalid hostname exported",
+			set: func(t *testing.T, a *Args) {
+				a.Hostnames, a.ExportSpec = "a b", filepath.Join(t.TempDir(), "out.yaml")
+			},
+			want: `--hostnames: hostname "a b"`,
+		},
+		{
+			name: "invalid hostname in spec",
+			set: func(t *testing.T, a *Args) {
+				a.Spec = writeSpec(t, t.TempDir(), "certs.yaml", "- commonName: x\n  hostnames: [\"*\"]\n")
+			},
+			want: `spec "x": hostname "*" is not a valid DNS name`,
+		},
+		{
 			name: "write failure",
 			set: func(t *testing.T, a *Args) {
 				a.PublicCertificate = filepath.Join(t.TempDir(), "does-not-exist", "app.cert")
@@ -128,13 +147,6 @@ func TestRunErrors(t *testing.T) {
 				// A directory cannot be created beneath a regular file.
 				a.Chain, a.OutputDir = "2", filepath.Join(blocker, "out")
 			},
-		},
-		{
-			name: "export spec with invalid ports",
-			set: func(t *testing.T, a *Args) {
-				a.ExportSpec, a.Ports = filepath.Join(t.TempDir(), "out.yaml"), "not-a-port"
-			},
-			want: `--ports value "not-a-port" is not an integer`,
 		},
 		{
 			name: "export spec write failure",
@@ -225,7 +237,6 @@ func TestCertificateArgsFields(t *testing.T) {
 	args.Validity = 48 * time.Hour
 	args.CommonName = "my-service.example.com"
 	args.Hostnames = "a.example.com, b.example.com"
-	args.Ports = "443,8443"
 
 	certArgs, err := certificateArgs(args)
 	if err != nil {
@@ -239,9 +250,6 @@ func TestCertificateArgsFields(t *testing.T) {
 	}
 	if strings.Join(certArgs.Hostnames, " ") != "a.example.com b.example.com" {
 		t.Errorf("Hostnames = %q, want a.example.com and b.example.com", certArgs.Hostnames)
-	}
-	if len(certArgs.Ports) != 2 || certArgs.Ports[0] != 443 || certArgs.Ports[1] != 8443 {
-		t.Errorf("Ports = %v, want [443 8443]", certArgs.Ports)
 	}
 }
 
@@ -284,7 +292,6 @@ func TestCertificateArgsErrors(t *testing.T) {
 			a.ParentPrivateKey = filepath.Join(t.TempDir(), "missing.key")
 		}},
 		{"negative validity", func(_ *testing.T, a *Args) { a.Validity = -24 * time.Hour }},
-		{"invalid ports", func(_ *testing.T, a *Args) { a.Ports = "abc" }},
 	}
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -372,49 +379,6 @@ func TestSplitStrings(t *testing.T) {
 			for i := range tc.want {
 				if got[i] != tc.want[i] {
 					t.Errorf("splitStrings(%q)[%d] = %q, want %q", tc.input, i, got[i], tc.want[i])
-				}
-			}
-		})
-	}
-}
-
-func TestSplitPorts(t *testing.T) {
-	testCases := []struct {
-		input   string
-		want    []int
-		wantErr bool
-	}{
-		{input: "", want: nil},
-		{input: "1,2,3", want: []int{1, 2, 3}},
-		{input: "42", want: []int{42}},
-		{input: "abc", wantErr: true},
-		{input: "1,two,3", wantErr: true},
-		{input: "1,,3", wantErr: true},
-		{input: "0", wantErr: true},
-		{input: "-1", wantErr: true},
-		{input: "443,-1", wantErr: true},
-		{input: "99999", wantErr: true},
-	}
-
-	for _, tc := range testCases {
-		t.Run(tc.input, func(t *testing.T) {
-			t.Parallel()
-			got, err := splitPorts(tc.input)
-			if tc.wantErr {
-				if err == nil || !strings.Contains(err.Error(), "--ports") {
-					t.Fatalf("splitPorts(%q) err = %v, want an error naming --ports", tc.input, err)
-				}
-				return
-			}
-			if err != nil {
-				t.Fatalf("splitPorts(%q) got error: %s", tc.input, err)
-			}
-			if len(got) != len(tc.want) {
-				t.Fatalf("splitPorts(%q) returned %d elements, want %d", tc.input, len(got), len(tc.want))
-			}
-			for i := range tc.want {
-				if got[i] != tc.want[i] {
-					t.Errorf("splitPorts(%q)[%d] = %d, want %d", tc.input, i, got[i], tc.want[i])
 				}
 			}
 		})

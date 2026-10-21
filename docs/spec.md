@@ -29,8 +29,7 @@ A spec file is a YAML list of `CertificateSpec` entries. Each entry defines one 
 | `country` | string | | Subject country (C). |
 | `locality` | string | | Subject locality (L). |
 | `province` | string | | Subject state/province (ST). |
-| `hostnames` | list | | DNS names and IPs added as SANs. |
-| `ports` | list | | Ports applied to each hostname without an explicit port. |
+| `hostnames` | list | | DNS names and IPs added as SANs. A port suffix is removed; a wildcard must be the leftmost label with at least two labels after it (`*.example.com`). |
 | `filename` | string | | Override the output filename (without extension). |
 | `children` | list | | Child specs signed by this certificate. |
 
@@ -89,7 +88,6 @@ A root CA issuing certificates for multiple services with custom filenames.
       hostnames:
         - api.acme.dev
         - api.acme.local
-      ports: [443, 8443]
       filename: "api"
     - commonName: "web.acme.dev"
       keyType: "RSA-2048"
@@ -388,7 +386,6 @@ Active Directory Domain Controllers require certificates for LDAP over TLS (LDAP
         - dc01.contoso.local
         - contoso.local
         - ldap.contoso.local
-      ports: [636, 3269]
       filename: "dc01"
     - commonName: "dc02.contoso.local"
       keyType: "RSA-2048"
@@ -397,7 +394,6 @@ Active Directory Domain Controllers require certificates for LDAP over TLS (LDAP
         - dc02.contoso.local
         - contoso.local
         - ldap.contoso.local
-      ports: [636, 3269]
       filename: "dc02"
 ```
 
@@ -429,7 +425,6 @@ A Kubernetes cluster uses TLS throughout: the API server, etcd, kubelets, and th
         - kubernetes.default.svc.cluster.local
         - 10.96.0.1
         - 192.168.1.100
-      ports: [6443]
       filename: "apiserver"
     - commonName: "kube-apiserver-kubelet-client"
       keyType: "RSA-2048"
@@ -449,7 +444,6 @@ A Kubernetes cluster uses TLS throughout: the API server, etcd, kubelets, and th
             - localhost
             - 127.0.0.1
             - 192.168.1.100
-          ports: [2379, 2380]
           filename: "etcd-server"
         - commonName: "kube-etcd-peer"
           keyType: "RSA-2048"
@@ -483,7 +477,6 @@ Service-to-service authentication using mutual TLS. Both sides present certifica
       hostnames:
         - api-gateway
         - api-gateway.platform.svc.cluster.local
-      ports: [8443]
       filename: "api-gateway"
     - commonName: "user-service"
       keyType: "ECDSA-256"
@@ -491,7 +484,6 @@ Service-to-service authentication using mutual TLS. Both sides present certifica
       hostnames:
         - user-service
         - user-service.platform.svc.cluster.local
-      ports: [8443]
       filename: "user-service"
     - commonName: "order-service"
       keyType: "ECDSA-256"
@@ -499,7 +491,6 @@ Service-to-service authentication using mutual TLS. Both sides present certifica
       hostnames:
         - order-service
         - order-service.platform.svc.cluster.local
-      ports: [8443]
       filename: "order-service"
     - commonName: "payment-service"
       keyType: "ECDSA-256"
@@ -507,7 +498,6 @@ Service-to-service authentication using mutual TLS. Both sides present certifica
       hostnames:
         - payment-service
         - payment-service.platform.svc.cluster.local
-      ports: [8443]
       filename: "payment-service"
 ```
 
@@ -537,7 +527,6 @@ Database and cache servers that accept TLS connections, with a shared CA so appl
         - db-primary.internal
         - db-replica.internal
         - localhost
-      ports: [5432]
       filename: "postgres"
     - commonName: "redis.internal"
       keyType: "RSA-2048"
@@ -546,7 +535,6 @@ Database and cache servers that accept TLS connections, with a shared CA so appl
         - redis.internal
         - redis-sentinel.internal
         - localhost
-      ports: [6379, 26379]
       filename: "redis"
 ```
 
@@ -575,7 +563,6 @@ A VPN root CA that signs gateway and client certificates for site-to-site or rem
         - vpn-gateway.example.com
         - vpn.example.com
         - 203.0.113.10
-      ports: [443, 1194]
       filename: "vpn-gateway"
     - commonName: "site-b-gateway.example.com"
       keyType: "RSA-2048"

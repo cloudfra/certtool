@@ -127,7 +127,6 @@ read -rs -p "YubiKey PIN: " CERTTOOL_YUBIKEY_PIN && export CERTTOOL_YUBIKEY_PIN
 | `--ca` | `false` | Generate a root/CA certificate |
 | `--key-type` | `RSA-2048` | Key algorithm and length (`RSA-2048`, `RSA-4096`, `ECDSA-224`, `ECDSA-256`, `ECDSA-384`, `ECDSA-521`) |
 | `--hostnames` | | Comma-separated hostnames and IP addresses to add as SANs |
-| `--ports` | | Comma-separated ports appended to each hostname to generate `host:port` SAN entries |
 | `--validity` | `8760h` (1 year) | How long the certificate is valid for, as a Go duration (e.g. `8760h`, `720h`, `24h`) |
 | `--common-name` | | Common Name (CN) field of the X.509 subject (defaults to `--organization`) |
 | `--country` | `US` | Country (C) field of the X.509 subject |
