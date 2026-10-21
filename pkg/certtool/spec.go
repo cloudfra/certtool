@@ -208,6 +208,25 @@ func SpecsWithPFXPassword(specs []CertificateSpec) []string {
 	return names
 }
 
+// SpecsWithUnprotectedPFX returns the common names of the specs in the tree
+// that produce a .pfx bundle without a password, which anyone who can read
+// the file can use to sign code.
+func SpecsWithUnprotectedPFX(specs []CertificateSpec) []string {
+	var names []string
+	for i := range specs {
+		s := &specs[i]
+		target := s.Target
+		if target == "" {
+			target = windows10Target
+		}
+		if profile, err := GetProfile(target); err == nil && s.CodeSigning && profile.OutputPFX && s.PFXPassword == "" && s.PFXPasswordEnv == "" {
+			names = append(names, s.CommonName)
+		}
+		names = append(names, SpecsWithUnprotectedPFX(s.Children)...)
+	}
+	return names
+}
+
 // ReplacePFXPasswords replaces every plain text pfxPassword in the tree with
 // pfxPasswordEnv set to env, so the spec can be written out without the
 // passwords.

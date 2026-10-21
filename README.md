@@ -136,7 +136,7 @@ read -rs -p "YubiKey PIN: " CERTTOOL_YUBIKEY_PIN && export CERTTOOL_YUBIKEY_PIN
 | `--locality` | `Seattle` | Locality/city (L) field of the X.509 subject |
 | `--province` | `WA` | Province/state (ST) field of the X.509 subject |
 | `--parent-public-certificate` | | Parent CA public certificate for signing |
-| `--parent-private-key` | | Parent CA private key for signing |
+| `--parent-private-key` | | Parent CA private key for signing (unencrypted PEM: PKCS#1, SEC 1, or PKCS#8) |
 
 #### Code signing flags
 

@@ -15,6 +15,7 @@
 package certtool
 
 import (
+	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
@@ -134,4 +135,52 @@ func TestRunSpecExportReplacesPFXPasswords(t *testing.T) {
 		t.Fatalf("Run() generate err = %v", err)
 	}
 	assertPFXPassword(t, filepath.Join(gen.OutputDir, "sign.pfx"), "s3cret-value")
+}
+
+// captureWarnings records the messages logged at warning level while the test
+// runs.
+func captureWarnings(t *testing.T) *strings.Builder {
+	t.Helper()
+
+	var logs strings.Builder
+	previous := slog.Default()
+	slog.SetDefault(slog.New(slog.NewTextHandler(&logs, &slog.HandlerOptions{Level: slog.LevelWarn})))
+	t.Cleanup(func() { slog.SetDefault(previous) })
+	return &logs
+}
+
+// A .pfx without a password lets anyone who can read it sign code, so certtool
+// must say so.
+func TestRunWarnsAboutPFXWithoutPassword(t *testing.T) {
+	t.Setenv(PFXPasswordEnv, "")
+	logs := captureWarnings(t)
+	args := testArgs(t)
+	args.CodeSigning, args.Target = true, defaultCodeSignTarget
+	if err := Run(args); err != nil {
+		t.Fatalf("Run() err = %v", err)
+	}
+	if !strings.Contains(logs.String(), "the .pfx has no password") {
+		t.Errorf("logs = %q, want a warning about the missing password", logs.String())
+	}
+
+	logs.Reset()
+	args.PFXPassword = "set"
+	if err := Run(args); err != nil {
+		t.Fatalf("Run() err = %v", err)
+	}
+	if strings.Contains(logs.String(), "no password") {
+		t.Errorf("logs = %q, want no warning when a password is set", logs.String())
+	}
+}
+
+func TestRunSpecWarnsAboutPFXWithoutPassword(t *testing.T) {
+	logs := captureWarnings(t)
+	args := testArgs(t)
+	args.Spec = writeSpec(t, t.TempDir(), "certs.yaml", "- commonName: Open Signing\n  codeSigning: true\n  filename: open\n- commonName: Linux Signing\n  codeSigning: true\n  target: linux\n  filename: linux\n")
+	if err := Run(args); err != nil {
+		t.Fatalf("Run() err = %v", err)
+	}
+	if !strings.Contains(logs.String(), "Open Signing") || strings.Contains(logs.String(), "Linux Signing") {
+		t.Errorf("logs = %q, want a warning naming only the spec that makes a .pfx", logs.String())
+	}
 }
