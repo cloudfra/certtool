@@ -571,6 +571,7 @@ func TestGenerateFromSpec_Examples(t *testing.T) {
 		{file: "intermediate-ca.yaml", wantCerts: 4},
 		{file: "code-signing.yaml", wantCerts: 1},
 		{file: "mixed-roots.yaml", wantCerts: 4},
+		{file: "yubikey-intermediate.yaml", wantCerts: 5},
 	}
 
 	for _, tc := range tests {
