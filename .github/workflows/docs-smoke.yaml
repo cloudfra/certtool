@@ -133,7 +133,7 @@ jobs:
       - name: YubiKey spec and errors without a YubiKey
         working-directory: ${{ runner.temp }}
         run: |
-          set -uxo pipefail
+          set +e -uxo pipefail
           mkdir yubikey && cd yubikey
           # The spec from the guide is valid and names files as documented.
           awk '/^```yaml/{f=1;next} /^```/{if(f){exit}} f' "$GITHUB_WORKSPACE/docs/use-cases/yubikey-root-ca.md" > certs.yaml
@@ -336,5 +336,14 @@ jobs:
             if ($code -ne 1) { throw "expected exit code 1" }
             if ($out -match "does not support YubiKeys") { throw "the Windows build should support YubiKeys" }
           }
-          if (Test-Path issuing-ca.crt, root.crt) { throw "files were written" }
+          if ((Test-Path issuing-ca.crt) -or (Test-Path root.crt)) { throw "files were written" }
+
+          # With the Smart Card service running but no YubiKey plugged in
+          Set-Service SCardSvr -StartupType Manual
+          Start-Service SCardSvr -ErrorAction Continue
+          Get-Service SCardSvr | Format-List Name, Status
+          $out = & certtool --yubikey --common-name x --public-certificate x.crt --private-key x.key 2>&1 | Out-String
+          "service running -> exit ${LASTEXITCODE}: $out"
+          if ($LASTEXITCODE -ne 1) { throw "expected exit code 1" }
+          if (Test-Path x.crt) { throw "files were written" }
           $global:LASTEXITCODE = 0
