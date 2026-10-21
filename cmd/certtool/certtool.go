@@ -64,7 +64,7 @@ func parseFlags(fs *flag.FlagSet, arguments []string) (certtool.Args, error) {
 	fs.BoolVar(&args.CodeSigning, "code-sign", args.CodeSigning, "Generates a code signing certificate for binary signing instead of a TLS certificate.")
 	fs.StringVar(&args.Target, "target", args.Target, "Platform profile for --code-sign. Values: windows7 (win7/windows8/win8), windows10 (win10), windows11 (win11), linux. Default: windows10.")
 	fs.StringVar(&args.PFXOutput, "pfx-output", args.PFXOutput, "Output path for the PKCS#12 (.pfx) file. Used with --code-sign for Windows targets.")
-	fs.StringVar(&args.PFXPassword, "pfx-password", args.PFXPassword, "Password for the PKCS#12 (.pfx) file. Empty means no password.")
+	fs.StringVar(&args.PFXPassword, "pfx-password", args.PFXPassword, "Password for the PKCS#12 (.pfx) file. Defaults to the "+certtool.PFXPasswordEnv+" environment variable, which keeps it off the command line. Empty means no password.")
 
 	fs.StringVar(&args.Spec, "spec", args.Spec, "Path to a YAML file specifying certificates to generate. See CertificateSpec for the format.")
 	fs.StringVar(&args.Chain, "chain", args.Chain, "Generate a certificate hierarchy from the number of certificates per layer. A single number produces that many standalone leaf certificates (e.g. 3). Comma-separated numbers set the width of each layer from the root down, the last being the leaves (e.g. 1,1 = root CA and leaf; 1,2,3 = 1 root, 2 intermediates per root, 3 leaves per intermediate).")

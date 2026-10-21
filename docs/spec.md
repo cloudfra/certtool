@@ -21,7 +21,8 @@ A spec file is a YAML list of `CertificateSpec` entries. Each entry defines one 
 | `certificateAuthority` | bool | | Must be `true` when the spec has `children`. |
 | `codeSigning` | bool | | Generate a code signing certificate instead of TLS. A child must have the same value as its parent CA, so put code signing certificates at the top level. |
 | `target` | string | | Platform profile for code signing (`windows7`, `windows10`, `windows11`, `linux`). Default: `windows10`. |
-| `pfxPassword` | string | | Password for the `.pfx` bundle (code signing only). |
+| `pfxPassword` | string | | Password for the `.pfx` bundle (code signing only). Stored in plain text, so certtool warns about it; prefer `pfxPasswordEnv`. |
+| `pfxPasswordEnv` | string | | Name of an environment variable that holds the `.pfx` password. It must be set when the spec is generated. `--export-spec` writes this instead of a password. |
 | `keyType` | string | | Key algorithm and size (`RSA-2048`, `RSA-4096`, `ECDSA-256`, `ECDSA-384`). |
 | `validity` | string | | Go duration (e.g. `8760h` for 1 year, `87600h` for 10 years). Default: `8760h`. |
 | `organization` | string | | Subject organization (O). |

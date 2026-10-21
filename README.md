@@ -61,7 +61,8 @@ Guides: [Local development HTTPS](docs/use-cases/local-development.md), [Private
 
 ```bash
 # Windows 10 and 11: ECDSA P-256 in an AES-256 encrypted codesign.pfx
-./certtool --code-sign --common-name "Acme Internal Software" --pfx-password "change-me"
+export CERTTOOL_PFX_PASSWORD="$PFX_PASSWORD"   # or --pfx-password
+./certtool --code-sign --common-name "Acme Internal Software"
 
 # Windows 7 and 8: RSA-2048 in a legacy 3DES encrypted PFX
 ./certtool --code-sign --target windows7 --pfx-output codesign-legacy.pfx
@@ -144,7 +145,7 @@ read -rs -p "YubiKey PIN: " CERTTOOL_YUBIKEY_PIN && export CERTTOOL_YUBIKEY_PIN
 | `--code-sign` | `false` | Generate a code signing certificate instead of a TLS certificate |
 | `--target` | `windows10` | Platform profile: `windows7`, `windows10`, `windows11`, `linux` (and aliases) |
 | `--pfx-output` | `codesign.pfx` | Output path for the PKCS#12 (`.pfx`) file (Windows targets) |
-| `--pfx-password` | | Password for the `.pfx` file (empty = no password) |
+| `--pfx-password` | | Password for the `.pfx` file (defaults to `CERTTOOL_PFX_PASSWORD`; empty = no password) |
 
 #### Hierarchy flags
 
