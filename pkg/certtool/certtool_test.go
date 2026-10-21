@@ -1034,6 +1034,47 @@ func TestWritePFX(t *testing.T) {
 	}
 }
 
+// Regenerating over existing files must not keep their permissions or write
+// through symbolic links, or the new private key could end up readable by
+// others or somewhere else entirely.
+func TestWriteKeyPair_ReplacesExistingFiles(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("file modes and symlinks behave differently on Windows")
+	}
+
+	dir := mustTemp(t)
+	certPath := filepath.Join(dir, "app.cert")
+	keyPath := filepath.Join(dir, "app.key")
+	if err := os.WriteFile(keyPath, []byte("old key"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(keyPath, 0o644); err != nil { //nolint:gosec // The test needs a world-readable key to replace.
+		t.Fatal(err)
+	}
+	victim := filepath.Join(dir, "victim")
+	if err := os.Symlink(victim, certPath); err != nil {
+		t.Fatal(err)
+	}
+
+	kp := &KeyPair{PublicCertificate: []byte("cert"), PrivateKey: []byte("key")}
+	if err := WriteKeyPair(kp, certPath, keyPath); err != nil {
+		t.Fatalf("WriteKeyPair() err = %v", err)
+	}
+
+	for path, want := range map[string]os.FileMode{certPath: 0o644, keyPath: 0o600} {
+		info, err := os.Lstat(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !info.Mode().IsRegular() || info.Mode().Perm() != want {
+			t.Errorf("%s has mode %v, want a regular file with mode %o", path, info.Mode(), want)
+		}
+	}
+	if _, err := os.Lstat(victim); !os.IsNotExist(err) {
+		t.Errorf("the certificate was written through the symlink to %s (stat err = %v)", victim, err)
+	}
+}
+
 func TestWritePFX_NoPFXData(t *testing.T) {
 	err := WritePFX(&KeyPair{}, "out.pfx")
 	if err == nil || !strings.Contains(err.Error(), "does not contain PKCS#12 data") {

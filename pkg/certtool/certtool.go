@@ -33,6 +33,8 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	"github.com/cloudfra/certtool/internal/safefile"
 )
 
 const (
@@ -718,6 +720,7 @@ func GenerateAndWriteKeyPair(args *Args, publicCertificateFile string, privateKe
 }
 
 // WriteKeyPair writes the public certificate and private key to the specified files with mode 0644 and 0600 respectively.
+// Existing files are replaced and get those modes; a symbolic link at either path is replaced rather than followed.
 func WriteKeyPair(kp *KeyPair, publicCertificateFile string, privateKeyFile string) error {
 	if err := writeFile(publicCertificateFile, kp.PublicCertificate, 0o644); err != nil {
 		return err
@@ -741,6 +744,8 @@ func WritePFX(kp *KeyPair, pfxFile string) error {
 	return writeFile(pfxFile, kp.PFX, 0o600)
 }
 
+// writeFile replaces fileName with data and mode, even when it already exists
+// with other permissions, and never writes through a symbolic link.
 func writeFile(fileName string, data []byte, mode os.FileMode) error {
-	return os.WriteFile(fileName, data, mode)
+	return safefile.Write(fileName, data, mode)
 }
