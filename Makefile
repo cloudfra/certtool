@@ -19,4 +19,22 @@ ASSETS = $(PROTOS)
 GO_PACKAGE = github.com/cloudfra/certtool
 ALL_APPS = certtool
 
+# Build only the platforms certtool is released for. Makefile_build.mk uses
+# these instead of its defaults, which cover every Go platform.
+LINUX_PLATFORMS = linux/amd64 linux/arm64
+WINDOWS_PLATFORMS = windows/amd64 windows/arm64
+DARWIN_PLATFORMS = darwin/arm64
+ANDROID_PLATFORMS =
+IOS_PLATFORMS =
+DRAGONFLY_PLATFORMS =
+FREEBSD_PLATFORMS =
+NETBSD_PLATFORMS =
+OPENBSD_PLATFORMS =
+PLAN9_PLATFORMS =
+SOLARIS_PLATFORMS =
+JS_PLATFORMS =
+WASIP1_PLATFORMS =
+ILLUMOS_PLATFORMS =
+AIX_PLATFORMS =
+
 include Makefile_build.mk
