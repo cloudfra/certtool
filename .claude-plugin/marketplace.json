@@ -1,0 +1,16 @@
+{
+  "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
+  "name": "certtool",
+  "description": "certtool skills for AI agents",
+  "owner": {
+    "name": "Cloudfra"
+  },
+  "plugins": [
+    {
+      "name": "certtool",
+      "description": "Generate X.509 certificates with certtool: TLS, private CAs, certificate hierarchies, code signing, and YubiKey root CAs.",
+      "source": "./",
+      "category": "development"
+    }
+  ]
+}

@@ -1,0 +1,25 @@
+# certtool
+
+> certtool is a non-interactive CLI and Go library that generates X.509 certificates and private keys: self-signed TLS certificates, private CA hierarchies, Windows and Linux code signing certificates, and certificates signed by a root CA kept on a YubiKey. It never prompts; inputs come from flags or environment variables, logs go to stderr, and a failure exits with status 1 and an error naming the flag at fault.
+
+Install a release build from <https://github.com/cloudfra/certtool/releases/latest> (for example `certtool-amd64`, `certtool-arm64-darwin`, `certtool-amd64.exe`) or run `go install github.com/cloudfra/certtool/cmd/certtool@latest`. `certtool --help` lists every flag.
+
+## Agent guides
+
+- [certtool skill](https://raw.githubusercontent.com/cloudfra/certtool/main/skills/certtool/SKILL.md): choosing a mode, recipes, rules for secrets, and common mistakes
+- [Flag reference](https://raw.githubusercontent.com/cloudfra/certtool/main/skills/certtool/references/flags.md): every flag with its default
+- [Spec format](https://raw.githubusercontent.com/cloudfra/certtool/main/skills/certtool/references/spec-format.md): the YAML used by `--spec` and `--export-spec`
+
+## Docs
+
+- [README](https://raw.githubusercontent.com/cloudfra/certtool/main/README.md): features, examples, flags, and downloads
+- [Certificate spec](https://raw.githubusercontent.com/cloudfra/certtool/main/docs/spec.md): spec fields, `--chain` naming, and examples for Kubernetes, LDAPS, mTLS, databases, and VPNs
+- [Local development HTTPS](https://raw.githubusercontent.com/cloudfra/certtool/main/docs/use-cases/local-development.md)
+- [Private CA and mutual TLS](https://raw.githubusercontent.com/cloudfra/certtool/main/docs/use-cases/private-ca.md)
+- [Code signing](https://raw.githubusercontent.com/cloudfra/certtool/main/docs/use-cases/code-signing.md)
+- [YubiKey root CA](https://raw.githubusercontent.com/cloudfra/certtool/main/docs/use-cases/yubikey-root-ca.md)
+
+## Optional
+
+- [Go library](https://pkg.go.dev/github.com/cloudfra/certtool/pkg/certtool): generate certificates from Go code
+- [Contributing with an AI agent](https://raw.githubusercontent.com/cloudfra/certtool/main/AGENTS.md): repository layout, commands, and rules

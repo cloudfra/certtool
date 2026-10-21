@@ -176,6 +176,18 @@ read -rs -p "YubiKey PIN: " CERTTOOL_YUBIKEY_PIN && export CERTTOOL_YUBIKEY_PIN
 | ---- | ------- | ----------- |
 | `--version` | `false` | Print version and build information, then exit |
 
+## AI agents
+
+certtool ships a skill that teaches AI agents how to use it: choosing a mode, recipes, handling secrets, and common mistakes. It lives in [skills/certtool](skills/certtool/SKILL.md) and follows the [Agent Skills](https://agentskills.io) format, so any agent that supports skills can load it. In Claude Code, install it as a plugin:
+
+```text
+/plugin install certtool --marketplace cloudfra/certtool
+```
+
+Claude Code versions before 2.1.275 take two steps: `/plugin marketplace add cloudfra/certtool`, then `/plugin install certtool@certtool`.
+
+[llms.txt](llms.txt) indexes the documentation for language models, and [AGENTS.md](AGENTS.md) guides agents that change certtool itself.
+
 ## Downloads
 
 | OS | Arch | Link |

@@ -1,0 +1,12 @@
+{
+  "name": "certtool",
+  "description": "Teaches agents to generate X.509 certificates with certtool: TLS, private CAs, certificate hierarchies, code signing, and YubiKey root CAs.",
+  "author": {
+    "name": "Cloudfra"
+  },
+  "homepage": "https://github.com/cloudfra/certtool",
+  "repository": "https://github.com/cloudfra/certtool",
+  "license": "Apache-2.0",
+  "icon": "logo.png",
+  "keywords": ["certificates", "x509", "tls", "ca", "code-signing", "yubikey"]
+}
