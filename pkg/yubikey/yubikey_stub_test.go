@@ -51,3 +51,9 @@ func TestStubIsUnsupported(t *testing.T) {
 		t.Errorf("Close() err = %v, want nil", err)
 	}
 }
+
+func TestStubFactoryDefaults(t *testing.T) {
+	if got := (&Token{}).FactoryDefaults(); got != nil {
+		t.Errorf("FactoryDefaults() = %v, want nil", got)
+	}
+}

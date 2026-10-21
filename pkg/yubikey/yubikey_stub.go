@@ -47,5 +47,8 @@ func (*Token) GenerateRoot(*certtool.Args, TouchPolicy, bool) (*x509.Certificate
 	return nil, errUnsupported
 }
 
+// FactoryDefaults returns nothing, because this build cannot use YubiKeys.
+func (*Token) FactoryDefaults() []string { return nil }
+
 // Close does nothing.
 func (*Token) Close() error { return nil }

@@ -140,7 +140,7 @@ func DefaultArgs() Args {
 		PFXOutput:          "codesign.pfx",
 		OutputDir:          ".",
 		YubiKeySlot:        yubikey.DefaultSlot,
-		YubiKeyTouchPolicy: string(yubikey.TouchCached),
+		YubiKeyTouchPolicy: string(yubikey.DefaultTouchPolicy),
 	}
 }
 
@@ -183,6 +183,7 @@ func Run(args Args) error {
 			return err
 		}
 		slog.Info("signing with YubiKey root CA", "serial", token.Serial(), "slot", args.YubiKeySlot, "cn", issuer.Certificate.Subject.CommonName)
+		warnFactoryDefaults(token)
 	}
 
 	switch {
@@ -314,7 +315,18 @@ func runYubiKeyGenerateRoot(args Args) error {
 		return err
 	}
 	slog.Info("generated YubiKey root CA", "cn", cert.Subject.CommonName, "cert", args.PublicCertificate, "serial", token.Serial(), "slot", args.YubiKeySlot)
+	warnFactoryDefaults(token)
 	return nil
+}
+
+// warnFactoryDefaults warns when the YubiKey still uses factory default
+// credentials, which let anyone holding it use or replace the root CA key.
+func warnFactoryDefaults(token *yubikey.Token) {
+	defaults := token.FactoryDefaults()
+	if len(defaults) == 0 {
+		return
+	}
+	slog.Warn("the YubiKey still uses its factory default "+strings.Join(defaults, " and ")+", so anyone holding it can use or replace the root CA key; change them with `ykman piv access change-pin`, `ykman piv access change-puk`, and `ykman piv access change-management-key --generate --protect`", "serial", token.Serial())
 }
 
 func parseChain(chain string) ([]int, error) {

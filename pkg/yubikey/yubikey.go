@@ -34,6 +34,11 @@ import (
 // PIV digital signature slot, the conventional home of a signing key.
 const DefaultSlot = "9c"
 
+// DefaultTouchPolicy is the touch policy for a generated root CA key when none
+// is given. A touch for every signature means software on the computer cannot
+// sign without someone physically present.
+const DefaultTouchPolicy = TouchAlways
+
 // Config selects a YubiKey and the PIV slot holding the CA key.
 type Config struct {
 	// Serial selects the YubiKey with this serial number. Zero selects the

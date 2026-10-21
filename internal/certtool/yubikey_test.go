@@ -68,7 +68,7 @@ func TestValidateModesYubiKey(t *testing.T) {
 		},
 		{
 			name: "touch policy without generate",
-			set:  func(a *Args) { a.YubiKey, a.YubiKeyTouchPolicy = true, "always" },
+			set:  func(a *Args) { a.YubiKey, a.YubiKeyTouchPolicy = true, "cached" },
 			want: "only apply to --yubikey-generate-root",
 		},
 		{

@@ -17,6 +17,7 @@
 package yubikey
 
 import (
+	"bytes"
 	"crypto"
 	"crypto/ecdsa"
 	"crypto/ed25519"
@@ -35,6 +36,8 @@ import (
 
 	"github.com/cloudfra/certtool/pkg/certtool"
 	"github.com/go-piv/piv-go/v2/piv"
+	"github.com/google/go-cmp/cmp"
+	"github.com/google/go-cmp/cmp/cmpopts"
 )
 
 const (
@@ -951,5 +954,69 @@ func TestSpecWithYubiKey(t *testing.T) {
 	}
 	if card.signs != 2 {
 		t.Errorf("the YubiKey signed %d certificates, want the 2 top-level entries", card.signs)
+	}
+}
+
+// Without a touch policy, a generated root needs a touch for every signature.
+func TestGenerateRoot_DefaultTouchPolicy(t *testing.T) {
+	card := newFakeCard(fakeSerial)
+	token := openFake(t, card, Config{PIN: fakePIN})
+	if _, err := token.GenerateRoot(&certtool.Args{CommonName: "YubiKey Root CA", Validity: time.Hour}, "", false); err != nil {
+		t.Fatalf("GenerateRoot() err = %v", err)
+	}
+	if got := card.generated[0].TouchPolicy; got != piv.TouchPolicyAlways {
+		t.Errorf("touch policy = %v, want always", got)
+	}
+	if DefaultTouchPolicy != TouchAlways {
+		t.Errorf("DefaultTouchPolicy = %q, want always", DefaultTouchPolicy)
+	}
+}
+
+// FactoryDefaults reports the default PIN and a default management key, which
+// let anyone holding the YubiKey use or replace the root CA key.
+func TestFactoryDefaults(t *testing.T) {
+	customKey := bytes.Repeat([]byte{0x42}, 24)
+	const customPIN = "839201"
+	testCases := []struct {
+		name  string
+		cfg   Config
+		setup func(*fakeCard)
+		want  []string
+	}{
+		{name: "factory defaults", cfg: Config{PIN: fakePIN}, want: []string{"PIN", "management key"}},
+		{
+			name:  "default management key given explicitly",
+			cfg:   Config{PIN: customPIN, ManagementKey: hex.EncodeToString(piv.DefaultManagementKey)},
+			setup: func(c *fakeCard) { c.pin = customPIN },
+			want:  []string{"management key"},
+		},
+		{
+			name: "PIN-protected management key",
+			cfg:  Config{PIN: customPIN},
+			setup: func(c *fakeCard) {
+				c.pin, c.managementKey = customPIN, customKey
+				c.metadata = &piv.Metadata{ManagementKey: &customKey}
+			},
+		},
+		{
+			name:  "configured management key",
+			cfg:   Config{PIN: customPIN, ManagementKey: hex.EncodeToString(customKey)},
+			setup: func(c *fakeCard) { c.pin, c.managementKey = customPIN, customKey },
+		},
+	}
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			card := newFakeCard(fakeSerial)
+			if tc.setup != nil {
+				tc.setup(card)
+			}
+			token := openFake(t, card, tc.cfg)
+			if _, err := token.GenerateRoot(&certtool.Args{CommonName: "YubiKey Root CA", Validity: time.Hour}, TouchNever, false); err != nil {
+				t.Fatalf("GenerateRoot() err = %v", err)
+			}
+			if diff := cmp.Diff(tc.want, token.FactoryDefaults(), cmpopts.EquateEmpty()); diff != "" {
+				t.Errorf("FactoryDefaults() mismatch (-want +got):\n%s", diff)
+			}
+		})
 	}
 }

@@ -84,7 +84,8 @@ certtool --yubikey --ca --common-name "Acme Issuing CA" --organization Acme \
   --public-certificate issuing-ca.crt --private-key issuing-ca.key
 ```
 
-- Signing may make the YubiKey blink and wait for a touch. certtool logs `touch it if it is blinking`; tell the user to touch the key. This is the only time certtool waits.
+- Signing may make the YubiKey blink and wait for a touch; roots made by certtool need one for every signature by default. certtool logs `touch it if it is blinking`; tell the user to touch the key. This is the only time certtool waits.
+- A warning that the YubiKey still uses its factory default PIN or management key means the root CA is not protected; pass it on to the user with the `ykman` commands it names.
 - `--yubikey-serial` picks one YubiKey when several are connected. `--yubikey-slot` picks another slot (`9a`, `9c`, `9d`, `9e`, `82`-`95`).
 - `--yubikey-generate-root` refuses a slot that already holds a certificate. Only add `--yubikey-overwrite` when the user has said to destroy the existing key; it cannot be undone.
 
