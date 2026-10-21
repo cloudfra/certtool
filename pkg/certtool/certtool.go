@@ -29,6 +29,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -286,6 +287,15 @@ func createCertificateAndPrivateKeyPEM(args *Args) (*KeyPair, error) {
 
 	if parentSigner == nil {
 		parentSigner, _ = privateKey.(crypto.Signer)
+	} else {
+		if err := checkIssuer(parentTemplate, certTemplate, time.Now()); err != nil {
+			return nil, err
+		}
+		// A certificate is only valid while its issuer is, so it must not
+		// claim to outlive it.
+		if certTemplate.NotAfter.After(parentTemplate.NotAfter) {
+			certTemplate.NotAfter = parentTemplate.NotAfter
+		}
 	}
 
 	// The signature algorithm must match the key that signs the certificate,
@@ -393,6 +403,62 @@ func newCertificateTemplate(args *Args, pub crypto.PublicKey) (*x509.Certificate
 	}
 
 	return certTemplate, nil
+}
+
+// checkIssuer returns an error unless issuer can sign a certificate made from
+// template at time now in a way that clients will accept: it must be a CA that
+// is allowed to sign certificates, valid now, allow another CA below it when
+// template is one, and allow the extended key usages template asks for.
+func checkIssuer(issuer *x509.Certificate, template *x509.Certificate, now time.Time) error {
+	cn := issuer.Subject.CommonName
+	switch {
+	case !issuer.BasicConstraintsValid || !issuer.IsCA:
+		return fmt.Errorf("parent certificate %q is not a CA certificate, so it cannot sign other certificates; create the parent with --ca", cn)
+	case issuer.KeyUsage != 0 && issuer.KeyUsage&x509.KeyUsageCertSign == 0:
+		return fmt.Errorf("parent certificate %q does not allow certificate signing (key usage cert sign)", cn)
+	case now.After(issuer.NotAfter):
+		return fmt.Errorf("parent certificate %q expired at %s", cn, issuer.NotAfter.Format(time.RFC3339))
+	case now.Before(issuer.NotBefore):
+		return fmt.Errorf("parent certificate %q is not valid until %s", cn, issuer.NotBefore.Format(time.RFC3339))
+	case template.IsCA && issuer.MaxPathLenZero && issuer.MaxPathLen == 0:
+		return fmt.Errorf("parent certificate %q has a path length of 0, so it can only sign leaf certificates, not another CA", cn)
+	}
+
+	if len(issuer.ExtKeyUsage) == 0 || slices.Contains(issuer.ExtKeyUsage, x509.ExtKeyUsageAny) {
+		return nil
+	}
+	for _, usage := range template.ExtKeyUsage {
+		if slices.Contains(issuer.ExtKeyUsage, usage) {
+			continue
+		}
+		err := fmt.Errorf("parent certificate %q is limited to %s, so clients would reject a %s certificate it signs", cn, extKeyUsageNames(issuer.ExtKeyUsage), extKeyUsageName(usage))
+		if usage == x509.ExtKeyUsageCodeSigning {
+			// CAs made by --ca, --chain, and --spec are limited to TLS.
+			err = fmt.Errorf("%w; sign code signing certificates with a CA that has no extended key usage limit, such as a YubiKey root, or leave them self-signed", err)
+		}
+		return err
+	}
+	return nil
+}
+
+func extKeyUsageNames(usages []x509.ExtKeyUsage) string {
+	names := make([]string, 0, len(usages))
+	for _, u := range usages {
+		names = append(names, extKeyUsageName(u))
+	}
+	return strings.Join(names, " and ")
+}
+
+func extKeyUsageName(usage x509.ExtKeyUsage) string {
+	switch usage {
+	case x509.ExtKeyUsageServerAuth:
+		return "TLS server"
+	case x509.ExtKeyUsageClientAuth:
+		return "TLS client"
+	case x509.ExtKeyUsageCodeSigning:
+		return "code signing"
+	}
+	return fmt.Sprintf("extended key usage %d", usage)
 }
 
 // signatureAlgorithm returns the algorithm used to sign certificates with the

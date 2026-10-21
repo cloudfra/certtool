@@ -19,7 +19,7 @@ A spec file is a YAML list of `CertificateSpec` entries. Each entry defines one 
 | ----- | ---- | -------- | ----------- |
 | `commonName` | string | yes | Subject common name (CN). |
 | `certificateAuthority` | bool | | Must be `true` when the spec has `children`. |
-| `codeSigning` | bool | | Generate a code signing certificate instead of TLS. |
+| `codeSigning` | bool | | Generate a code signing certificate instead of TLS. A child must have the same value as its parent CA, so put code signing certificates at the top level. |
 | `target` | string | | Platform profile for code signing (`windows7`, `windows10`, `windows11`, `linux`). Default: `windows10`. |
 | `pfxPassword` | string | | Password for the `.pfx` bundle (code signing only). |
 | `keyType` | string | | Key algorithm and size (`RSA-2048`, `RSA-4096`, `ECDSA-256`, `ECDSA-384`). |

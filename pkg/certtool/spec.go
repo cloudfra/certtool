@@ -145,7 +145,13 @@ func validateSpec(spec *CertificateSpec) error {
 		return fmt.Errorf("spec %q has children but certificateAuthority is not true", spec.CommonName)
 	}
 	for i := range spec.Children {
-		if err := validateSpec(&spec.Children[i]); err != nil {
+		child := &spec.Children[i]
+		// A CA's extended key usage limits what it can issue, so a TLS CA
+		// cannot sign code signing certificates and the reverse.
+		if child.CodeSigning != spec.CodeSigning {
+			return fmt.Errorf("spec %q has codeSigning %t but its parent %q has codeSigning %t; clients reject a certificate whose purpose its CA does not allow, so make code signing certificates top-level entries", child.CommonName, child.CodeSigning, spec.CommonName, spec.CodeSigning)
+		}
+		if err := validateSpec(child); err != nil {
 			return err
 		}
 	}

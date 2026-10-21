@@ -100,7 +100,8 @@ certtool --yubikey --ca --common-name "Acme Issuing CA" --organization Acme \
 | Mistake | Fix |
 | ------- | --- |
 | `--validity 365d` (exit 2) | Go durations only: `8760h` is 1 year, `87600h` is 10 years. |
-| Code signing certificate signed by a `--ca` root fails `signtool verify` | Roots made with `--ca` or a spec CA can only issue TLS certificates. Leave code signing certificates standalone, or sign them with `--yubikey`. |
+| `parent certificate ... is limited to TLS server and TLS client` | Roots made with `--ca` or a spec CA can only issue TLS certificates. Leave code signing certificates standalone, or sign them with `--yubikey`. |
+| `parent certificate ... is not a CA certificate` or `... expired at` | The parent must be a current CA made with `--ca`. A child's validity is cut to end when its parent's does. |
 | `--output-dir` ignored | It only applies to `--chain` and `--spec`. Put the directory in `--public-certificate` and `--private-key` instead. |
 | `--parent-public-certificate is required with --parent-private-key` | The two parent flags always go together. |
 | `--yubikey needs the YubiKey PIN` | Set `CERTTOOL_YUBIKEY_PIN` (or `--yubikey-pin`). |
