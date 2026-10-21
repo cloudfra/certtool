@@ -31,6 +31,7 @@ import (
 	"time"
 
 	"github.com/cloudfra/certtool/internal"
+	"github.com/cloudfra/certtool/internal/safefile"
 	certlib "github.com/cloudfra/certtool/pkg/certtool"
 	"github.com/cloudfra/certtool/pkg/yubikey"
 )
@@ -392,7 +393,7 @@ func writeSpecFile(specs []certlib.CertificateSpec, path string) error {
 	if err != nil {
 		return err
 	}
-	if err := os.WriteFile(filepath.Clean(path), data, 0o600); err != nil {
+	if err := safefile.WritePrivate(filepath.Clean(path), data); err != nil {
 		return err
 	}
 	slog.Info("spec written", "path", path)

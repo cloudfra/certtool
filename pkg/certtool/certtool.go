@@ -33,6 +33,8 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	"github.com/cloudfra/certtool/internal/safefile"
 )
 
 const (
@@ -802,11 +804,12 @@ func GenerateAndWriteKeyPair(args *Args, publicCertificateFile string, privateKe
 }
 
 // WriteKeyPair writes the public certificate and private key to the specified files with mode 0644 and 0600 respectively.
+// Existing files are replaced and get those modes; a symbolic link at either path is replaced rather than followed.
 func WriteKeyPair(kp *KeyPair, publicCertificateFile string, privateKeyFile string) error {
-	if err := writeFile(publicCertificateFile, kp.PublicCertificate, 0o644); err != nil {
+	if err := safefile.WritePublic(publicCertificateFile, kp.PublicCertificate); err != nil {
 		return err
 	}
-	if err := writeFile(privateKeyFile, kp.PrivateKey, 0o600); err != nil {
+	if err := safefile.WritePrivate(privateKeyFile, kp.PrivateKey); err != nil {
 		return err
 	}
 	return nil
@@ -814,7 +817,7 @@ func WriteKeyPair(kp *KeyPair, publicCertificateFile string, privateKeyFile stri
 
 // WriteCertificate writes the PEM encoding of cert to publicCertificateFile with mode 0644.
 func WriteCertificate(cert *x509.Certificate, publicCertificateFile string) error {
-	return writeFile(publicCertificateFile, EncodeCertificatePEM(cert), 0o644)
+	return safefile.WritePublic(publicCertificateFile, EncodeCertificatePEM(cert))
 }
 
 // WritePFX writes the PKCS#12 bundle from kp to pfxFile with mode 0600.
@@ -822,9 +825,5 @@ func WritePFX(kp *KeyPair, pfxFile string) error {
 	if len(kp.PFX) == 0 {
 		return fmt.Errorf("KeyPair does not contain PKCS#12 data")
 	}
-	return writeFile(pfxFile, kp.PFX, 0o600)
-}
-
-func writeFile(fileName string, data []byte, mode os.FileMode) error {
-	return os.WriteFile(fileName, data, mode)
+	return safefile.WritePrivate(pfxFile, kp.PFX)
 }
