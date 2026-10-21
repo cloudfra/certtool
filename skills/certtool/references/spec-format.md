@@ -16,7 +16,7 @@ A spec is a YAML list of certificates. An entry with `children` is a CA that sig
 | `codeSigning` | `true` for a code signing certificate. Keep these at the top level of the spec: a child must have the same `codeSigning` value as its CA, so a TLS CA cannot hold code signing children. |
 | `target` | Code signing profile: `windows7`, `windows10` (default), `windows11`, `linux`. |
 | `pfxPassword` | Password for the `.pfx` (code signing only). |
-| `filename` | Output file name without extension. |
+| `filename` | Output file name without extension. Directories, `..`, and absolute paths are rejected. |
 
 ## Output names
 
