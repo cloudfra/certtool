@@ -42,10 +42,9 @@ type Config struct {
 	// Slot is the PIV slot holding the CA key and certificate, in hex: 9a, 9c,
 	// 9d, 9e, or a retired key management slot 82 through 95. Defaults to 9c.
 	Slot string
-	// PIN unlocks the CA key. When empty, PINPrompt is called if a PIN is needed.
+	// PIN unlocks the CA key. It is required to sign or to generate a key;
+	// the PIN is never prompted for.
 	PIN string
-	// PINPrompt interactively requests the PIN. It is called at most once.
-	PINPrompt func() (string, error)
 	// ManagementKey authorizes writing keys and certificates to the YubiKey, in
 	// hex. When empty, the PIN-protected management key stored on the YubiKey
 	// is used if there is one, otherwise the factory default management key.

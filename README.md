@@ -97,6 +97,9 @@ Every certificate gets a unique name (for example `Acme Root CA`, `Acme Intermed
 ### YubiKey root CA
 
 ```bash
+# The PIN comes from CERTTOOL_YUBIKEY_PIN or --yubikey-pin; certtool never prompts
+read -rs -p "YubiKey PIN: " CERTTOOL_YUBIKEY_PIN && export CERTTOOL_YUBIKEY_PIN
+
 # Once: generate the root CA key on the YubiKey and write its certificate to root.crt
 ./certtool --yubikey-generate-root --common-name "Acme Root CA" --organization Acme \
   --key-type ECDSA-384 --validity 87600h --public-certificate root.crt
@@ -162,7 +165,7 @@ Every certificate gets a unique name (for example `Acme Root CA`, `Acme Intermed
 | `--yubikey-generate-root` | `false` | Generate a root CA key on a YubiKey, store its self-signed certificate there, and write it to `--public-certificate`. Supports `ECDSA-256`, `ECDSA-384`, `RSA-2048`, and `RSA-4096` (firmware 5.7+) |
 | `--yubikey-serial` | | Serial number of the YubiKey to use. Required only when more than one is connected |
 | `--yubikey-slot` | `9c` | PIV slot holding the root CA: `9a`, `9c`, `9d`, `9e`, or `82` through `95` |
-| `--yubikey-pin` | | YubiKey PIN (defaults to `CERTTOOL_YUBIKEY_PIN`, otherwise prompted for) |
+| `--yubikey-pin` | | YubiKey PIN, required by `--yubikey` and `--yubikey-generate-root` (defaults to `CERTTOOL_YUBIKEY_PIN`; certtool never prompts) |
 | `--yubikey-management-key` | | Management key in hex for `--yubikey-generate-root` (defaults to `CERTTOOL_YUBIKEY_MANAGEMENT_KEY`, otherwise the PIN-protected or factory default key) |
 | `--yubikey-touch-policy` | `cached` | Touch requirement for a key made by `--yubikey-generate-root`: `never`, `always`, or `cached` (one touch per 15 seconds) |
 | `--yubikey-overwrite` | `false` | Allow `--yubikey-generate-root` to replace a slot that already holds a certificate. The old key is destroyed |
