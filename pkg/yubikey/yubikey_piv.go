@@ -319,20 +319,13 @@ func (t *Token) signer(pub crypto.PublicKey, auth piv.KeyAuth) (crypto.Signer, e
 	return &tokenSigner{token: t, key: signer, pub: pub}, nil
 }
 
-// getPIN returns the configured PIN, prompting for it the first time if needed.
+// getPIN returns the configured PIN. It never prompts for one.
 func (t *Token) getPIN() (string, error) {
 	if t.pinRejected {
 		return "", t.errorf(nil, "the PIN was already rejected, so it is not being tried again to avoid blocking it")
 	}
 	if t.pin == "" {
-		if t.cfg.PINPrompt == nil {
-			return "", t.errorf(nil, "a PIN is needed but none was provided")
-		}
-		pin, err := t.cfg.PINPrompt()
-		if err != nil {
-			return "", t.errorf(err, "cannot read the PIN")
-		}
-		t.pin = pin
+		return "", t.errorf(nil, "a PIN is needed but none was provided")
 	}
 	if n := len(t.pin); n < minPINLength || n > maxPINLength {
 		// Rejecting it here keeps an impossible PIN from using up an attempt.

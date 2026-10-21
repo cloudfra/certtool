@@ -207,9 +207,9 @@ func TestIssuer(t *testing.T) {
 	card := newFakeCard(fakeSerial)
 	root := putRoot(t, card, piv.SlotSignature, nil)
 
-	prompts, signs := 0, 0
+	signs := 0
 	token := openFake(t, card, Config{
-		PINPrompt:  func() (string, error) { prompts++; return fakePIN, nil },
+		PIN:        fakePIN,
 		BeforeSign: func() { signs++ },
 	})
 
@@ -229,8 +229,9 @@ func TestIssuer(t *testing.T) {
 		verifyChain(t, root, leaf)
 	}
 
-	if prompts != 1 {
-		t.Errorf("PIN prompted %d times, want once", prompts)
+	// PINPolicyAlways: the PIN is verified for every signature.
+	if card.pinAttempts != 2 {
+		t.Errorf("PIN verified %d times, want 2", card.pinAttempts)
 	}
 	if signs != 2 || card.signs != 2 {
 		t.Errorf("BeforeSign called %d times and YubiKey signed %d times, want 2 and 2", signs, card.signs)
@@ -416,11 +417,6 @@ func TestIssuer_PINErrors(t *testing.T) {
 		{
 			name: "no PIN",
 			want: []string{tokenPrefix, "a PIN is needed but none was provided"},
-		},
-		{
-			name: "prompt fails",
-			cfg:  Config{PINPrompt: func() (string, error) { return "", errors.New("stdin is not a terminal") }},
-			want: []string{tokenPrefix, "cannot read the PIN", "stdin is not a terminal"},
 		},
 		{
 			name:    "touch timeout",

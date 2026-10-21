@@ -14,6 +14,7 @@ YubiKey slot 9c: Acme Root CA            10 years, signs only when the YubiKey i
 
 * [Scenario 1: certtool generates the root on the YubiKey](#scenario-1-certtool-generates-the-root). Start here if the YubiKey has no CA yet.
 * [Scenario 2: the YubiKey already holds a CA](#scenario-2-the-yubikey-already-holds-a-ca). Start here if a root CA is already in a slot, whether certtool, ykman, or another tool put it there.
+* [Providing the PIN](#providing-the-pin). Needed by both scenarios.
 * [YAML spec](#yaml-spec-the-intermediate-and-its-leaves-in-one-command). Either scenario, with the intermediate and leaves described in one file.
 
 `--yubikey` only signs with a root CA that is already on the YubiKey. It never creates one by itself, and fails with `there is no certificate in the slot` if the slot is empty.
@@ -43,6 +44,26 @@ Any YubiKey with the PIV applet works (YubiKey 4, 5, and later). RSA-4096 keys n
 
 The examples use [YubiKey Manager](https://www.yubico.com/support/download/yubikey-manager/) (`ykman`) to inspect and prepare the YubiKey. certtool itself does not need it.
 
+## Providing the PIN
+
+certtool runs in automation, so it never prompts for anything. Every `--yubikey` and `--yubikey-generate-root` command needs the YubiKey PIN, from the `CERTTOOL_YUBIKEY_PIN` environment variable or `--yubikey-pin`, and fails straight away without it:
+
+```text
+--yubikey needs the YubiKey PIN to sign with the key on the YubiKey: set --yubikey-pin or the CERTTOOL_YUBIKEY_PIN environment variable
+```
+
+Prefer the environment variable, because a `--yubikey-pin` value is saved in your shell history. Read it without echoing it:
+
+```bash
+read -rs -p "YubiKey PIN: " CERTTOOL_YUBIKEY_PIN && export CERTTOOL_YUBIKEY_PIN
+```
+
+```powershell
+$env:CERTTOOL_YUBIKEY_PIN = Read-Host -Prompt "YubiKey PIN" -MaskInput   # PowerShell 7.1 or newer
+```
+
+In CI, set it from your secret store. The commands below assume it is set. The only thing certtool waits for is a touch of the YubiKey, which it logs as `signing with the YubiKey, touch it if it is blinking`.
+
 ## Scenario 1: certtool generates the root
 
 ### 1. Prepare the YubiKey
@@ -65,7 +86,7 @@ certtool --yubikey-generate-root --common-name "Acme Root CA" --organization Acm
   --key-type ECDSA-384 --validity 87600h --public-certificate root.crt
 ```
 
-certtool asks for the PIN, generates the key in slot `9c`, self-signs a 10 year root certificate, stores it in the slot, and writes a copy to `root.crt`. Touch the YubiKey when it blinks.
+certtool generates the key in slot `9c`, self-signs a 10 year root certificate, stores it in the slot, and writes a copy to `root.crt`. Touch the YubiKey when it blinks.
 
 * `root.crt` is the public certificate. It is not secret: distribute it to every machine that should trust your CA.
 * The root is not restricted to particular uses, so it can sign TLS, client, and code signing certificates.
@@ -159,7 +180,7 @@ certtool --yubikey --ca --common-name "Acme Issuing CA" --organization Acme \
   --public-certificate issuing-ca.crt --private-key issuing-ca.key
 ```
 
-certtool reads the CA certificate from the slot, checks it, asks for the PIN, and signs. If the PIN, slot, or certificate is wrong, it stops before writing any file. certtool does not shorten the intermediate to fit the root, and certificates stop verifying when the root expires. Check the root's expiry from step 1 and choose a `--validity` that ends before it.
+certtool reads the CA certificate from the slot, checks it, and signs with the PIN. If the PIN, slot, or certificate is wrong, it stops before writing any file. certtool does not shorten the intermediate to fit the root, and certificates stop verifying when the root expires. Check the root's expiry from step 1 and choose a `--validity` that ends before it.
 
 ### 3. Create leaf certificates from the intermediate
 
@@ -238,7 +259,7 @@ certtool --yubikey --spec certs.yaml --output-dir certs
 certtool --yubikey --yubikey-slot 82 --yubikey-serial 12345678 --spec certs.yaml --output-dir certs
 ```
 
-The YubiKey asks for the PIN once and signs twice, once for each top-level entry. It writes:
+The YubiKey signs twice, once for each top-level entry. It writes:
 
 ```text
 certs/issuing-ca.cert, certs/issuing-ca.key           signed by the YubiKey root
@@ -272,16 +293,13 @@ See [Code signing](code-signing.md) for using `release.pfx`.
 
 ## Automation
 
-For scripts, pass the PIN in the environment instead of the prompt:
+certtool never prompts, so the commands in this guide run unchanged in scripts and CI once `CERTTOOL_YUBIKEY_PIN` is set (see [Providing the PIN](#providing-the-pin)). For example, in a GitHub Actions job on a self-hosted runner with the YubiKey attached:
 
-```bash
-CERTTOOL_YUBIKEY_PIN="your-pin" certtool --yubikey --ca --common-name "Acme Issuing CA" \
-  --public-certificate issuing-ca.crt --private-key issuing-ca.key
-```
-
-```powershell
-$env:CERTTOOL_YUBIKEY_PIN = Read-Host -Prompt "YubiKey PIN" -MaskInput   # PowerShell 7.1 or newer
-certtool --yubikey --ca --common-name "Acme Issuing CA" --public-certificate issuing-ca.crt --private-key issuing-ca.key
+```yaml
+- name: Sign the issuing CA
+  env:
+    CERTTOOL_YUBIKEY_PIN: ${{ secrets.YUBIKEY_PIN }}
+  run: certtool --yubikey --ca --common-name "Acme Issuing CA" --public-certificate issuing-ca.crt --private-key issuing-ca.key
 ```
 
 A root generated with the default `cached` touch policy still needs a touch. For signing with no one present, generate the root with `--yubikey-touch-policy never`. Then anyone with the YubiKey and the PIN can sign, so keep both protected.
@@ -320,4 +338,4 @@ Every YubiKey error names the YubiKey, its firmware, and the slot, and says how 
 | `the slot already holds the certificate` | Use another slot, or `--yubikey-overwrite` to destroy the old key |
 | `need YubiKey firmware` | Use a key type your firmware supports, such as `ECDSA-384` |
 | `expired` or `is not valid until` | Replace the root (see [Backups and replacement](#backups-and-replacement)), or check the computer's clock |
-| `stdin is not a terminal` | Set `CERTTOOL_YUBIKEY_PIN` or `--yubikey-pin` |
+| `needs the YubiKey PIN` | Set `CERTTOOL_YUBIKEY_PIN` or `--yubikey-pin`. certtool never prompts for it |
