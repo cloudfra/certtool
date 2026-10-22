@@ -321,6 +321,25 @@ certtool --chain 1,1 --common-name svc --organization Acme --name-prefix prod --
 certtool --chain 1,1 --common-name svc --organization Acme --name-prefix staging --output-dir ./certs
 ```
 
+## Running a spec again
+
+`--spec` and `--chain` reuse what is already in `--output-dir`. A certificate whose `.crt` and `.key` files both exist is kept, and only missing certificates are generated, signed by their existing or new parents. To extend a hierarchy, add entries to the spec and run it again:
+
+```bash
+certtool --spec certs.yaml --output-dir ./certs   # creates the root CA and api
+# add a web entry under the root CA in certs.yaml, then:
+certtool --spec certs.yaml --output-dir ./certs   # reuses the root CA and api, creates web
+```
+
+A reused certificate must still fit the spec. certtool stops with an error, before touching that certificate, when:
+
+- only one of its `.crt` and `.key` files exists, or the key does not match the certificate;
+- its common name or `certificateAuthority` differs from the spec;
+- it has expired;
+- it is not signed by its parent in the spec, for example because the parent's files were deleted and the parent was regenerated.
+
+A reused entry's other fields, such as `hostnames` or `validity`, are not compared. To regenerate one certificate, delete its `.crt` and `.key` files, along with those of everything below it. To regenerate everything, pass `--overwrite`. A code signing entry whose `.pfx` is missing gets a new `.pfx` built from its existing key.
+
 ## Exporting a spec with --export-spec
 
 `--export-spec <path>` writes the spec as YAML instead of generating certificates. It works with `--chain`, `--spec`, and plain flags, so you can start from a generated hierarchy and customise it.

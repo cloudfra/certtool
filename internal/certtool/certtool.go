@@ -130,6 +130,8 @@ type Args struct {
 	YubiKeyTouchPolicy string
 	// YubiKeyOverwrite is --yubikey-overwrite.
 	YubiKeyOverwrite bool
+	// Overwrite is --overwrite.
+	Overwrite bool
 
 	// Version is --version.
 	Version bool
@@ -222,6 +224,9 @@ func validateModes(args Args) error {
 	}
 	if args.YubiKey && args.YubiKeyGenerateRoot {
 		return errors.New("--yubikey and --yubikey-generate-root are mutually exclusive")
+	}
+	if args.Overwrite && !hasChain && !hasSpec {
+		return errors.New("--overwrite only applies to --spec and --chain, which otherwise reuse the certificates already in --output-dir")
 	}
 	if hasCAConstraints := args.MaxPathLen != defaults.MaxPathLen || args.PermittedDNSDomains != "" || args.PermittedIPRanges != ""; hasCAConstraints {
 		switch {
@@ -377,7 +382,7 @@ func runChain(args Args, issuer *certlib.Issuer) error {
 	if args.ExportSpec != "" {
 		return writeSpecFile(specs, args.ExportSpec)
 	}
-	return generateAndLogResults(specs, args.OutputDir, issuer)
+	return generateAndLogResults(specs, args, issuer)
 }
 
 // pfxPassword returns --pfx-password, or the PFXPasswordEnv environment
@@ -453,17 +458,24 @@ func writeSpecFile(specs []certlib.CertificateSpec, path string) error {
 	return nil
 }
 
-func generateAndLogResults(specs []certlib.CertificateSpec, outputDir string, issuer *certlib.Issuer) error {
-	results, err := certlib.GenerateFromSpecWithIssuer(specs, outputDir, issuer)
+func generateAndLogResults(specs []certlib.CertificateSpec, args Args, issuer *certlib.Issuer) error {
+	results, err := certlib.GenerateFromSpecWithOptions(specs, args.OutputDir, certlib.SpecOptions{Issuer: issuer, Overwrite: args.Overwrite})
+	if errors.Is(err, certlib.ErrExistingFiles) {
+		return fmt.Errorf("%w; or pass --overwrite to regenerate every certificate", err)
+	}
 	if err != nil {
 		return err
 	}
 
 	for _, r := range results {
+		msg := "generated certificate"
+		if r.Reused {
+			msg = "reused existing certificate"
+		}
 		if r.PFXPath != "" {
-			slog.Info("generated certificate", "cn", r.CommonName, "cert", r.CertPath, "key", r.KeyPath, "pfx", r.PFXPath)
+			slog.Info(msg, "cn", r.CommonName, "cert", r.CertPath, "key", r.KeyPath, "pfx", r.PFXPath)
 		} else {
-			slog.Info("generated certificate", "cn", r.CommonName, "cert", r.CertPath, "key", r.KeyPath)
+			slog.Info(msg, "cn", r.CommonName, "cert", r.CertPath, "key", r.KeyPath)
 		}
 	}
 	return nil
@@ -490,7 +502,7 @@ func runSpec(args Args, issuer *certlib.Issuer) error {
 		}
 		return writeSpecFile(specs, args.ExportSpec)
 	}
-	return generateAndLogResults(specs, args.OutputDir, issuer)
+	return generateAndLogResults(specs, args, issuer)
 }
 
 func generateAndWriteKeyPair(args Args, certArgs *certlib.Args) error {

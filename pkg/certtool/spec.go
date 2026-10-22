@@ -15,6 +15,9 @@
 package certtool
 
 import (
+	"crypto"
+	"crypto/x509"
+	"errors"
 	"fmt"
 	"net"
 	"os"
@@ -455,17 +458,49 @@ type GenerationOutput struct {
 	// PFXPath is the filesystem path where the PKCS#12 bundle was written.
 	// Empty when the certificate does not produce PFX output.
 	PFXPath string
+	// Reused is set when the certificate and key already existed in the
+	// output directory and were kept instead of generated.
+	Reused bool
 }
 
-// GenerateFromSpec generates certificates for all specs and writes them to outputDir.
+// ErrExistingFiles marks errors about certificate files in the output
+// directory that cannot be reused.
+var ErrExistingFiles = errors.New("existing certificate files cannot be reused")
+
+// SpecOptions controls GenerateFromSpecWithOptions.
+type SpecOptions struct {
+	// Issuer, when not nil, signs the top-level specs, so every tree chains
+	// to it instead of being self-signed.
+	Issuer *Issuer
+	// Overwrite regenerates every certificate and key, replacing the files
+	// in the output directory. By default a certificate whose files already
+	// exist is reused, so a spec can be extended without resetting the
+	// hierarchy it describes.
+	Overwrite bool
+}
+
+// GenerateFromSpec generates certificates for all specs and writes them to
+// outputDir, reusing certificates whose files already exist there.
 func GenerateFromSpec(specs []CertificateSpec, outputDir string) ([]GenerationOutput, error) {
-	return GenerateFromSpecWithIssuer(specs, outputDir, nil)
+	return GenerateFromSpecWithOptions(specs, outputDir, SpecOptions{})
 }
 
-// GenerateFromSpecWithIssuer generates certificates for all specs and writes
-// them to outputDir. When issuer is not nil it signs the top-level specs, so
-// every generated tree chains to the issuer instead of being self-signed.
+// GenerateFromSpecWithIssuer is GenerateFromSpec with the top-level specs
+// signed by issuer.
 func GenerateFromSpecWithIssuer(specs []CertificateSpec, outputDir string, issuer *Issuer) ([]GenerationOutput, error) {
+	return GenerateFromSpecWithOptions(specs, outputDir, SpecOptions{Issuer: issuer})
+}
+
+// GenerateFromSpecWithOptions generates certificates for all specs and writes
+// them to outputDir.
+//
+// Unless opts.Overwrite is set, a certificate whose certificate and key files
+// already exist is reused, and only the certificates that are missing are
+// generated, signed by their reused or new parents. A reused certificate must
+// still fit the spec and the hierarchy: its key must match it, its common name
+// and CA flag must match the spec, it must not have expired, and it must be
+// signed by its parent. Otherwise the error wraps ErrExistingFiles.
+func GenerateFromSpecWithOptions(specs []CertificateSpec, outputDir string, opts SpecOptions) ([]GenerationOutput, error) {
 	// Specs built in code skip UnmarshalSpec, so check every filename before
 	// anything is generated or written.
 	if err := validateFilenames(specs); err != nil {
@@ -479,7 +514,7 @@ func GenerateFromSpecWithIssuer(specs []CertificateSpec, outputDir string, issue
 	var results []GenerationOutput
 
 	for i := range specs {
-		out, err := generateSpec(&specs[i], nil, issuer, outputDir, nil, filenames)
+		out, err := generateSpec(&specs[i], nil, opts.Issuer, outputDir, nil, filenames, opts.Overwrite)
 		if err != nil {
 			return nil, err
 		}
@@ -509,10 +544,11 @@ func specFilename(ancestorCNs []string, spec *CertificateSpec) string {
 	return strings.Join(parts, "-")
 }
 
-func generateSpec(spec *CertificateSpec, parentKP *KeyPair, issuer *Issuer, outputDir string, ancestorCNs []string, filenames map[string]string) ([]GenerationOutput, error) {
+func generateSpec(spec *CertificateSpec, parentKP *KeyPair, issuer *Issuer, outputDir string, ancestorCNs []string, filenames map[string]string, overwrite bool) ([]GenerationOutput, error) {
 	basename := specFilename(ancestorCNs, spec)
 	certPath := filepath.Join(outputDir, basename+".crt")
 	keyPath := filepath.Join(outputDir, basename+".key")
+	pfxPath := filepath.Join(outputDir, basename+".pfx")
 
 	if existingCN, ok := filenames[basename]; ok {
 		return nil, fmt.Errorf("filename collision: %q and %q both resolve to %q", existingCN, spec.CommonName, basename)
@@ -545,13 +581,25 @@ func generateSpec(spec *CertificateSpec, parentKP *KeyPair, issuer *Issuer, outp
 		args.PermittedIPRanges = ranges
 	}
 
-	kp, err := GenerateKeyPair(args)
-	if err != nil {
-		return nil, fmt.Errorf("cannot generate certificate for %q: %w", spec.CommonName, err)
+	var kp *KeyPair
+	reused := false
+	if !overwrite {
+		var err error
+		kp, err = reuseKeyPair(spec, args, certPath, keyPath, pfxPath)
+		if err != nil {
+			return nil, err
+		}
+		reused = kp != nil
 	}
-
-	if err := WriteKeyPair(kp, certPath, keyPath); err != nil {
-		return nil, fmt.Errorf("cannot write certificate for %q: %w", spec.CommonName, err)
+	if !reused {
+		var err error
+		kp, err = GenerateKeyPair(args)
+		if err != nil {
+			return nil, fmt.Errorf("cannot generate certificate for %q: %w", spec.CommonName, err)
+		}
+		if err := WriteKeyPair(kp, certPath, keyPath); err != nil {
+			return nil, fmt.Errorf("cannot write certificate for %q: %w", spec.CommonName, err)
+		}
 	}
 
 	output := GenerationOutput{
@@ -559,12 +607,14 @@ func generateSpec(spec *CertificateSpec, parentKP *KeyPair, issuer *Issuer, outp
 		KeyPair:    kp,
 		CertPath:   certPath,
 		KeyPath:    keyPath,
+		Reused:     reused,
 	}
 
 	if len(kp.PFX) > 0 {
-		pfxPath := filepath.Join(outputDir, basename+".pfx")
-		if err := WritePFX(kp, pfxPath); err != nil {
-			return nil, fmt.Errorf("cannot write PFX for %q: %w", spec.CommonName, err)
+		if !reused || !fileExists(pfxPath) {
+			if err := WritePFX(kp, pfxPath); err != nil {
+				return nil, fmt.Errorf("cannot write PFX for %q: %w", spec.CommonName, err)
+			}
 		}
 		output.PFXPath = pfxPath
 	}
@@ -573,7 +623,7 @@ func generateSpec(spec *CertificateSpec, parentKP *KeyPair, issuer *Issuer, outp
 
 	childAncestors := append(append([]string{}, ancestorCNs...), spec.CommonName)
 	for i := range spec.Children {
-		childResults, err := generateSpec(&spec.Children[i], kp, nil, outputDir, childAncestors, filenames)
+		childResults, err := generateSpec(&spec.Children[i], kp, nil, outputDir, childAncestors, filenames, overwrite)
 		if err != nil {
 			return nil, err
 		}
@@ -581,6 +631,100 @@ func generateSpec(spec *CertificateSpec, parentKP *KeyPair, issuer *Issuer, outp
 	}
 
 	return results, nil
+}
+
+// reuseKeyPair returns the key pair already in certPath and keyPath, or nil
+// when neither file exists. The pair must still fit spec and its place in the
+// hierarchy described by args; anything else is an error wrapping
+// ErrExistingFiles, because reusing it would break the chain or ignore the
+// spec. For a code signing spec whose .pfx is missing, the .pfx is rebuilt
+// from the reused key.
+func reuseKeyPair(spec *CertificateSpec, args *Args, certPath, keyPath, pfxPath string) (*KeyPair, error) {
+	hasCert, hasKey := fileExists(certPath), fileExists(keyPath)
+	switch {
+	case !hasCert && !hasKey:
+		return nil, nil
+	case !hasKey:
+		return nil, fmt.Errorf("%w: %s exists but its key %s does not; delete %s to regenerate %q", ErrExistingFiles, certPath, keyPath, certPath, spec.CommonName)
+	case !hasCert:
+		return nil, fmt.Errorf("%w: %s exists but its certificate %s does not; delete %s to regenerate %q", ErrExistingFiles, keyPath, certPath, keyPath, spec.CommonName)
+	}
+
+	kp, err := ReadKeyPairFromFile(certPath, keyPath)
+	if err != nil {
+		return nil, fmt.Errorf("%w: %v", ErrExistingFiles, err)
+	}
+	cert, key, err := ReadKeyPair(kp.PublicCertificate, kp.PrivateKey)
+	if err != nil {
+		return nil, fmt.Errorf("%w: %s and %s: %v", ErrExistingFiles, certPath, keyPath, err)
+	}
+	problem := func(format string, a ...any) error {
+		return fmt.Errorf("%w: %s %s; delete %s and %s to regenerate %q", ErrExistingFiles, certPath, fmt.Sprintf(format, a...), certPath, keyPath, spec.CommonName)
+	}
+	signer, ok := key.(crypto.Signer)
+	if !ok {
+		return nil, problem("has a key of type %T that cannot sign", key)
+	}
+	if pub, ok := cert.PublicKey.(interface{ Equal(crypto.PublicKey) bool }); !ok || !pub.Equal(signer.Public()) {
+		return nil, problem("does not match the key in %s", keyPath)
+	}
+	if cert.Subject.CommonName != spec.CommonName {
+		return nil, problem("is for %q, not %q", cert.Subject.CommonName, spec.CommonName)
+	}
+	if cert.IsCA != spec.CertificateAuthority {
+		return nil, problem("has CA %t but the spec has certificateAuthority %t", cert.IsCA, spec.CertificateAuthority)
+	}
+	if time.Now().After(cert.NotAfter) {
+		return nil, problem("expired at %s", cert.NotAfter.Format(time.RFC3339))
+	}
+
+	var parent *x509.Certificate
+	switch {
+	case args.Issuer != nil:
+		parent = args.Issuer.Certificate
+	case args.ParentKeyPair != nil:
+		parentCert, _, err := ReadKeyPair(args.ParentKeyPair.PublicCertificate, args.ParentKeyPair.PrivateKey)
+		if err != nil {
+			return nil, err
+		}
+		parent = parentCert
+	}
+	if parent == nil {
+		// Self-signed. CheckSignatureFrom only accepts a CA as the parent, so
+		// check the signature against the certificate's own key directly.
+		if err := cert.CheckSignature(cert.SignatureAlgorithm, cert.RawTBSCertificate, cert.Signature); err != nil {
+			return nil, problem("is not validly self-signed: %v", err)
+		}
+	} else if err := cert.CheckSignatureFrom(parent); err != nil {
+		return nil, problem("is not signed by %q, which issues it in the spec, probably because that certificate was regenerated", parent.Subject.CommonName)
+	}
+
+	if !spec.CodeSigning {
+		return kp, nil
+	}
+	target := args.Target
+	if target == "" {
+		target = windows10Target
+	}
+	profile, err := GetProfile(target)
+	if err != nil || !profile.OutputPFX {
+		return kp, err
+	}
+	if fileExists(pfxPath) {
+		if kp.PFX, err = os.ReadFile(filepath.Clean(pfxPath)); err != nil {
+			return nil, fmt.Errorf("%w: cannot read %s: %v", ErrExistingFiles, pfxPath, err)
+		}
+		return kp, nil
+	}
+	if kp.PFX, err = toPFX(cert, key, args.PFXPassword, profile.LegacyPFX); err != nil {
+		return nil, fmt.Errorf("cannot rebuild the PFX for %q from %s: %w", spec.CommonName, keyPath, err)
+	}
+	return kp, nil
+}
+
+func fileExists(path string) bool {
+	_, err := os.Stat(path)
+	return err == nil
 }
 
 func specToArgs(spec *CertificateSpec) *Args {
