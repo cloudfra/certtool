@@ -79,6 +79,8 @@ ykman piv access change-management-key --generate --protect
 
 `--protect` stores the new management key on the YubiKey, protected by the PIN. certtool finds it there, so you only ever need the PIN.
 
+certtool logs a warning when it generates or uses a root on a YubiKey that still has the factory default PIN or management key. It cannot check the PUK without using up a PIN attempt, so change that yourself.
+
 ### 2. Generate the root CA
 
 ```bash
@@ -91,7 +93,7 @@ certtool generates the key in slot `9c`, self-signs a 10 year root certificate, 
 * `root.crt` is the public certificate. It is not secret: distribute it to every machine that should trust your CA.
 * The root is not restricted to particular uses, so it can sign TLS, client, and code signing certificates.
 * Supported key types are `ECDSA-256`, `ECDSA-384`, `RSA-2048`, and `RSA-4096` (firmware 5.7 or newer).
-* `--yubikey-touch-policy` sets when a touch is needed: `cached` (default; one touch covers 15 seconds of signing), `always`, or `never`.
+* `--yubikey-touch-policy` sets when a touch is needed: `always` (default; a touch for every signature), `cached` (one touch covers 15 seconds of signing), or `never`. With `cached`, any program on the computer can sign without a touch for 15 seconds after each one, so keep `always` for a root CA unless you sign many certificates at once.
 * certtool refuses to replace a slot that already holds a certificate. Choose another slot with `--yubikey-slot` (for example `82`), or pass `--yubikey-overwrite` to destroy the old key.
 
 Check the root:
@@ -165,7 +167,7 @@ If the CA is not in slot `9c`, export from its slot and pass the same slot to ce
 If the CA is still in files (`root-ca.crt` and `root-ca.key`) and you want to move it onto the YubiKey, import it first:
 
 ```bash
-ykman piv keys import --pin-policy always --touch-policy cached 9c root-ca.key
+ykman piv keys import --pin-policy always --touch-policy always 9c root-ca.key
 ykman piv certificates import 9c root-ca.crt
 cp root-ca.crt root.crt
 ```
@@ -302,7 +304,7 @@ certtool never prompts, so the commands in this guide run unchanged in scripts a
   run: certtool --yubikey --ca --common-name "Acme Issuing CA" --public-certificate issuing-ca.crt --private-key issuing-ca.key
 ```
 
-A root generated with the default `cached` touch policy still needs a touch. For signing with no one present, generate the root with `--yubikey-touch-policy never`. Then anyone with the YubiKey and the PIN can sign, so keep both protected.
+A root generated with the default `always` touch policy needs a touch for every signature. For signing with no one present, generate the root with `--yubikey-touch-policy never`. Then anyone with the YubiKey and the PIN can sign, so keep both protected.
 
 With several YubiKeys connected, choose one with `--yubikey-serial`. List the serial numbers with `ykman list --serials`.
 

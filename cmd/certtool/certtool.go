@@ -78,7 +78,7 @@ func parseFlags(fs *flag.FlagSet, arguments []string) (certtool.Args, error) {
 	fs.StringVar(&args.YubiKeySlot, "yubikey-slot", args.YubiKeySlot, "PIV slot holding the YubiKey root CA: 9a, 9c, 9d, 9e, or 82 through 95.")
 	fs.StringVar(&args.YubiKeyPIN, "yubikey-pin", args.YubiKeyPIN, "YubiKey PIN, required by --yubikey and --yubikey-generate-root. Defaults to the "+certtool.YubiKeyPINEnv+" environment variable. certtool never prompts for it.")
 	fs.StringVar(&args.YubiKeyManagementKey, "yubikey-management-key", args.YubiKeyManagementKey, "YubiKey management key in hex, needed by --yubikey-generate-root. Defaults to the "+certtool.YubiKeyManagementKeyEnv+" environment variable, otherwise the PIN-protected management key or the factory default.")
-	fs.StringVar(&args.YubiKeyTouchPolicy, "yubikey-touch-policy", args.YubiKeyTouchPolicy, "Whether the YubiKey must be touched to sign with a key made by --yubikey-generate-root: never, always, or cached (touch once per 15 seconds).")
+	fs.StringVar(&args.YubiKeyTouchPolicy, "yubikey-touch-policy", args.YubiKeyTouchPolicy, "Whether the YubiKey must be touched to sign with a key made by --yubikey-generate-root: always (the default, a touch for every signature), cached (one touch allows signing for 15 seconds), or never.")
 	fs.BoolVar(&args.YubiKeyOverwrite, "yubikey-overwrite", args.YubiKeyOverwrite, "Allow --yubikey-generate-root to replace a slot that already holds a certificate. The old key is destroyed.")
 
 	fs.BoolVar(&args.Version, "version", args.Version, "Print version and build information, then exit.")

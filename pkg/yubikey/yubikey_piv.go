@@ -17,6 +17,7 @@
 package yubikey
 
 import (
+	"bytes"
 	"crypto"
 	"crypto/ecdsa"
 	"crypto/rsa"
@@ -85,6 +86,9 @@ type Token struct {
 	// managementKeySource describes where the management key came from, for
 	// error messages.
 	managementKeySource string
+	// defaultManagementKey is set once the factory default management key
+	// has been used.
+	defaultManagementKey bool
 }
 
 // Open connects to the YubiKey selected by cfg.
@@ -357,6 +361,7 @@ func (t *Token) managementKey() ([]byte, error) {
 		default:
 			return nil, fmt.Errorf("YubiKey management key is %d bytes, it must be 16, 24, or 32 bytes (32, 48, or 64 hex digits)", len(key))
 		}
+		t.defaultManagementKey = bytes.Equal(key, piv.DefaultManagementKey)
 		return key, nil
 	}
 
@@ -376,7 +381,24 @@ func (t *Token) managementKey() ([]byte, error) {
 		return *metadata.ManagementKey, nil
 	}
 	t.managementKeySource = managementKeyDefault
+	t.defaultManagementKey = true
 	return piv.DefaultManagementKey, nil
+}
+
+// FactoryDefaults returns the factory default credentials in use: "PIN" when
+// the configured PIN is the factory default, and "management key" once the
+// factory default management key has been used, as GenerateRoot does when no
+// other management key is set. Anyone holding the YubiKey can use them, so
+// the root CA key is only as safe as the YubiKey itself.
+func (t *Token) FactoryDefaults() []string {
+	var defaults []string
+	if t.pin == piv.DefaultPIN {
+		defaults = append(defaults, "PIN")
+	}
+	if t.defaultManagementKey {
+		defaults = append(defaults, "management key")
+	}
+	return defaults
 }
 
 // errorf returns an error that identifies the YubiKey and slot, describes
@@ -512,9 +534,9 @@ func pivTouchPolicy(p TouchPolicy) (piv.TouchPolicy, error) {
 	switch p {
 	case TouchNever:
 		return piv.TouchPolicyNever, nil
-	case TouchAlways:
+	case TouchAlways, "":
 		return piv.TouchPolicyAlways, nil
-	case TouchCached, "":
+	case TouchCached:
 		return piv.TouchPolicyCached, nil
 	}
 	return 0, fmt.Errorf("YubiKey touch policy %q is not valid, must be never, always, or cached", p)

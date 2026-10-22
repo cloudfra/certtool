@@ -55,7 +55,7 @@
 | `--yubikey-slot` | `9c` | PIV slot: `9a`, `9c`, `9d`, `9e`, or `82` through `95`. |
 | `--yubikey-pin` | `$CERTTOOL_YUBIKEY_PIN` | Required by both YubiKey modes. Prefer the environment variable. |
 | `--yubikey-management-key` | `$CERTTOOL_YUBIKEY_MANAGEMENT_KEY` | Hex management key for `--yubikey-generate-root`. Without one, the PIN-protected or factory default key is used. |
-| `--yubikey-touch-policy` | `cached` | Touch rule for a generated key: `never`, `always`, or `cached` (one touch per 15 seconds). |
+| `--yubikey-touch-policy` | `always` | Touch rule for a generated key: `always` (every signature), `cached` (one touch per 15 seconds), or `never`. |
 | `--yubikey-overwrite` | `false` | Let `--yubikey-generate-root` replace a slot that holds a certificate. Destroys the old key. |
 
 ## Other

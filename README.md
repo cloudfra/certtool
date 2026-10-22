@@ -166,7 +166,7 @@ read -rs -p "YubiKey PIN: " CERTTOOL_YUBIKEY_PIN && export CERTTOOL_YUBIKEY_PIN
 | `--yubikey-slot` | `9c` | PIV slot holding the root CA: `9a`, `9c`, `9d`, `9e`, or `82` through `95` |
 | `--yubikey-pin` | | YubiKey PIN, required by `--yubikey` and `--yubikey-generate-root` (defaults to `CERTTOOL_YUBIKEY_PIN`; certtool never prompts) |
 | `--yubikey-management-key` | | Management key in hex for `--yubikey-generate-root` (defaults to `CERTTOOL_YUBIKEY_MANAGEMENT_KEY`, otherwise the PIN-protected or factory default key) |
-| `--yubikey-touch-policy` | `cached` | Touch requirement for a key made by `--yubikey-generate-root`: `never`, `always`, or `cached` (one touch per 15 seconds) |
+| `--yubikey-touch-policy` | `always` | Touch requirement for a key made by `--yubikey-generate-root`: `always` (every signature), `cached` (one touch per 15 seconds), or `never` |
 | `--yubikey-overwrite` | `false` | Allow `--yubikey-generate-root` to replace a slot that already holds a certificate. The old key is destroyed |
 
 #### General flags
