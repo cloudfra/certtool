@@ -26,7 +26,7 @@ curl -fLo certtool https://github.com/cloudfra/certtool/releases/latest/download
 * Sign certificates with a parent CA to build certificate chains.
 * Keep the root CA key on a YubiKey: generate it on the device and sign certificates with it, without the key ever leaving the YubiKey.
 * Generate whole certificate hierarchies (root, intermediates, leaves) in one command with `--chain`, or from a YAML spec with `--spec`.
-* RSA (2048, 4096-bit) and ECDSA (P-224, P-256, P-384, P-521) key algorithms.
+* RSA (2048, 4096-bit) and ECDSA (P-256, P-384, P-521) key algorithms, signed with a hash that matches the key (SHA-256, or SHA-384/SHA-512 for P-384/P-521).
 * Subject Alternative Names (SANs) for hostnames and IP addresses.
 * Always includes `localhost` and `127.0.0.1` as SANs (TLS mode).
 * Configure X.509 subject fields: Country, Organization, Locality, Province, and more.
@@ -130,7 +130,7 @@ read -rs -p "YubiKey PIN: " CERTTOOL_YUBIKEY_PIN && export CERTTOOL_YUBIKEY_PIN
 | `--max-path-len` | `-1` (no limit) | With `--ca` or `--yubikey-generate-root`: how many CAs may sit below the CA (`0` = it signs only leaves) |
 | `--permitted-dns-domains` | | With `--ca` or `--yubikey-generate-root`: comma-separated DNS domains that certificates below the CA may use, as critical name constraints |
 | `--permitted-ip-ranges` | | With `--ca` or `--yubikey-generate-root`: comma-separated CIDR ranges that certificates below the CA may use |
-| `--key-type` | `RSA-2048` | Key algorithm and length (`RSA-2048`, `RSA-4096`, `ECDSA-224`, `ECDSA-256`, `ECDSA-384`, `ECDSA-521`) |
+| `--key-type` | `RSA-2048` | Key algorithm and length (`RSA-2048`, `RSA-4096`, `ECDSA-256`, `ECDSA-384`, `ECDSA-521`) |
 | `--hostnames` | | Comma-separated hostnames and IP addresses to add as SANs |
 | `--validity` | `8760h` (1 year) | How long the certificate is valid for, as a Go duration (e.g. `8760h`, `720h`, `24h`) |
 | `--common-name` | | Common Name (CN) field of the X.509 subject (defaults to `--organization`) |

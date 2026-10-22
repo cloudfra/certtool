@@ -81,8 +81,8 @@ func TestCreateSelfSignedCertificate(t *testing.T) {
 	if len(cert.ExtKeyUsage) != 0 || len(cert.DNSNames) != 0 || len(cert.IPAddresses) != 0 {
 		t.Errorf("root CA has ExtKeyUsage %v, DNSNames %v, and IPAddresses %v, want none", cert.ExtKeyUsage, cert.DNSNames, cert.IPAddresses)
 	}
-	if cert.SignatureAlgorithm != x509.ECDSAWithSHA512 {
-		t.Errorf("SignatureAlgorithm = %v, want %v", cert.SignatureAlgorithm, x509.ECDSAWithSHA512)
+	if cert.SignatureAlgorithm != x509.ECDSAWithSHA384 {
+		t.Errorf("SignatureAlgorithm = %v, want %v", cert.SignatureAlgorithm, x509.ECDSAWithSHA384)
 	}
 	if err := cert.CheckSignatureFrom(cert); err != nil {
 		t.Errorf("certificate is not self-signed: %v", err)
@@ -114,8 +114,8 @@ func TestGenerateKeyPair_Issuer(t *testing.T) {
 	}
 
 	leaf := parsePEMCertificate(t, kp.PublicCertificate)
-	if leaf.SignatureAlgorithm != x509.ECDSAWithSHA512 {
-		t.Errorf("SignatureAlgorithm = %v, want %v", leaf.SignatureAlgorithm, x509.ECDSAWithSHA512)
+	if leaf.SignatureAlgorithm != x509.ECDSAWithSHA384 {
+		t.Errorf("SignatureAlgorithm = %v, want %v", leaf.SignatureAlgorithm, x509.ECDSAWithSHA384)
 	}
 	if leaf.KeyUsage&x509.KeyUsageKeyEncipherment == 0 {
 		t.Error("RSA leaf KeyUsage does not include KeyEncipherment")
@@ -142,8 +142,8 @@ func TestGenerateKeyPair_MixedAlgorithmParent(t *testing.T) {
 	}
 
 	leafCert := parsePEMCertificate(t, leaf.PublicCertificate)
-	if leafCert.SignatureAlgorithm != x509.SHA512WithRSA {
-		t.Errorf("SignatureAlgorithm = %v, want %v", leafCert.SignatureAlgorithm, x509.SHA512WithRSA)
+	if leafCert.SignatureAlgorithm != x509.SHA256WithRSA {
+		t.Errorf("SignatureAlgorithm = %v, want %v", leafCert.SignatureAlgorithm, x509.SHA256WithRSA)
 	}
 	verifyChain(t, parsePEMCertificate(t, root.PublicCertificate), leafCert)
 }

@@ -495,6 +495,10 @@ func runSpec(args Args, issuer *certlib.Issuer) error {
 		slog.Warn("these specs make a .pfx without a password, so anyone who can read it can sign code with its key; set pfxPasswordEnv", "specs", names)
 	}
 
+	if names := certlib.SpecsWithLegacyPFX(specs); len(names) > 0 && args.ExportSpec == "" {
+		slog.Warn(legacyPFXWarning, "specs", names)
+	}
+
 	if args.ExportSpec != "" {
 		if names := certlib.SpecsWithPFXPassword(specs); len(names) > 0 {
 			certlib.ReplacePFXPasswords(specs, PFXPasswordEnv)
@@ -505,6 +509,9 @@ func runSpec(args Args, issuer *certlib.Issuer) error {
 	return generateAndLogResults(specs, args, issuer)
 }
 
+// legacyPFXWarning explains the cost of the Windows 7 .pfx format.
+const legacyPFXWarning = "the windows7 target writes a legacy .pfx (3DES with a SHA-1 MAC) that Windows 7 and 8 can import, but its password is far easier to brute-force; use a long random password, and the windows10 target for anything newer"
+
 func generateAndWriteKeyPair(args Args, certArgs *certlib.Args) error {
 	kp, err := certlib.GenerateKeyPair(certArgs)
 	if err != nil {
@@ -513,6 +520,9 @@ func generateAndWriteKeyPair(args Args, certArgs *certlib.Args) error {
 	if len(kp.PFX) > 0 {
 		if certArgs.PFXPassword == "" {
 			slog.Warn("the .pfx has no password, so anyone who can read it can sign code with its key; set "+PFXPasswordEnv+" or --pfx-password", "pfx", args.PFXOutput)
+		}
+		if profile, err := certlib.GetProfile(certArgs.Target); err == nil && profile.LegacyPFX {
+			slog.Warn(legacyPFXWarning, "pfx", args.PFXOutput)
 		}
 		return certlib.WritePFX(kp, args.PFXOutput)
 	}
@@ -597,7 +607,7 @@ func stringToKeyType(keyType string) (string, int, error) {
 	case algorithmRSA:
 		return parseKeyTypeName(keyType, 2048, []int{2048, 4096})
 	case algorithmECDSA:
-		return parseKeyTypeName(keyType, 521, []int{224, 256, 384, 521})
+		return parseKeyTypeName(keyType, 0, []int{256, 384, 521})
 	}
 	return "", 0, fmt.Errorf("--key-type '%s' is not a valid key type", keyType)
 }
@@ -626,6 +636,9 @@ func parseKeyTypeName(keyTypeName string, defaultLength int, validValues []int) 
 	}
 
 	if keyLength == "" {
+		if defaultLength == 0 {
+			return "", 0, fmt.Errorf("--key-type '%s' needs a length: %s", keyTypeName, keyTypeNames(algorithm, validValues))
+		}
 		return algorithm, defaultLength, nil
 	}
 	length, err := strconv.Atoi(parts[1])
@@ -636,7 +649,20 @@ func parseKeyTypeName(keyTypeName string, defaultLength int, validValues []int) 
 		return algorithm, length, nil
 	}
 
-	return "", 0, fmt.Errorf("--key-type '%s' does not have a valid %s key length", keyTypeName, algorithm)
+	return "", 0, fmt.Errorf("--key-type '%s' does not have a valid %s key length; use %s", keyTypeName, algorithm, keyTypeNames(algorithm, validValues))
+}
+
+// keyTypeNames lists the key types of algorithm with the given lengths, such
+// as "ECDSA-256, ECDSA-384, or ECDSA-521".
+func keyTypeNames(algorithm string, lengths []int) string {
+	names := make([]string, len(lengths))
+	for i, length := range lengths {
+		names[i] = fmt.Sprintf("%s-%d", algorithm, length)
+	}
+	if len(names) < 2 {
+		return strings.Join(names, "")
+	}
+	return strings.Join(names[:len(names)-1], ", ") + ", or " + names[len(names)-1]
 }
 
 func splitStrings(csv string) []string {

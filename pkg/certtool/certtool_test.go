@@ -457,7 +457,6 @@ func TestCreateCACertificateWithECDSA(t *testing.T) {
 	testCases := []struct {
 		keyType KeyType
 	}{
-		{keyType: KeyType{Algorithm: ecdsaAlgorithm, KeyLength: 224}},
 		{keyType: KeyType{Algorithm: ecdsaAlgorithm, KeyLength: 256}},
 		{keyType: KeyType{Algorithm: ecdsaAlgorithm, KeyLength: 384}},
 		{keyType: KeyType{Algorithm: ecdsaAlgorithm, KeyLength: 521}},
@@ -1262,5 +1261,45 @@ func TestReadKeyPair_PKCS8(t *testing.T) {
 	broken := pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: []byte("not DER")})
 	if _, _, err := ReadKeyPair(kp.PublicCertificate, broken); err == nil || !strings.Contains(err.Error(), "cannot parse PKCS8 private key") {
 		t.Errorf("ReadKeyPair(broken PKCS#8) err = %v, want a parse error", err)
+	}
+}
+
+// The signature hash matches the strength of the signing key.
+func TestGenerateKeyPair_SignatureAlgorithm(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		keyType     KeyType
+		codeSigning bool
+		want        x509.SignatureAlgorithm
+	}{
+		{KeyType{rsaAlgorithm, 2048}, false, x509.SHA256WithRSA},
+		{KeyType{rsaAlgorithm, 2048}, true, x509.SHA256WithRSA},
+		{KeyType{ecdsaAlgorithm, 256}, false, x509.ECDSAWithSHA256},
+		{KeyType{ecdsaAlgorithm, 384}, false, x509.ECDSAWithSHA384},
+		{KeyType{ecdsaAlgorithm, 521}, false, x509.ECDSAWithSHA512},
+		{KeyType{ecdsaAlgorithm, 384}, true, x509.ECDSAWithSHA256},
+	} {
+		keyType := tc.keyType
+		kp, err := GenerateKeyPair(&Args{KeyType: &keyType, CodeSigning: tc.codeSigning, Target: linuxTarget})
+		if err != nil {
+			t.Fatalf("GenerateKeyPair(%v) err = %v", tc.keyType, err)
+		}
+		cert, _, err := ReadKeyPair(kp.PublicCertificate, kp.PrivateKey)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if cert.SignatureAlgorithm != tc.want {
+			t.Errorf("%v (code signing %t): SignatureAlgorithm = %v, want %v", tc.keyType, tc.codeSigning, cert.SignatureAlgorithm, tc.want)
+		}
+	}
+}
+
+func TestGenerateKeyPair_RejectsWeakOrIncompleteECDSA(t *testing.T) {
+	t.Parallel()
+	for length, want := range map[int]string{224: "ECDSA-224 is not supported", 0: "an ECDSA key type needs a curve size"} {
+		_, err := GenerateKeyPair(&Args{KeyType: &KeyType{Algorithm: ecdsaAlgorithm, KeyLength: length}})
+		if err == nil || !strings.Contains(err.Error(), want) {
+			t.Errorf("GenerateKeyPair(ECDSA-%d) err = %v, want it to contain %q", length, err, want)
+		}
 	}
 }

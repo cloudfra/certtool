@@ -16,6 +16,7 @@ package certtool
 
 import (
 	"errors"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
@@ -317,7 +318,6 @@ func TestStringToKeyType(t *testing.T) {
 		{input: "rsa-4096", wantAlgorithm: algorithmRSA, wantKeyLength: 4096},
 		{input: "ecdsa-384", wantAlgorithm: algorithmECDSA, wantKeyLength: 384},
 		{input: "ECDSA-521", wantAlgorithm: algorithmECDSA, wantKeyLength: 521},
-		{input: algorithmECDSA, wantAlgorithm: algorithmECDSA, wantKeyLength: 521},
 	}
 
 	for _, tc := range testCases {
@@ -344,6 +344,8 @@ func TestStringToKeyTypeErrors(t *testing.T) {
 		"RSA-abc",        // key length is not a number
 		"RSA-9999",       // key length not a supported RSA length
 		"ECDSA-9999",     // key length not a supported ECDSA length
+		"ECDSA-224",      // too weak
+		"ECDSA",          // no curve size
 	}
 
 	for _, tc := range testCases {
@@ -616,5 +618,50 @@ func TestValidateModesOverwrite(t *testing.T) {
 	args.Overwrite = true
 	if err := validateModes(args); err == nil || !strings.Contains(err.Error(), "--overwrite only applies to --spec and --chain") {
 		t.Errorf("validateModes() err = %v, want an --overwrite misuse error", err)
+	}
+}
+
+func TestRunWarnsAboutLegacyPFX(t *testing.T) {
+	var logs strings.Builder
+	previous := slog.Default()
+	slog.SetDefault(slog.New(slog.NewTextHandler(&logs, &slog.HandlerOptions{Level: slog.LevelWarn})))
+	t.Cleanup(func() { slog.SetDefault(previous) })
+
+	for _, target := range []string{"windows7", "win8"} {
+		logs.Reset()
+		args := testArgs(t)
+		args.CodeSigning, args.Target = true, target
+		if err := Run(args); err != nil {
+			t.Fatalf("Run(--target %s) err = %v", target, err)
+		}
+		if !strings.Contains(logs.String(), "legacy .pfx") {
+			t.Errorf("--target %s logs = %q, want a legacy .pfx warning", target, logs.String())
+		}
+	}
+
+	logs.Reset()
+	args := testArgs(t)
+	args.Spec = writeSpec(t, t.TempDir(), "certs.yaml", "- commonName: Old Signing\n  codeSigning: true\n  target: windows7\n  filename: old\n- commonName: New Signing\n  codeSigning: true\n  filename: new\n")
+	if err := Run(args); err != nil {
+		t.Fatalf("Run(--spec) err = %v", err)
+	}
+	var legacy string
+	for _, line := range strings.Split(logs.String(), "\n") {
+		if strings.Contains(line, "legacy .pfx") {
+			legacy = line
+		}
+	}
+	if !strings.Contains(legacy, "Old Signing") || strings.Contains(legacy, "New Signing") {
+		t.Errorf("--spec legacy warning = %q, want one naming only the windows7 spec", legacy)
+	}
+
+	logs.Reset()
+	args = testArgs(t)
+	args.CodeSigning, args.Target = true, "windows10"
+	if err := Run(args); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(logs.String(), "legacy") {
+		t.Errorf("--target windows10 logs = %q, want no legacy warning", logs.String())
 	}
 }

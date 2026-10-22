@@ -708,17 +708,22 @@ func extKeyUsageName(usage x509.ExtKeyUsage) string {
 // signatureAlgorithm returns the algorithm used to sign certificates with the
 // private key belonging to pub.
 func signatureAlgorithm(pub crypto.PublicKey, codeSigning bool) (x509.SignatureAlgorithm, error) {
-	switch pub.(type) {
+	switch pub := pub.(type) {
 	case *rsa.PublicKey:
-		if codeSigning {
-			return x509.SHA256WithRSA, nil
-		}
-		return x509.SHA512WithRSA, nil
+		// SHA-256 is what every TLS client and signtool support.
+		return x509.SHA256WithRSA, nil
 	case *ecdsa.PublicKey:
 		if codeSigning {
 			return x509.ECDSAWithSHA256, nil
 		}
-		return x509.ECDSAWithSHA512, nil
+		// Match the hash to the curve's strength, as RFC 5480 recommends.
+		switch pub.Curve.Params().BitSize {
+		case 384:
+			return x509.ECDSAWithSHA384, nil
+		case 521:
+			return x509.ECDSAWithSHA512, nil
+		}
+		return x509.ECDSAWithSHA256, nil
 	}
 	return x509.UnknownSignatureAlgorithm, fmt.Errorf("signing key type %T is not supported", pub)
 }
@@ -789,16 +794,17 @@ func generatePrivateKeyFromType(keyType KeyType) (any, error) {
 		return rsa.GenerateKey(rand.Reader, keyType.KeyLength)
 	case ecdsaAlgorithm:
 		switch keyType.KeyLength {
-		case 224:
-			return ecdsa.GenerateKey(elliptic.P224(), rand.Reader)
 		case 256:
 			return ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 		case 384:
 			return ecdsa.GenerateKey(elliptic.P384(), rand.Reader)
 		case 521:
-			fallthrough
-		case 0:
 			return ecdsa.GenerateKey(elliptic.P521(), rand.Reader)
+		case 0:
+			return nil, fmt.Errorf("an ECDSA key type needs a curve size: ECDSA-256, ECDSA-384, or ECDSA-521")
+		case 224:
+			// About 112-bit security, and not offered by most TLS stacks.
+			return nil, fmt.Errorf("ECDSA-224 is not supported because it is too weak and most TLS clients reject it; use ECDSA-256, ECDSA-384, or ECDSA-521")
 		}
 	}
 	return nil, fmt.Errorf("key type '%v' is not valid", keyType)
