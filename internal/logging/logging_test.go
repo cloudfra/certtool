@@ -84,3 +84,25 @@ func TestInitSetsDefaultLogger(t *testing.T) {
 		t.Error("Init() should install the returned logger as the slog default")
 	}
 }
+
+func TestFromContext(t *testing.T) {
+	t.Parallel()
+	if got := FromContext(t.Context()); got != slog.Default() {
+		t.Errorf("FromContext() without a logger = %p, want the default logger %p", got, slog.Default())
+	}
+
+	var logs strings.Builder
+	logger := slog.New(slog.NewTextHandler(&logs, nil))
+	ctx := WithLogger(t.Context(), logger)
+	if got := FromContext(ctx); got != logger {
+		t.Errorf("FromContext() = %p, want the logger from WithLogger %p", got, logger)
+	}
+	FromContext(ctx).Warn("captured", "key", "value")
+	if !strings.Contains(logs.String(), "msg=captured key=value") {
+		t.Errorf("logs = %q, want the record written to the context's logger", logs.String())
+	}
+
+	if got := FromContext(WithLogger(t.Context(), nil)); got != slog.Default() {
+		t.Errorf("FromContext() with a nil logger = %p, want the default logger", got)
+	}
+}

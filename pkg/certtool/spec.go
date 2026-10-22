@@ -235,6 +235,20 @@ func SpecsWithPFXPassword(specs []CertificateSpec) []string {
 	return names
 }
 
+// SpecsWithLegacyPFX returns the common names of the code signing specs in the
+// tree whose target writes a legacy .pfx (3DES with a SHA-1 MAC), which is far
+// easier to brute-force than the default.
+func SpecsWithLegacyPFX(specs []CertificateSpec) []string {
+	var names []string
+	for i := range specs {
+		if profile, err := GetProfile(specs[i].Target); err == nil && specs[i].CodeSigning && profile.LegacyPFX {
+			names = append(names, specs[i].CommonName)
+		}
+		names = append(names, SpecsWithLegacyPFX(specs[i].Children)...)
+	}
+	return names
+}
+
 // SpecsWithUnprotectedPFX returns the common names of the specs in the tree
 // that produce a .pfx bundle without a password, which anyone who can read
 // the file can use to sign code.

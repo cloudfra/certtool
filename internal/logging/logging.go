@@ -18,6 +18,7 @@
 package logging
 
 import (
+	"context"
 	"log/slog"
 	"os"
 
@@ -46,4 +47,22 @@ func newCore(out zapcore.WriteSyncer) zapcore.Core {
 	cfg.EncodeLevel = zapcore.CapitalLevelEncoder
 	cfg.StacktraceKey = zapcore.OmitKey // stack traces are noise for CLI errors
 	return zapcore.NewCore(zapcore.NewConsoleEncoder(cfg), out, zapcore.InfoLevel)
+}
+
+type loggerKey struct{}
+
+// WithLogger returns a copy of ctx that carries logger, so code logging
+// through FromContext(ctx) writes to it. Tests use it to capture log records
+// without replacing the process-wide default logger.
+func WithLogger(ctx context.Context, logger *slog.Logger) context.Context {
+	return context.WithValue(ctx, loggerKey{}, logger)
+}
+
+// FromContext returns the logger carried by ctx, or slog.Default() when ctx
+// carries none.
+func FromContext(ctx context.Context) *slog.Logger {
+	if logger, ok := ctx.Value(loggerKey{}).(*slog.Logger); ok && logger != nil {
+		return logger
+	}
+	return slog.Default()
 }

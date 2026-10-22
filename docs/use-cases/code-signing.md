@@ -60,7 +60,7 @@ Set-AuthenticodeSignature -FilePath script.ps1 -Certificate $cert -HashAlgorithm
 
 ## Windows 7 and 8
 
-Windows 7 cannot import AES-encrypted PKCS#12 files, and its `signtool.exe` does not support ECDSA keys. The `windows7` target uses RSA-2048 and legacy 3DES encryption:
+Windows 7 cannot import AES-encrypted PKCS#12 files, and its `signtool.exe` does not support ECDSA keys. The `windows7` target uses RSA-2048 and legacy 3DES encryption with a SHA-1 MAC. Its password is far easier to brute-force than the default's, so certtool logs a warning; use a long random password, and only use this target for Windows 7 and 8:
 
 ```bash
 certtool --code-sign --target windows7 --common-name "Acme Internal Software" \

@@ -20,9 +20,9 @@
 package certtool
 
 import (
+	"context"
 	"errors"
 	"fmt"
-	"log/slog"
 	"os"
 	"path/filepath"
 	"slices"
@@ -31,6 +31,7 @@ import (
 	"time"
 
 	"github.com/cloudfra/certtool/internal"
+	"github.com/cloudfra/certtool/internal/logging"
 	"github.com/cloudfra/certtool/internal/safefile"
 	certlib "github.com/cloudfra/certtool/pkg/certtool"
 	"github.com/cloudfra/certtool/pkg/yubikey"
@@ -156,18 +157,19 @@ func DefaultArgs() Args {
 	}
 }
 
-// Run runs certtool with args.
-func Run(args Args) error {
+// Run runs certtool with args. It logs through the logger carried by ctx
+// (see logging.WithLogger), or the default logger.
+func Run(ctx context.Context, args Args) error {
 	if args.Version {
 		fmt.Printf("certtool %s (built %s)\n", internal.Version(), internal.Buildstamp())
 		return nil
 	}
 
 	if args.Target != "" && !args.CodeSigning {
-		slog.Warn("--target is set but --code-sign is not; --target will be ignored")
+		logging.FromContext(ctx).Warn("--target is set but --code-sign is not; --target will be ignored")
 	}
 	if args.NamePrefix != "" && args.Chain == "" {
-		slog.Warn("--name-prefix is set but --chain is not; --name-prefix will be ignored")
+		logging.FromContext(ctx).Warn("--name-prefix is set but --chain is not; --name-prefix will be ignored")
 	}
 
 	if err := validateModes(args); err != nil {
@@ -175,44 +177,44 @@ func Run(args Args) error {
 	}
 
 	if args.YubiKeyGenerateRoot {
-		return runYubiKeyGenerateRoot(args)
+		return runYubiKeyGenerateRoot(ctx, args)
 	}
 
 	if args.ExportSpec != "" && args.YubiKey {
-		slog.Warn("--yubikey is set with --export-spec; the exported spec does not record the YubiKey issuer")
+		logging.FromContext(ctx).Warn("--yubikey is set with --export-spec; the exported spec does not record the YubiKey issuer")
 	}
 
 	var issuer *certlib.Issuer
 	if args.YubiKey && args.ExportSpec == "" {
-		token, err := openYubiKey(args)
+		token, err := openYubiKey(ctx, args)
 		if err != nil {
 			return err
 		}
-		defer closeYubiKey(token)
+		defer closeYubiKey(ctx, token)
 
 		issuer, err = token.Issuer()
 		if err != nil {
 			return err
 		}
-		slog.Info("signing with YubiKey root CA", "serial", token.Serial(), "slot", args.YubiKeySlot, "cn", issuer.Certificate.Subject.CommonName)
-		warnFactoryDefaults(token)
+		logging.FromContext(ctx).Info("signing with YubiKey root CA", "serial", token.Serial(), "slot", args.YubiKeySlot, "cn", issuer.Certificate.Subject.CommonName)
+		warnFactoryDefaults(ctx, token)
 	}
 
 	switch {
 	case args.Spec != "":
-		return runSpec(args, issuer)
+		return runSpec(ctx, args, issuer)
 	case args.Chain != "":
-		return runChain(args, issuer)
+		return runChain(ctx, args, issuer)
 	case args.ExportSpec != "":
-		return runExportSpec(args)
+		return runExportSpec(ctx, args)
 	}
 
-	certArgs, err := certificateArgs(args)
+	certArgs, err := certificateArgs(ctx, args)
 	if err != nil {
 		return err
 	}
 	certArgs.Issuer = issuer
-	return generateAndWriteKeyPair(args, certArgs)
+	return generateAndWriteKeyPair(ctx, args, certArgs)
 }
 
 func validateModes(args Args) error {
@@ -260,8 +262,8 @@ func validateModes(args Args) error {
 }
 
 // openYubiKey opens the YubiKey selected by the --yubikey-* options.
-func openYubiKey(args Args) (*yubikey.Token, error) {
-	cfg, err := yubiKeyConfig(args)
+func openYubiKey(ctx context.Context, args Args) (*yubikey.Token, error) {
+	cfg, err := yubiKeyConfig(ctx, args)
 	if err != nil {
 		return nil, err
 	}
@@ -271,7 +273,7 @@ func openYubiKey(args Args) (*yubikey.Token, error) {
 // yubiKeyConfig builds the YubiKey configuration from the --yubikey-*
 // options, falling back to environment variables for the secrets. The PIN is
 // required because certtool never prompts for it.
-func yubiKeyConfig(args Args) (yubikey.Config, error) {
+func yubiKeyConfig(ctx context.Context, args Args) (yubikey.Config, error) {
 	pin := args.YubiKeyPIN
 	if pin == "" {
 		pin = os.Getenv(YubiKeyPINEnv)
@@ -302,35 +304,35 @@ func yubiKeyConfig(args Args) (yubikey.Config, error) {
 		PIN:           pin,
 		ManagementKey: managementKey,
 		BeforeSign: func() {
-			slog.Info("signing with the YubiKey, touch it if it is blinking")
+			logging.FromContext(ctx).Info("signing with the YubiKey, touch it if it is blinking")
 		},
 	}, nil
 }
 
-func closeYubiKey(token *yubikey.Token) {
+func closeYubiKey(ctx context.Context, token *yubikey.Token) {
 	if err := token.Close(); err != nil {
-		slog.Warn("cannot close the YubiKey", "error", err)
+		logging.FromContext(ctx).Warn("cannot close the YubiKey", "error", err)
 	}
 }
 
-func runYubiKeyGenerateRoot(args Args) error {
+func runYubiKeyGenerateRoot(ctx context.Context, args Args) error {
 	touchPolicy, err := yubikey.ParseTouchPolicy(args.YubiKeyTouchPolicy)
 	if err != nil {
 		return err
 	}
 
-	certArgs, err := certificateArgs(args)
+	certArgs, err := certificateArgs(ctx, args)
 	if err != nil {
 		return err
 	}
 
-	token, err := openYubiKey(args)
+	token, err := openYubiKey(ctx, args)
 	if err != nil {
 		return err
 	}
-	defer closeYubiKey(token)
+	defer closeYubiKey(ctx, token)
 
-	slog.Info("generating root CA on YubiKey", "serial", token.Serial(), "slot", args.YubiKeySlot)
+	logging.FromContext(ctx).Info("generating root CA on YubiKey", "serial", token.Serial(), "slot", args.YubiKeySlot)
 	cert, err := token.GenerateRoot(certArgs, touchPolicy, args.YubiKeyOverwrite)
 	if err != nil {
 		return err
@@ -339,19 +341,19 @@ func runYubiKeyGenerateRoot(args Args) error {
 	if err := certlib.WriteCertificate(cert, args.PublicCertificate); err != nil {
 		return err
 	}
-	slog.Info("generated YubiKey root CA", "cn", cert.Subject.CommonName, "cert", args.PublicCertificate, "serial", token.Serial(), "slot", args.YubiKeySlot)
-	warnFactoryDefaults(token)
+	logging.FromContext(ctx).Info("generated YubiKey root CA", "cn", cert.Subject.CommonName, "cert", args.PublicCertificate, "serial", token.Serial(), "slot", args.YubiKeySlot)
+	warnFactoryDefaults(ctx, token)
 	return nil
 }
 
 // warnFactoryDefaults warns when the YubiKey still uses factory default
 // credentials, which let anyone holding it use or replace the root CA key.
-func warnFactoryDefaults(token *yubikey.Token) {
+func warnFactoryDefaults(ctx context.Context, token *yubikey.Token) {
 	defaults := token.FactoryDefaults()
 	if len(defaults) == 0 {
 		return
 	}
-	slog.Warn("the YubiKey still uses its factory default "+strings.Join(defaults, " and ")+", so anyone holding it can use or replace the root CA key; change them with `ykman piv access change-pin`, `ykman piv access change-puk`, and `ykman piv access change-management-key --generate --protect`", "serial", token.Serial())
+	logging.FromContext(ctx).Warn("the YubiKey still uses its factory default "+strings.Join(defaults, " and ")+", so anyone holding it can use or replace the root CA key; change them with `ykman piv access change-pin`, `ykman piv access change-puk`, and `ykman piv access change-management-key --generate --protect`", "serial", token.Serial())
 }
 
 func parseChain(chain string) ([]int, error) {
@@ -368,7 +370,7 @@ func parseChain(chain string) ([]int, error) {
 	return widths, nil
 }
 
-func runChain(args Args, issuer *certlib.Issuer) error {
+func runChain(ctx context.Context, args Args, issuer *certlib.Issuer) error {
 	widths, err := parseChain(args.Chain)
 	if err != nil {
 		return err
@@ -380,9 +382,9 @@ func runChain(args Args, issuer *certlib.Issuer) error {
 	}
 
 	if args.ExportSpec != "" {
-		return writeSpecFile(specs, args.ExportSpec)
+		return writeSpecFile(ctx, specs, args.ExportSpec)
 	}
-	return generateAndLogResults(specs, args, issuer)
+	return generateAndLogResults(ctx, specs, args, issuer)
 }
 
 // pfxPassword returns --pfx-password, or the PFXPasswordEnv environment
@@ -394,15 +396,15 @@ func pfxPassword(args Args) string {
 	return os.Getenv(PFXPasswordEnv)
 }
 
-func runExportSpec(args Args) error {
-	specs, err := argsToSpec(args)
+func runExportSpec(ctx context.Context, args Args) error {
+	specs, err := argsToSpec(ctx, args)
 	if err != nil {
 		return err
 	}
-	return writeSpecFile(specs, args.ExportSpec)
+	return writeSpecFile(ctx, specs, args.ExportSpec)
 }
 
-func argsToSpec(args Args) ([]certlib.CertificateSpec, error) {
+func argsToSpec(ctx context.Context, args Args) ([]certlib.CertificateSpec, error) {
 	hostnames, err := splitHostnames(args.Hostnames)
 	if err != nil {
 		return nil, err
@@ -433,7 +435,7 @@ func argsToSpec(args Args) ([]certlib.CertificateSpec, error) {
 	if pfxPassword(args) != "" {
 		// Never write the password itself into the spec file.
 		s.PFXPasswordEnv = PFXPasswordEnv
-		slog.Warn("the exported spec reads the .pfx password from the environment instead of storing it", "env", PFXPasswordEnv)
+		logging.FromContext(ctx).Warn("the exported spec reads the .pfx password from the environment instead of storing it", "env", PFXPasswordEnv)
 	}
 	if args.CA {
 		if args.MaxPathLen != -1 {
@@ -446,7 +448,7 @@ func argsToSpec(args Args) ([]certlib.CertificateSpec, error) {
 	return []certlib.CertificateSpec{s}, nil
 }
 
-func writeSpecFile(specs []certlib.CertificateSpec, path string) error {
+func writeSpecFile(ctx context.Context, specs []certlib.CertificateSpec, path string) error {
 	data, err := certlib.MarshalSpec(specs)
 	if err != nil {
 		return err
@@ -454,11 +456,11 @@ func writeSpecFile(specs []certlib.CertificateSpec, path string) error {
 	if err := safefile.WritePrivate(filepath.Clean(path), data); err != nil {
 		return err
 	}
-	slog.Info("spec written", "path", path)
+	logging.FromContext(ctx).Info("spec written", "path", path)
 	return nil
 }
 
-func generateAndLogResults(specs []certlib.CertificateSpec, args Args, issuer *certlib.Issuer) error {
+func generateAndLogResults(ctx context.Context, specs []certlib.CertificateSpec, args Args, issuer *certlib.Issuer) error {
 	results, err := certlib.GenerateFromSpecWithOptions(specs, args.OutputDir, certlib.SpecOptions{Issuer: issuer, Overwrite: args.Overwrite})
 	if errors.Is(err, certlib.ErrExistingFiles) {
 		return fmt.Errorf("%w; or pass --overwrite to regenerate every certificate", err)
@@ -473,46 +475,56 @@ func generateAndLogResults(specs []certlib.CertificateSpec, args Args, issuer *c
 			msg = "reused existing certificate"
 		}
 		if r.PFXPath != "" {
-			slog.Info(msg, "cn", r.CommonName, "cert", r.CertPath, "key", r.KeyPath, "pfx", r.PFXPath)
+			logging.FromContext(ctx).Info(msg, "cn", r.CommonName, "cert", r.CertPath, "key", r.KeyPath, "pfx", r.PFXPath)
 		} else {
-			slog.Info(msg, "cn", r.CommonName, "cert", r.CertPath, "key", r.KeyPath)
+			logging.FromContext(ctx).Info(msg, "cn", r.CommonName, "cert", r.CertPath, "key", r.KeyPath)
 		}
 	}
 	return nil
 }
 
-func runSpec(args Args, issuer *certlib.Issuer) error {
+func runSpec(ctx context.Context, args Args, issuer *certlib.Issuer) error {
 	specs, err := certlib.ReadSpec(args.Spec)
 	if err != nil {
 		return err
 	}
 
 	if names := certlib.SpecsWithPFXPassword(specs); len(names) > 0 {
-		slog.Warn("the spec stores .pfx passwords in plain text; use pfxPasswordEnv to read them from the environment instead", "specs", names)
+		logging.FromContext(ctx).Warn("the spec stores .pfx passwords in plain text; use pfxPasswordEnv to read them from the environment instead", "specs", names)
 	}
 
 	if names := certlib.SpecsWithUnprotectedPFX(specs); len(names) > 0 && args.ExportSpec == "" {
-		slog.Warn("these specs make a .pfx without a password, so anyone who can read it can sign code with its key; set pfxPasswordEnv", "specs", names)
+		logging.FromContext(ctx).Warn("these specs make a .pfx without a password, so anyone who can read it can sign code with its key; set pfxPasswordEnv", "specs", names)
+	}
+
+	if names := certlib.SpecsWithLegacyPFX(specs); len(names) > 0 && args.ExportSpec == "" {
+		logging.FromContext(ctx).Warn(legacyPFXWarning, "specs", names)
 	}
 
 	if args.ExportSpec != "" {
 		if names := certlib.SpecsWithPFXPassword(specs); len(names) > 0 {
 			certlib.ReplacePFXPasswords(specs, PFXPasswordEnv)
-			slog.Warn("the exported spec reads the .pfx passwords from the environment instead of storing them", "env", PFXPasswordEnv, "specs", names)
+			logging.FromContext(ctx).Warn("the exported spec reads the .pfx passwords from the environment instead of storing them", "env", PFXPasswordEnv, "specs", names)
 		}
-		return writeSpecFile(specs, args.ExportSpec)
+		return writeSpecFile(ctx, specs, args.ExportSpec)
 	}
-	return generateAndLogResults(specs, args, issuer)
+	return generateAndLogResults(ctx, specs, args, issuer)
 }
 
-func generateAndWriteKeyPair(args Args, certArgs *certlib.Args) error {
+// legacyPFXWarning explains the cost of the Windows 7 .pfx format.
+const legacyPFXWarning = "the windows7 target writes a legacy .pfx (3DES with a SHA-1 MAC) that Windows 7 and 8 can import, but its password is far easier to brute-force; use a long random password, and the windows10 target for anything newer"
+
+func generateAndWriteKeyPair(ctx context.Context, args Args, certArgs *certlib.Args) error {
 	kp, err := certlib.GenerateKeyPair(certArgs)
 	if err != nil {
 		return err
 	}
 	if len(kp.PFX) > 0 {
 		if certArgs.PFXPassword == "" {
-			slog.Warn("the .pfx has no password, so anyone who can read it can sign code with its key; set "+PFXPasswordEnv+" or --pfx-password", "pfx", args.PFXOutput)
+			logging.FromContext(ctx).Warn("the .pfx has no password, so anyone who can read it can sign code with its key; set "+PFXPasswordEnv+" or --pfx-password", "pfx", args.PFXOutput)
+		}
+		if profile, err := certlib.GetProfile(certArgs.Target); err == nil && profile.LegacyPFX {
+			logging.FromContext(ctx).Warn(legacyPFXWarning, "pfx", args.PFXOutput)
 		}
 		return certlib.WritePFX(kp, args.PFXOutput)
 	}
@@ -521,7 +533,7 @@ func generateAndWriteKeyPair(args Args, certArgs *certlib.Args) error {
 
 // certificateArgs converts the options to the arguments of a single
 // certificate.
-func certificateArgs(args Args) (*certlib.Args, error) {
+func certificateArgs(ctx context.Context, args Args) (*certlib.Args, error) {
 	var kt *certlib.KeyType
 	if args.KeyType != "" || !args.CodeSigning {
 		algorithm, keyLength, err := stringToKeyType(args.KeyType)
@@ -537,7 +549,7 @@ func certificateArgs(args Args) (*certlib.Args, error) {
 				effectiveTarget = defaultCodeSignTarget
 			}
 			if profile, profErr := certlib.GetProfile(effectiveTarget); profErr == nil && profile.LegacyPFX {
-				slog.Warn("ECDSA code signing certs are not supported by Windows 7 signtool.exe; proceeding with user-specified key type")
+				logging.FromContext(ctx).Warn("ECDSA code signing certs are not supported by Windows 7 signtool.exe; proceeding with user-specified key type")
 			}
 		}
 	}
@@ -597,7 +609,7 @@ func stringToKeyType(keyType string) (string, int, error) {
 	case algorithmRSA:
 		return parseKeyTypeName(keyType, 2048, []int{2048, 4096})
 	case algorithmECDSA:
-		return parseKeyTypeName(keyType, 521, []int{224, 256, 384, 521})
+		return parseKeyTypeName(keyType, 0, []int{256, 384, 521})
 	}
 	return "", 0, fmt.Errorf("--key-type '%s' is not a valid key type", keyType)
 }
@@ -626,6 +638,9 @@ func parseKeyTypeName(keyTypeName string, defaultLength int, validValues []int) 
 	}
 
 	if keyLength == "" {
+		if defaultLength == 0 {
+			return "", 0, fmt.Errorf("--key-type '%s' needs a length: %s", keyTypeName, keyTypeNames(algorithm, validValues))
+		}
 		return algorithm, defaultLength, nil
 	}
 	length, err := strconv.Atoi(parts[1])
@@ -636,7 +651,20 @@ func parseKeyTypeName(keyTypeName string, defaultLength int, validValues []int) 
 		return algorithm, length, nil
 	}
 
-	return "", 0, fmt.Errorf("--key-type '%s' does not have a valid %s key length", keyTypeName, algorithm)
+	return "", 0, fmt.Errorf("--key-type '%s' does not have a valid %s key length; use %s", keyTypeName, algorithm, keyTypeNames(algorithm, validValues))
+}
+
+// keyTypeNames lists the key types of algorithm with the given lengths, such
+// as "ECDSA-256, ECDSA-384, or ECDSA-521".
+func keyTypeNames(algorithm string, lengths []int) string {
+	names := make([]string, len(lengths))
+	for i, length := range lengths {
+		names[i] = fmt.Sprintf("%s-%d", algorithm, length)
+	}
+	if len(names) < 2 {
+		return strings.Join(names, "")
+	}
+	return strings.Join(names[:len(names)-1], ", ") + ", or " + names[len(names)-1]
 }
 
 func splitStrings(csv string) []string {

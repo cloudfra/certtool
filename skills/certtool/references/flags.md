@@ -12,7 +12,7 @@
 | `--max-path-len` | `-1` (no limit) | With `--ca` or `--yubikey-generate-root`: how many CAs may sit below this one. `0` lets it sign only leaf certificates. |
 | `--permitted-dns-domains` | | With `--ca` or `--yubikey-generate-root`: DNS domains that certificates below the CA may use (`example.com` includes subdomains; `.example.com` only subdomains). |
 | `--permitted-ip-ranges` | | With `--ca` or `--yubikey-generate-root`: IP ranges in CIDR notation that certificates below the CA may use. |
-| `--key-type` | RSA-2048, or the `--target` profile's type with `--code-sign` | `RSA-2048`, `RSA-4096`, `ECDSA-224`, `ECDSA-256`, `ECDSA-384`, `ECDSA-521`. |
+| `--key-type` | RSA-2048, or the `--target` profile's type with `--code-sign` | `RSA-2048`, `RSA-4096`, `ECDSA-256`, `ECDSA-384`, `ECDSA-521`. |
 | `--validity` | `8760h` | Lifetime as a Go duration (`h`, `m`, `s`; no `d`). |
 | `--hostnames` | | DNS names and IP addresses added as SANs. `localhost` and `127.0.0.1` are always added in TLS mode. Ports are removed; a wildcard must be the leftmost label of a name with two more labels (`*.example.com`). |
 | `--parent-public-certificate` | | Issuer certificate. Requires `--parent-private-key`. |

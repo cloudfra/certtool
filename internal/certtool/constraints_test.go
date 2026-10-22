@@ -51,7 +51,7 @@ func TestValidateModesCAConstraints(t *testing.T) {
 func TestRunCAConstraints(t *testing.T) {
 	root := testArgs(t)
 	root.CA, root.MaxPathLen, root.PermittedDNSDomains, root.PermittedIPRanges = true, 0, "example.com", "10.0.0.0/8"
-	if err := Run(root); err != nil {
+	if err := Run(t.Context(), root); err != nil {
 		t.Fatalf("Run() for the root err = %v", err)
 	}
 	data, err := os.ReadFile(root.PublicCertificate)
@@ -68,7 +68,7 @@ func TestRunCAConstraints(t *testing.T) {
 
 	leaf := testArgs(t)
 	leaf.ParentPublicCertificate, leaf.ParentPrivateKey, leaf.Hostnames = root.PublicCertificate, root.PrivateKey, "api.example.com,10.0.0.1"
-	if err := Run(leaf); err != nil {
+	if err := Run(t.Context(), leaf); err != nil {
 		t.Errorf("Run() for a leaf within the constraints err = %v", err)
 	}
 
@@ -80,7 +80,7 @@ func TestRunCAConstraints(t *testing.T) {
 			child := testArgs(t)
 			child.ParentPublicCertificate, child.ParentPrivateKey = root.PublicCertificate, root.PrivateKey
 			set(&child)
-			if err := Run(child); err == nil {
+			if err := Run(t.Context(), child); err == nil {
 				t.Error("Run() err = nil, want the root's constraints to refuse it")
 			}
 		})
@@ -90,7 +90,7 @@ func TestRunCAConstraints(t *testing.T) {
 func TestRunInvalidPermittedIPRanges(t *testing.T) {
 	args := testArgs(t)
 	args.CA, args.PermittedIPRanges = true, "10.0.0.0"
-	if err := Run(args); err == nil || !strings.Contains(err.Error(), "--permitted-ip-ranges: permitted IP range \"10.0.0.0\"") {
+	if err := Run(t.Context(), args); err == nil || !strings.Contains(err.Error(), "--permitted-ip-ranges: permitted IP range \"10.0.0.0\"") {
 		t.Errorf("Run() err = %v, want an error naming --permitted-ip-ranges", err)
 	}
 }
@@ -99,7 +99,7 @@ func TestRunExportSpecCAConstraints(t *testing.T) {
 	args := testArgs(t)
 	args.CA, args.MaxPathLen, args.PermittedDNSDomains = true, 1, "example.com"
 	args.ExportSpec = t.TempDir() + "/out.yaml"
-	if err := Run(args); err != nil {
+	if err := Run(t.Context(), args); err != nil {
 		t.Fatalf("Run() err = %v", err)
 	}
 	specs, err := certlib.ReadSpec(args.ExportSpec)
