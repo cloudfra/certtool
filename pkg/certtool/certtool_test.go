@@ -41,7 +41,7 @@ const (
 	secretMessage      = "this is a secret message"
 	testLoopbackIP     = "127.0.0.1"
 	testOrgValue       = "organization"
-	testPubCertFile    = "pub.cert"
+	testPubCertFile    = "pub.crt"
 	testPrivKeyFile    = "priv.key"
 	testLocalhost      = "localhost"
 	testCloudfra       = "cloudfra"
@@ -605,7 +605,7 @@ func TestFillDefaults(t *testing.T) {
 func TestCreateCertificateToBadPath(t *testing.T) {
 	tmpDir := mustTemp(t)
 
-	publicCertPath := filepath.Join(tmpDir, "public.cert")
+	publicCertPath := filepath.Join(tmpDir, "public.crt")
 
 	kp, err := GenerateAndWriteKeyPair(
 		&Args{
@@ -613,15 +613,15 @@ func TestCreateCertificateToBadPath(t *testing.T) {
 			Hostnames: testHostnames,
 			KeyType:   defaultKeyType(),
 		},
-		"does-not-exist/pub.cert",
+		"does-not-exist/pub.crt",
 		"does-not-exist/private.key",
 	)
 
 	if kp != nil {
 		t.Errorf("kp = %v, want nil", kp)
 	}
-	if err == nil || !strings.Contains(err.Error(), "does-not-exist/pub.cert") {
-		t.Errorf("err = %v, want error containing %q", err, "does-not-exist/pub.cert")
+	if err == nil || !strings.Contains(err.Error(), "does-not-exist/pub.crt") {
+		t.Errorf("err = %v, want error containing %q", err, "does-not-exist/pub.crt")
 	}
 
 	kp, err = GenerateAndWriteKeyPair(
@@ -649,7 +649,7 @@ func TestCreateCertificate(t *testing.T) {
 
 	tmpDir := mustTemp(t)
 
-	publicCertPath := filepath.Join(tmpDir, "public.cert")
+	publicCertPath := filepath.Join(tmpDir, "public.crt")
 	privateKeyPath := filepath.Join(tmpDir, "private.key")
 
 	kp, err := GenerateAndWriteKeyPair(&Args{
@@ -1045,7 +1045,7 @@ func TestWriteKeyPair_ReplacesExistingFiles(t *testing.T) {
 	}
 
 	dir := mustTemp(t)
-	certPath := filepath.Join(dir, "app.cert")
+	certPath := filepath.Join(dir, "app.crt")
 	keyPath := filepath.Join(dir, "app.key")
 	if err := os.WriteFile(keyPath, []byte("old key"), 0o600); err != nil {
 		t.Fatal(err)

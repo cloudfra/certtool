@@ -264,18 +264,18 @@ certtool --yubikey --yubikey-slot 82 --yubikey-serial 12345678 --spec certs.yaml
 The YubiKey signs twice, once for each top-level entry. It writes:
 
 ```text
-certs/issuing-ca.cert, certs/issuing-ca.key           signed by the YubiKey root
-certs/api.cert, certs/api.key                          signed by Acme Issuing CA
-certs/web.cert, certs/web.key                          signed by Acme Issuing CA
-certs/billing-client.cert, certs/billing-client.key    signed by Acme Issuing CA
-certs/release-sign.cert, certs/release-sign.key, certs/release-sign.pfx   signed by the YubiKey root
+certs/issuing-ca.crt, certs/issuing-ca.key           signed by the YubiKey root
+certs/api.crt, certs/api.key                          signed by Acme Issuing CA
+certs/web.crt, certs/web.key                          signed by Acme Issuing CA
+certs/billing-client.crt, certs/billing-client.key    signed by Acme Issuing CA
+certs/release-sign.crt, certs/release-sign.key, certs/release-sign.pfx   signed by the YubiKey root
 ```
 
 Verify the result against the root:
 
 ```bash
-openssl verify -CAfile root.crt -untrusted certs/issuing-ca.cert \
-  certs/api.cert certs/web.cert certs/billing-client.cert certs/release-sign.cert
+openssl verify -CAfile root.crt -untrusted certs/issuing-ca.crt \
+  certs/api.crt certs/web.crt certs/billing-client.crt certs/release-sign.crt
 ```
 
 Without `--yubikey`, the same spec makes `Acme Issuing CA` and `Acme Release Signing` self-signed, which is handy for trying it out first. This file is [`pkg/certtool/testdata/yubikey-intermediate.yaml`](../../pkg/certtool/testdata/yubikey-intermediate.yaml), and the test suite signs it with a simulated YubiKey.

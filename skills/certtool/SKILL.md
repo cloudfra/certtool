@@ -11,7 +11,7 @@ description: Use when a task needs X.509 certificates or private keys - self-sig
 
 | Behavior | Detail |
 | -------- | ------ |
-| Output | PEM files (`.cert`, `.key`) and PKCS#12 (`.pfx`) for Windows code signing. Key and `.pfx` files are written with mode `0600`. |
+| Output | PEM files (`.crt`, `.key`) and PKCS#12 (`.pfx`) for Windows code signing. Key and `.pfx` files are written with mode `0600`. |
 | Logs | Everything goes to stderr; stdout stays empty. Each generated file is logged as `INFO generated certificate {"cn": ..., "cert": ..., "key": ...}`. |
 | Exit codes | `0` success. `1` the run failed; the `ERROR certtool failed {"error": "..."}` line names the flag at fault and why. `2` a flag could not be parsed (usage is printed). |
 | Existing files | Overwritten without asking. Check the destination first. |
@@ -34,7 +34,7 @@ YubiKey support is in the Windows downloads, and on Linux and macOS only in buil
 
 | The user wants | Use |
 | -------------- | --- |
-| One certificate and key | Flags only (writes `app.cert` and `app.key` by default) |
+| One certificate and key | Flags only (writes `app.crt` and `app.key` by default) |
 | A CA and certificates it signs, few files | `--ca`, then `--parent-public-certificate` with `--parent-private-key` |
 | A regular hierarchy (root, intermediates, leaves) | `--chain 1,2,3 --output-dir DIR` |
 | Specific names, hostnames, or mixed trees | `--spec FILE --output-dir DIR` ([references/spec-format.md](references/spec-format.md)) |

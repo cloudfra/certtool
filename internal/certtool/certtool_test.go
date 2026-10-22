@@ -31,7 +31,7 @@ func testArgs(t *testing.T) Args {
 
 	dir := t.TempDir()
 	args := DefaultArgs()
-	args.PublicCertificate = filepath.Join(dir, "app.cert")
+	args.PublicCertificate = filepath.Join(dir, "app.crt")
 	args.PrivateKey = filepath.Join(dir, "app.key")
 	args.PFXOutput = filepath.Join(dir, "codesign.pfx")
 	args.OutputDir = dir
@@ -112,7 +112,7 @@ func TestRunErrors(t *testing.T) {
 		{
 			name: "write failure",
 			set: func(t *testing.T, a *Args) {
-				a.PublicCertificate = filepath.Join(t.TempDir(), "does-not-exist", "app.cert")
+				a.PublicCertificate = filepath.Join(t.TempDir(), "does-not-exist", "app.crt")
 			},
 		},
 		{
@@ -288,7 +288,7 @@ func TestCertificateArgsErrors(t *testing.T) {
 		set  func(t *testing.T, a *Args)
 	}{
 		{"missing parent certificate", func(t *testing.T, a *Args) {
-			a.ParentPublicCertificate = filepath.Join(t.TempDir(), "missing.cert")
+			a.ParentPublicCertificate = filepath.Join(t.TempDir(), "missing.crt")
 			a.ParentPrivateKey = filepath.Join(t.TempDir(), "missing.key")
 		}},
 		{"negative validity", func(_ *testing.T, a *Args) { a.Validity = -24 * time.Hour }},
@@ -403,7 +403,7 @@ func TestRunSpec(t *testing.T) {
 	if err := Run(args); err != nil {
 		t.Fatalf("Run() err = %v", err)
 	}
-	for _, f := range []string{"test-root-ca.cert", "test-root-ca-leaf-example-com.cert"} {
+	for _, f := range []string{"test-root-ca.crt", "test-root-ca-leaf-example-com.crt"} {
 		if _, err := os.Stat(filepath.Join(args.OutputDir, f)); err != nil {
 			t.Errorf("expected %s: %v", f, err)
 		}
@@ -443,7 +443,7 @@ func TestRunChain(t *testing.T) {
 			if err := Run(args); err != nil {
 				t.Fatalf("Run() err = %v", err)
 			}
-			if got := countFiles(t, args.OutputDir, "*.cert"); got != tc.wantCerts {
+			if got := countFiles(t, args.OutputDir, "*.crt"); got != tc.wantCerts {
 				t.Errorf("wrote %d certificates, want %d", got, tc.wantCerts)
 			}
 			if got := countFiles(t, args.OutputDir, "*.key"); got != tc.wantCerts {
@@ -459,7 +459,7 @@ func TestRunChainNamePrefix(t *testing.T) {
 	if err := Run(args); err != nil {
 		t.Fatalf("Run() err = %v", err)
 	}
-	for _, f := range []string{"prod-cloudfra-root-ca.cert", "prod-cloudfra-root-ca-prod-cloudfra.cert"} {
+	for _, f := range []string{"prod-cloudfra-root-ca.crt", "prod-cloudfra-root-ca-prod-cloudfra.crt"} {
 		if _, err := os.Stat(filepath.Join(args.OutputDir, f)); err != nil {
 			t.Errorf("expected the certificate to carry the prefix: %v", err)
 		}
@@ -483,7 +483,7 @@ func TestRunExportSpec(t *testing.T) {
 	if _, err := os.Stat(args.ExportSpec); err != nil {
 		t.Errorf("expected spec file to be written: %v", err)
 	}
-	if got := countFiles(t, args.OutputDir, "*.cert"); got != 0 {
+	if got := countFiles(t, args.OutputDir, "*.crt"); got != 0 {
 		t.Errorf("wrote %d certificates with --export-spec, want none", got)
 	}
 }
@@ -540,7 +540,7 @@ func TestRunSpecWithExportSpec(t *testing.T) {
 	if _, err := os.Stat(args.ExportSpec); err != nil {
 		t.Errorf("expected output spec file: %v", err)
 	}
-	if got := countFiles(t, args.OutputDir, "*.cert"); got != 0 {
+	if got := countFiles(t, args.OutputDir, "*.crt"); got != 0 {
 		t.Errorf("wrote %d certificates with --export-spec, want none", got)
 	}
 }

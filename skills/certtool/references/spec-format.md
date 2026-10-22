@@ -22,7 +22,7 @@ A spec is a YAML list of certificates. An entry with `children` is a CA that sig
 
 ## Output names
 
-Without `filename`, each file is named after the slugified common names on the path from the root, so a leaf `app.example.com` under `Root CA` becomes `root-ca-app-example-com.cert` and `.key`. Code signing entries for Windows targets also get a `.pfx`. Set `filename` on every entry when other tools need stable paths.
+Without `filename`, each file is named after the slugified common names on the path from the root, so a leaf `app.example.com` under `Root CA` becomes `root-ca-app-example-com.crt` and `.key`. Code signing entries for Windows targets also get a `.pfx`. Set `filename` on every entry when other tools need stable paths.
 
 ## Example
 
@@ -52,7 +52,7 @@ Without `filename`, each file is named after the slugified common names on the p
   filename: "release-sign"
 ```
 
-This writes `platform-ca`, `api`, and `billing-client` as `.cert` and `.key` files, plus `release-sign.cert`, `release-sign.key`, and `release-sign.pfx`.
+This writes `platform-ca`, `api`, and `billing-client` as `.crt` and `.key` files, plus `release-sign.crt`, `release-sign.key`, and `release-sign.pfx`.
 
 ## With a YubiKey
 

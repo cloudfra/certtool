@@ -511,7 +511,7 @@ func specFilename(ancestorCNs []string, spec *CertificateSpec) string {
 
 func generateSpec(spec *CertificateSpec, parentKP *KeyPair, issuer *Issuer, outputDir string, ancestorCNs []string, filenames map[string]string) ([]GenerationOutput, error) {
 	basename := specFilename(ancestorCNs, spec)
-	certPath := filepath.Join(outputDir, basename+".cert")
+	certPath := filepath.Join(outputDir, basename+".crt")
 	keyPath := filepath.Join(outputDir, basename+".key")
 
 	if existingCN, ok := filenames[basename]; ok {

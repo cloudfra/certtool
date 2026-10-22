@@ -39,7 +39,7 @@ A spec file is a YAML list of `CertificateSpec` entries. Each entry defines one 
 
 ### Output filenames
 
-By default, filenames are derived from the slugified common name path through the tree. For example, a leaf with CN `app.example.com` under a root with CN `Root CA` produces `root-ca-app-example-com.cert` and `root-ca-app-example-com.key`. Use the `filename` field to override.
+By default, filenames are derived from the slugified common name path through the tree. For example, a leaf with CN `app.example.com` under a root with CN `Root CA` produces `root-ca-app-example-com.crt` and `root-ca-app-example-com.key`. Use the `filename` field to override.
 
 ## Examples
 
@@ -67,9 +67,9 @@ A root CA with a single leaf certificate for TLS.
 ```bash
 certtool --spec simple-chain.yaml --output-dir ./certs
 # Produces:
-#   certs/root-ca.cert
+#   certs/root-ca.crt
 #   certs/root-ca.key
-#   certs/root-ca-app-example-com.cert
+#   certs/root-ca-app-example-com.crt
 #   certs/root-ca-app-example-com.key
 ```
 
@@ -110,10 +110,10 @@ A root CA issuing certificates for multiple services with custom filenames.
 ```bash
 certtool --spec multi-service.yaml --output-dir ./certs
 # Produces:
-#   certs/acme-corp-root-ca.cert, certs/acme-corp-root-ca.key
-#   certs/api.cert, certs/api.key
-#   certs/web.cert, certs/web.key
-#   certs/grpc.cert, certs/grpc.key
+#   certs/acme-corp-root-ca.crt, certs/acme-corp-root-ca.key
+#   certs/api.crt, certs/api.key
+#   certs/web.crt, certs/web.key
+#   certs/grpc.crt, certs/grpc.key
 ```
 
 ### Intermediate CA
@@ -149,10 +149,10 @@ A three-level hierarchy: root CA, intermediate CA, and leaf certificates.
 ```bash
 certtool --spec intermediate-ca.yaml --output-dir ./certs
 # Produces:
-#   certs/root-ca.cert, certs/root-ca.key
-#   certs/root-ca-intermediate-ca.cert, certs/root-ca-intermediate-ca.key
-#   certs/server.cert, certs/server.key
-#   certs/db.cert, certs/db.key
+#   certs/root-ca.crt, certs/root-ca.key
+#   certs/root-ca-intermediate-ca.crt, certs/root-ca-intermediate-ca.key
+#   certs/server.crt, certs/server.key
+#   certs/db.crt, certs/db.key
 ```
 
 ### Code signing
@@ -172,7 +172,7 @@ A code signing certificate for Windows 10/11.
 ```bash
 certtool --spec code-signing.yaml --output-dir ./certs
 # Produces:
-#   certs/codesign.cert
+#   certs/codesign.crt
 #   certs/codesign.key
 #   certs/codesign.pfx
 ```
@@ -210,10 +210,10 @@ Multiple independent trees in one file: a TLS hierarchy and a code signing certi
 ```bash
 certtool --spec mixed-roots.yaml --output-dir ./certs
 # Produces:
-#   certs/tls-root-ca.cert, certs/tls-root-ca.key
-#   certs/frontend.cert, certs/frontend.key
-#   certs/backend.cert, certs/backend.key
-#   certs/release-sign.cert, certs/release-sign.key, certs/release-sign.pfx
+#   certs/tls-root-ca.crt, certs/tls-root-ca.key
+#   certs/frontend.crt, certs/frontend.key
+#   certs/backend.crt, certs/backend.key
+#   certs/release-sign.crt, certs/release-sign.key, certs/release-sign.pfx
 ```
 
 ### YubiKey root CA
@@ -264,11 +264,11 @@ With `--yubikey`, the root CA on a YubiKey signs every top-level entry instead o
 ```bash
 certtool --yubikey --spec yubikey-intermediate.yaml --output-dir ./certs
 # Produces:
-#   certs/issuing-ca.cert, certs/issuing-ca.key         (signed by the YubiKey)
-#   certs/api.cert, certs/api.key                        (signed by Acme Issuing CA)
-#   certs/web.cert, certs/web.key                        (signed by Acme Issuing CA)
-#   certs/billing-client.cert, certs/billing-client.key  (signed by Acme Issuing CA)
-#   certs/release-sign.cert, certs/release-sign.key, certs/release-sign.pfx  (signed by the YubiKey)
+#   certs/issuing-ca.crt, certs/issuing-ca.key         (signed by the YubiKey)
+#   certs/api.crt, certs/api.key                        (signed by Acme Issuing CA)
+#   certs/web.crt, certs/web.key                        (signed by Acme Issuing CA)
+#   certs/billing-client.crt, certs/billing-client.key  (signed by Acme Issuing CA)
+#   certs/release-sign.crt, certs/release-sign.key, certs/release-sign.pfx  (signed by the YubiKey)
 ```
 
 The `--yubikey-*` flags select the YubiKey, slot, and PIN. See the [YubiKey root CA guide](use-cases/yubikey-root-ca.md) for setting up the YubiKey.
@@ -292,13 +292,13 @@ certtool --chain 1,2,3 --common-name svc --organization Acme --output-dir ./cert
 `--common-name` names the leaves (default: the `--organization` value) and `--organization` names the CAs. Every certificate gets a unique common name, so the output filenames never collide:
 
 ```text
-certs/acme-root-ca.cert
-certs/acme-root-ca-acme-intermediate-ca-1.cert
-certs/acme-root-ca-acme-intermediate-ca-1-svc-1-1.cert
-certs/acme-root-ca-acme-intermediate-ca-1-svc-1-2.cert
-certs/acme-root-ca-acme-intermediate-ca-1-svc-1-3.cert
-certs/acme-root-ca-acme-intermediate-ca-2.cert
-certs/acme-root-ca-acme-intermediate-ca-2-svc-2-1.cert
+certs/acme-root-ca.crt
+certs/acme-root-ca-acme-intermediate-ca-1.crt
+certs/acme-root-ca-acme-intermediate-ca-1-svc-1-1.crt
+certs/acme-root-ca-acme-intermediate-ca-1-svc-1-2.crt
+certs/acme-root-ca-acme-intermediate-ca-1-svc-1-3.crt
+certs/acme-root-ca-acme-intermediate-ca-2.crt
+certs/acme-root-ca-acme-intermediate-ca-2-svc-2-1.crt
 ...
 ```
 
@@ -405,7 +405,7 @@ Active Directory Domain Controllers require certificates for LDAP over TLS (LDAP
 certtool --spec ad-ldaps.yaml --output-dir certs/
 ```
 
-Import `contoso-root-ca.cert` into the Trusted Root store on domain members, and install each DC's cert/key pair on the corresponding server.
+Import `contoso-root-ca.crt` into the Trusted Root store on domain members, and install each DC's cert/key pair on the corresponding server.
 
 ### Kubernetes Cluster
 
@@ -509,7 +509,7 @@ Service-to-service authentication using mutual TLS. Both sides present certifica
 certtool --spec mtls-services.yaml --output-dir certs/
 ```
 
-Each service loads its own cert/key and the shared `platform-ca.cert` as the trusted root for verifying peers.
+Each service loads its own cert/key and the shared `platform-ca.crt` as the trusted root for verifying peers.
 
 ### PostgreSQL and Redis with TLS
 
@@ -546,7 +546,7 @@ Database and cache servers that accept TLS connections, with a shared CA so appl
 certtool --spec infra-tls.yaml --output-dir /etc/ssl/infra/
 ```
 
-Configure PostgreSQL with `ssl_cert_file` / `ssl_key_file` and Redis with `tls-cert-file` / `tls-key-file`, then distribute `infra-ca.cert` to application servers.
+Configure PostgreSQL with `ssl_cert_file` / `ssl_key_file` and Redis with `tls-cert-file` / `tls-key-file`, then distribute `infra-ca.crt` to application servers.
 
 ### VPN / IPSec Gateway
 

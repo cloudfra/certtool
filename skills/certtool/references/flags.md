@@ -6,7 +6,7 @@
 
 | Flag | Default | Description |
 | ---- | ------- | ----------- |
-| `--public-certificate` | `app.cert` | Certificate file to write (PEM). With `--yubikey-generate-root`, receives the YubiKey root certificate. |
+| `--public-certificate` | `app.crt` | Certificate file to write (PEM). With `--yubikey-generate-root`, receives the YubiKey root certificate. |
 | `--private-key` | `app.key` | Private key file to write (PEM, mode `0600`). |
 | `--ca` | `false` | Make a CA certificate that can sign other TLS certificates. |
 | `--max-path-len` | `-1` (no limit) | With `--ca` or `--yubikey-generate-root`: how many CAs may sit below this one. `0` lets it sign only leaf certificates. |
