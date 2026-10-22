@@ -14,7 +14,7 @@ description: Use when a task needs X.509 certificates or private keys - self-sig
 | Output | PEM files (`.crt`, `.key`) and PKCS#12 (`.pfx`) for Windows code signing. Key and `.pfx` files are written with mode `0600`. |
 | Logs | Everything goes to stderr; stdout stays empty. Each generated file is logged as `INFO generated certificate {"cn": ..., "cert": ..., "key": ...}`. |
 | Exit codes | `0` success. `1` the run failed; the `ERROR certtool failed {"error": "..."}` line names the flag at fault and why. `2` a flag could not be parsed (usage is printed). |
-| Existing files | Overwritten without asking. Check the destination first. |
+| Existing files | A single certificate overwrites its files without asking; check the destination first. `--spec` and `--chain` reuse certificates whose `.crt` and `.key` already exist and only generate what is missing; `--overwrite` regenerates everything. |
 | Help | `certtool --help` (printed to stderr) lists every flag. See [references/flags.md](references/flags.md). |
 
 ## Getting the binary

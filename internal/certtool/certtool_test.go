@@ -15,6 +15,7 @@
 package certtool
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -542,5 +543,78 @@ func TestRunSpecWithExportSpec(t *testing.T) {
 	}
 	if got := countFiles(t, args.OutputDir, "*.crt"); got != 0 {
 		t.Errorf("wrote %d certificates with --export-spec, want none", got)
+	}
+}
+
+// --spec and --chain reuse the files they already wrote unless --overwrite is
+// given, so a hierarchy can be extended rather than reset.
+func TestRunReusesExistingFiles(t *testing.T) {
+	for name, set := range map[string]func(t *testing.T, a *Args){
+		"spec": func(t *testing.T, a *Args) {
+			a.Spec = writeSpec(t, t.TempDir(), "certs.yaml", "- commonName: Root\n  certificateAuthority: true\n  keyType: ECDSA-256\n  filename: root\n  children:\n    - commonName: api\n      keyType: ECDSA-256\n      filename: api\n")
+		},
+		"chain": func(_ *testing.T, a *Args) { a.Chain, a.KeyType = "1,1", "ECDSA-256" },
+	} {
+		t.Run(name, func(t *testing.T) {
+			args := testArgs(t)
+			set(t, &args)
+			if err := Run(args); err != nil {
+				t.Fatalf("Run() err = %v", err)
+			}
+			keys := func() string {
+				var all strings.Builder
+				matches, err := filepath.Glob(filepath.Join(args.OutputDir, "*.key"))
+				if err != nil || len(matches) != 2 {
+					t.Fatalf("found keys %v (err %v), want 2", matches, err)
+				}
+				for _, m := range matches {
+					data, err := os.ReadFile(m) //nolint:gosec // m is a file the test created.
+					if err != nil {
+						t.Fatal(err)
+					}
+					all.Write(data)
+				}
+				return all.String()
+			}
+			first := keys()
+
+			if err := Run(args); err != nil {
+				t.Fatalf("Run() again err = %v", err)
+			}
+			if keys() != first {
+				t.Error("running again replaced the keys, want them reused")
+			}
+
+			args.Overwrite = true
+			if err := Run(args); err != nil {
+				t.Fatalf("Run() with --overwrite err = %v", err)
+			}
+			if keys() == first {
+				t.Error("--overwrite kept the keys, want them regenerated")
+			}
+		})
+	}
+}
+
+func TestRunUnusableFilesSuggestOverwrite(t *testing.T) {
+	args := testArgs(t)
+	args.Spec = writeSpec(t, t.TempDir(), "certs.yaml", "- commonName: Leaf\n  keyType: ECDSA-256\n  filename: leaf\n")
+	if err := Run(args); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Remove(filepath.Join(args.OutputDir, "leaf.key")); err != nil {
+		t.Fatal(err)
+	}
+	err := Run(args)
+	if !errors.Is(err, certlib.ErrExistingFiles) || !strings.Contains(err.Error(), "or pass --overwrite to regenerate every certificate") {
+		t.Errorf("Run() err = %v, want ErrExistingFiles suggesting --overwrite", err)
+	}
+}
+
+func TestValidateModesOverwrite(t *testing.T) {
+	args := DefaultArgs()
+	args.Overwrite = true
+	if err := validateModes(args); err == nil || !strings.Contains(err.Error(), "--overwrite only applies to --spec and --chain") {
+		t.Errorf("validateModes() err = %v, want an --overwrite misuse error", err)
 	}
 }
