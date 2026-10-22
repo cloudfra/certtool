@@ -9,6 +9,8 @@ A spec is a YAML list of certificates. An entry with `children` is a CA that sig
 | `commonName` | Required. Subject common name. |
 | `certificateAuthority` | Must be `true` on an entry with `children`. |
 | `children` | Certificates signed by this entry. |
+| `maxPathLen` | CAs only. CAs allowed below this one; defaults to the depth of CAs the spec puts below it, `-1` for no limit. |
+| `permittedDNSDomains`, `permittedIPRanges` | CAs only. Name constraints: the DNS domains and CIDR ranges certificates below the CA may use. |
 | `keyType` | `RSA-2048`, `RSA-4096`, `ECDSA-256`, `ECDSA-384`. |
 | `validity` | Go duration, for example `8760h`. Default `8760h`. |
 | `hostnames` | DNS names and IP addresses added as SANs. |

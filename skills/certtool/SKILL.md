@@ -51,7 +51,8 @@ certtool --common-name myapp.localhost --hostnames myapp.localhost,192.168.1.20 
 
 # Private CA, then a server certificate signed by it
 certtool --ca --common-name "Acme Root CA" --organization Acme --key-type ECDSA-384 \
-  --validity 87600h --public-certificate root-ca.crt --private-key root-ca.key
+  --validity 87600h --max-path-len 0 --permitted-dns-domains example.com \
+  --public-certificate root-ca.crt --private-key root-ca.key
 certtool --common-name api.example.com --organization Acme --hostnames api.example.com \
   --parent-public-certificate root-ca.crt --parent-private-key root-ca.key \
   --public-certificate api.crt --private-key api.key

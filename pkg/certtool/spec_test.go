@@ -16,6 +16,7 @@ package certtool
 
 import (
 	"crypto/x509"
+	"encoding/pem"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -245,6 +246,21 @@ func TestUnmarshalSpec_Errors(t *testing.T) {
 			name:    "pfxPassword and pfxPasswordEnv",
 			yaml:    "- commonName: Sign\n  codeSigning: true\n  pfxPassword: x\n  pfxPasswordEnv: PW\n",
 			wantErr: `spec "Sign" sets both pfxPassword and pfxPasswordEnv`,
+		},
+		{
+			name:    "constraints on a leaf",
+			yaml:    "- commonName: Leaf\n  maxPathLen: 0\n",
+			wantErr: `spec "Leaf" sets maxPathLen, permittedDNSDomains, or permittedIPRanges, which only apply to a CA`,
+		},
+		{
+			name:    "negative maxPathLen",
+			yaml:    "- commonName: CA\n  certificateAuthority: true\n  maxPathLen: -2\n",
+			wantErr: `spec "CA" has maxPathLen -2`,
+		},
+		{
+			name:    "bad IP range",
+			yaml:    "- commonName: CA\n  certificateAuthority: true\n  permittedIPRanges: [10.0.0.0]\n",
+			wantErr: `permitted IP range "10.0.0.0" is not in CIDR notation`,
 		},
 		{
 			name:    "invalid YAML",
@@ -1039,5 +1055,68 @@ func TestSpecsWithUnprotectedPFX(t *testing.T) {
 	}
 	if diff := cmp.Diff([]string{"default target", "windows7"}, SpecsWithUnprotectedPFX(specs)); diff != "" {
 		t.Errorf("SpecsWithUnprotectedPFX() mismatch (-want +got):\n%s", diff)
+	}
+}
+
+// Spec CAs are limited to the depth of the hierarchy the spec describes,
+// unless maxPathLen says otherwise.
+func TestGenerateFromSpec_PathLength(t *testing.T) {
+	t.Parallel()
+	unlimited := -1
+	specs, err := ChainToSpec([]int{1, 1, 1}, "leaf", "Acme", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	specs = append(specs, CertificateSpec{CommonName: "Open CA", CertificateAuthority: true, MaxPathLen: &unlimited})
+	for i := range specs {
+		specs[i].KeyType = testSpecECDSA256
+	}
+	specs[0].Children[0].KeyType = testSpecECDSA256
+	specs[0].Children[0].Children[0].KeyType = testSpecECDSA256
+
+	out, err := GenerateFromSpec(specs, t.TempDir())
+	if err != nil {
+		t.Fatalf("GenerateFromSpec() err = %v", err)
+	}
+	got := map[string]int{}
+	for _, o := range out {
+		block, _ := pem.Decode(o.KeyPair.PublicCertificate)
+		cert, err := x509.ParseCertificate(block.Bytes)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if cert.IsCA {
+			got[o.CommonName] = cert.MaxPathLen
+		}
+	}
+	want := map[string]int{"Acme Root CA": 1, "Acme Intermediate CA": 0, "Open CA": -1}
+	if diff := cmp.Diff(want, got); diff != "" {
+		t.Errorf("path lengths mismatch (-want +got):\n%s", diff)
+	}
+}
+
+func TestGenerateFromSpec_NameConstraints(t *testing.T) {
+	t.Parallel()
+	data := []byte(`- commonName: Internal CA
+  certificateAuthority: true
+  keyType: ECDSA-256
+  permittedDNSDomains: [internal.example.com]
+  permittedIPRanges: [10.0.0.0/8]
+  children:
+    - commonName: api
+      keyType: ECDSA-256
+      hostnames: [api.internal.example.com, 10.0.0.5]
+`)
+	specs, err := UnmarshalSpec(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := GenerateFromSpec(specs, t.TempDir()); err != nil {
+		t.Fatalf("GenerateFromSpec() err = %v", err)
+	}
+
+	specs[0].Children[0].Hostnames = []string{"api.example.org"}
+	if _, err := GenerateFromSpec(specs, t.TempDir()); err == nil || !strings.Contains(err.Error(), `reject the name "api.example.org"`) {
+		t.Errorf("GenerateFromSpec() with a name outside the constraints err = %v, want a name constraint error", err)
 	}
 }

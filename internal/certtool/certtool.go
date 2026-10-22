@@ -58,6 +58,12 @@ type Args struct {
 	PrivateKey string
 	// CA is --ca.
 	CA bool
+	// MaxPathLen is --max-path-len; -1 means no limit.
+	MaxPathLen int
+	// PermittedDNSDomains is --permitted-dns-domains, comma separated.
+	PermittedDNSDomains string
+	// PermittedIPRanges is --permitted-ip-ranges, comma separated.
+	PermittedIPRanges string
 
 	// CommonName is --common-name. Empty uses Organization.
 	CommonName string
@@ -144,6 +150,7 @@ func DefaultArgs() Args {
 		OutputDir:          ".",
 		YubiKeySlot:        yubikey.DefaultSlot,
 		YubiKeyTouchPolicy: string(yubikey.DefaultTouchPolicy),
+		MaxPathLen:         -1,
 	}
 }
 
@@ -215,6 +222,16 @@ func validateModes(args Args) error {
 	}
 	if args.YubiKey && args.YubiKeyGenerateRoot {
 		return errors.New("--yubikey and --yubikey-generate-root are mutually exclusive")
+	}
+	if hasCAConstraints := args.MaxPathLen != defaults.MaxPathLen || args.PermittedDNSDomains != "" || args.PermittedIPRanges != ""; hasCAConstraints {
+		switch {
+		case hasChain || hasSpec:
+			return errors.New("--max-path-len, --permitted-dns-domains, and --permitted-ip-ranges apply to a single CA; with --chain or --spec, set maxPathLen, permittedDNSDomains, and permittedIPRanges in the spec instead")
+		case !args.CA && !args.YubiKeyGenerateRoot:
+			return errors.New("--max-path-len, --permitted-dns-domains, and --permitted-ip-ranges constrain a CA, so they need --ca or --yubikey-generate-root")
+		case args.MaxPathLen < -1:
+			return fmt.Errorf("--max-path-len must be 0 or more, or -1 for no limit, got %d", args.MaxPathLen)
+		}
 	}
 	if args.YubiKey && (args.ParentPublicCertificate != "" || args.ParentPrivateKey != "") {
 		return errors.New("--yubikey and --parent-public-certificate/--parent-private-key are mutually exclusive")
@@ -413,6 +430,14 @@ func argsToSpec(args Args) ([]certlib.CertificateSpec, error) {
 		s.PFXPasswordEnv = PFXPasswordEnv
 		slog.Warn("the exported spec reads the .pfx password from the environment instead of storing it", "env", PFXPasswordEnv)
 	}
+	if args.CA {
+		if args.MaxPathLen != -1 {
+			maxPathLen := args.MaxPathLen
+			s.MaxPathLen = &maxPathLen
+		}
+		s.PermittedDNSDomains = splitStrings(args.PermittedDNSDomains)
+		s.PermittedIPRanges = splitStrings(args.PermittedIPRanges)
+	}
 	return []certlib.CertificateSpec{s}, nil
 }
 
@@ -523,21 +548,32 @@ func certificateArgs(args Args) (*certlib.Args, error) {
 	if err != nil {
 		return nil, err
 	}
+	ipRanges, err := certlib.ParseIPRanges(splitStrings(args.PermittedIPRanges))
+	if err != nil {
+		return nil, fmt.Errorf("--permitted-ip-ranges: %w", err)
+	}
+	var maxPathLen *int
+	if args.MaxPathLen >= 0 {
+		maxPathLen = &args.MaxPathLen
+	}
 	return &certlib.Args{
-		CA:                 args.CA,
-		CommonName:         args.CommonName,
-		Country:            args.Country,
-		Organization:       args.Organization,
-		OrganizationalUnit: args.OrganizationalUnit,
-		Locality:           args.Locality,
-		Province:           args.Province,
-		Validity:           args.Validity,
-		Hostnames:          hostnames,
-		KeyType:            kt,
-		ParentKeyPair:      parent,
-		CodeSigning:        args.CodeSigning,
-		Target:             args.Target,
-		PFXPassword:        pfxPassword(args),
+		CA:                  args.CA,
+		MaxPathLen:          maxPathLen,
+		PermittedDNSDomains: splitStrings(args.PermittedDNSDomains),
+		PermittedIPRanges:   ipRanges,
+		CommonName:          args.CommonName,
+		Country:             args.Country,
+		Organization:        args.Organization,
+		OrganizationalUnit:  args.OrganizationalUnit,
+		Locality:            args.Locality,
+		Province:            args.Province,
+		Validity:            args.Validity,
+		Hostnames:           hostnames,
+		KeyType:             kt,
+		ParentKeyPair:       parent,
+		CodeSigning:         args.CodeSigning,
+		Target:              args.Target,
+		PFXPassword:         pfxPassword(args),
 	}, nil
 }
 
