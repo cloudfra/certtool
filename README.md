@@ -10,7 +10,7 @@ A simple tool for generating self-signed X.509 certificates and private keys for
 # Download (Linux amd64, see Downloads for other builds)
 curl -fLo certtool https://github.com/cloudfra/certtool/releases/latest/download/certtool-linux_amd64 && chmod +x certtool
 
-# Self-signed TLS certificate for localhost (writes app.cert and app.key)
+# Self-signed TLS certificate for localhost (writes app.crt and app.key)
 ./certtool
 
 # Code signing certificate for Windows 10/11 (writes codesign.pfx)
@@ -40,7 +40,7 @@ Each example writes its files to the current directory. The [use case guides](do
 ### TLS certificates
 
 ```bash
-# Self-signed certificate for localhost (RSA-2048, writes app.cert and app.key)
+# Self-signed certificate for localhost (RSA-2048, writes app.crt and app.key)
 ./certtool
 
 # Certificate for your own hostnames and IP addresses
@@ -123,7 +123,7 @@ read -rs -p "YubiKey PIN: " CERTTOOL_YUBIKEY_PIN && export CERTTOOL_YUBIKEY_PIN
 
 | Flag | Default | Description |
 | ---- | ------- | ----------- |
-| `--public-certificate` | `app.cert` | X.509 public certificate output file |
+| `--public-certificate` | `app.crt` | X.509 public certificate output file |
 | `--private-key` | `app.key` | Private key output file |
 | `--ca` | `false` | Generate a root/CA certificate |
 | `--key-type` | `RSA-2048` | Key algorithm and length (`RSA-2048`, `RSA-4096`, `ECDSA-224`, `ECDSA-256`, `ECDSA-384`, `ECDSA-521`) |

@@ -528,10 +528,10 @@ func TestGenerateFromSpec_MultiLeaf(t *testing.T) {
 		t.Fatalf("got %d results, want 3", len(results))
 	}
 
-	if results[1].CertPath != filepath.Join(outputDir, "frontend.cert") {
+	if results[1].CertPath != filepath.Join(outputDir, "frontend.crt") {
 		t.Errorf("frontend path = %q", results[1].CertPath)
 	}
-	if results[2].CertPath != filepath.Join(outputDir, "backend.cert") {
+	if results[2].CertPath != filepath.Join(outputDir, "backend.crt") {
 		t.Errorf("backend path = %q", results[2].CertPath)
 	}
 }
@@ -587,7 +587,7 @@ func TestGenerateFromSpec_FilenameOutsideOutputDir(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "must be a file name") {
 		t.Fatalf("GenerateFromSpec() err = %v, want a filename error", err)
 	}
-	for _, path := range []string{filepath.Join(root, "escaped.cert"), filepath.Join(root, "escaped.key"), outputDir} {
+	for _, path := range []string{filepath.Join(root, "escaped.crt"), filepath.Join(root, "escaped.key"), outputDir} {
 		if _, err := os.Stat(path); !os.IsNotExist(err) {
 			t.Errorf("%s exists (stat err = %v), want nothing written", path, err)
 		}

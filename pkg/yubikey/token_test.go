@@ -927,7 +927,7 @@ func TestSpecWithYubiKey(t *testing.T) {
 		certs[r.CommonName] = parseCertificate(t, r.KeyPair.PublicCertificate)
 		files = append(files, filepath.Base(r.CertPath))
 	}
-	if want := []string{"issuing-ca.cert", "api.cert", "web.cert", "billing-client.cert", "release-sign.cert"}; strings.Join(files, " ") != strings.Join(want, " ") {
+	if want := []string{"issuing-ca.crt", "api.crt", "web.crt", "billing-client.crt", "release-sign.crt"}; strings.Join(files, " ") != strings.Join(want, " ") {
 		t.Errorf("wrote %q, want %q", files, want)
 	}
 

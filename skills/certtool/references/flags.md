@@ -6,7 +6,7 @@
 
 | Flag | Default | Description |
 | ---- | ------- | ----------- |
-| `--public-certificate` | `app.cert` | Certificate file to write (PEM). With `--yubikey-generate-root`, receives the YubiKey root certificate. |
+| `--public-certificate` | `app.crt` | Certificate file to write (PEM). With `--yubikey-generate-root`, receives the YubiKey root certificate. |
 | `--private-key` | `app.key` | Private key file to write (PEM, mode `0600`). |
 | `--ca` | `false` | Make a CA certificate that can sign other TLS certificates. |
 | `--key-type` | RSA-2048, or the `--target` profile's type with `--code-sign` | `RSA-2048`, `RSA-4096`, `ECDSA-224`, `ECDSA-256`, `ECDSA-384`, `ECDSA-521`. |

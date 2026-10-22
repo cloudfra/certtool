@@ -88,6 +88,6 @@ build/
 output/
 
 # Sensitive files
-web.cert
+web.crt
 web.key
 gha-creds-*.json

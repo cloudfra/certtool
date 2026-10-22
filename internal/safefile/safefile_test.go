@@ -50,7 +50,7 @@ func TestWriteTightensExistingPermissions(t *testing.T) {
 }
 
 func TestWritePublic(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "app.cert")
+	path := filepath.Join(t.TempDir(), "app.crt")
 	if err := WritePublic(path, []byte("cert")); err != nil {
 		t.Fatalf("WritePublic() err = %v", err)
 	}

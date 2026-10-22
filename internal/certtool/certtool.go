@@ -132,7 +132,7 @@ type Args struct {
 // DefaultArgs returns the default value of every option.
 func DefaultArgs() Args {
 	return Args{
-		PublicCertificate:  "app.cert",
+		PublicCertificate:  "app.crt",
 		PrivateKey:         "app.key",
 		Country:            "US",
 		Organization:       "cloudfra",
