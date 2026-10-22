@@ -18,6 +18,7 @@ Install a release build from <https://github.com/cloudfra/certtool/releases/late
 - [Private CA and mutual TLS](https://raw.githubusercontent.com/cloudfra/certtool/main/docs/use-cases/private-ca.md)
 - [Code signing](https://raw.githubusercontent.com/cloudfra/certtool/main/docs/use-cases/code-signing.md)
 - [YubiKey root CA](https://raw.githubusercontent.com/cloudfra/certtool/main/docs/use-cases/yubikey-root-ca.md)
+- [Encrypted private keys](https://raw.githubusercontent.com/cloudfra/certtool/main/docs/use-cases/encrypted-keys.md): `--encrypt-to` age and YubiKey recipients, decrypting with `--age-yubikey`
 
 ## Optional
 

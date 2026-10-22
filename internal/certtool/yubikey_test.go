@@ -79,12 +79,12 @@ func TestValidateModesYubiKey(t *testing.T) {
 		{
 			name: "slot without yubikey",
 			set:  func(a *Args) { a.YubiKeySlot = "82" },
-			want: "need --yubikey or --yubikey-generate-root",
+			want: "need --yubikey, --yubikey-generate-root, or --age-yubikey",
 		},
 		{
 			name: "pin without yubikey",
 			set:  func(a *Args) { a.YubiKeyPIN = "123456" },
-			want: "need --yubikey or --yubikey-generate-root",
+			want: "need --yubikey, --yubikey-generate-root, or --age-yubikey",
 		},
 	}
 	for _, tc := range testCases {
@@ -180,6 +180,7 @@ func TestYubiKeyMissingPIN(t *testing.T) {
 		{"--yubikey", func(a *Args) { a.YubiKey = true }},
 		{"--yubikey", func(a *Args) { a.YubiKey, a.Chain = true, "1,1" }},
 		{"--yubikey-generate-root", func(a *Args) { a.YubiKeyGenerateRoot = true }},
+		{"--age-yubikey", func(a *Args) { a.AgeYubiKey, a.Chain, a.YubiKeySerial = true, "1,1", "1" }},
 	} {
 		t.Run(tc.mode, func(t *testing.T) {
 			args := testArgs(t)

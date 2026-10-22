@@ -62,6 +62,14 @@
 | `--yubikey-touch-policy` | `always` | Touch rule for a generated key: `always` (every signature), `cached` (one touch per 15 seconds), or `never`. |
 | `--yubikey-overwrite` | `false` | Let `--yubikey-generate-root` replace a slot that holds a certificate. Destroys the old key. |
 
+## Encrypted keys
+
+| Flag | Default | Description |
+| ---- | ------- | ----------- |
+| `--encrypt-to` | | Comma-separated age recipients (`age1...`, `age1pq1...`, `age1tag1...`, `age1yubikey1...`). Every private key and `.pfx` is written encrypted with an `.age` suffix. Needs no YubiKey. |
+| `--age-identity-file` | | Comma-separated age identity files that decrypt an encrypted `--parent-private-key` or the keys `--spec` and `--chain` reuse. `CERTTOOL_AGE_IDENTITY` can hold identities too. |
+| `--age-yubikey` | `false` | Decrypt those keys with the YubiKey (slots 82 to 95, 9d). Needs `CERTTOOL_YUBIKEY_PIN`, maybe a touch. |
+
 ## Other
 
 | Flag | Description |

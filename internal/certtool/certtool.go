@@ -134,6 +134,13 @@ type Args struct {
 	// Overwrite is --overwrite.
 	Overwrite bool
 
+	// EncryptTo is --encrypt-to, comma separated.
+	EncryptTo string
+	// AgeIdentityFile is --age-identity-file, comma separated.
+	AgeIdentityFile string
+	// AgeYubiKey is --age-yubikey.
+	AgeYubiKey bool
+
 	// Version is --version.
 	Version bool
 }
@@ -185,13 +192,16 @@ func Run(ctx context.Context, args Args) error {
 	}
 
 	var issuer *certlib.Issuer
-	if args.YubiKey && args.ExportSpec == "" {
-		token, err := openYubiKey(ctx, args)
-		if err != nil {
+	var token *yubikey.Token
+	if (args.YubiKey && args.ExportSpec == "") || args.AgeYubiKey {
+		var err error
+		if token, err = openYubiKey(ctx, args); err != nil {
 			return err
 		}
 		defer closeYubiKey(ctx, token)
-
+	}
+	if args.YubiKey && args.ExportSpec == "" {
+		var err error
 		issuer, err = token.Issuer()
 		if err != nil {
 			return err
@@ -199,22 +209,26 @@ func Run(ctx context.Context, args Args) error {
 		logging.FromContext(ctx).Info("signing with YubiKey root CA", "serial", token.Serial(), "slot", args.YubiKeySlot, "cn", issuer.Certificate.Subject.CommonName)
 		warnFactoryDefaults(ctx, token)
 	}
+	enc, err := keyEncryption(args, token)
+	if err != nil {
+		return err
+	}
 
 	switch {
 	case args.Spec != "":
-		return runSpec(ctx, args, issuer)
+		return runSpec(ctx, args, issuer, enc)
 	case args.Chain != "":
-		return runChain(ctx, args, issuer)
+		return runChain(ctx, args, issuer, enc)
 	case args.ExportSpec != "":
 		return runExportSpec(ctx, args)
 	}
 
-	certArgs, err := certificateArgs(ctx, args)
+	certArgs, err := certificateArgs(ctx, args, enc)
 	if err != nil {
 		return err
 	}
 	certArgs.Issuer = issuer
-	return generateAndWriteKeyPair(ctx, args, certArgs)
+	return generateAndWriteKeyPair(ctx, args, certArgs, enc)
 }
 
 func validateModes(args Args) error {
@@ -249,8 +263,11 @@ func validateModes(args Args) error {
 	if !args.YubiKeyGenerateRoot && (args.YubiKeyOverwrite || args.YubiKeyTouchPolicy != defaults.YubiKeyTouchPolicy) {
 		return errors.New("--yubikey-touch-policy and --yubikey-overwrite only apply to --yubikey-generate-root")
 	}
-	if !args.YubiKey && !args.YubiKeyGenerateRoot && (args.YubiKeySerial != "" || args.YubiKeySlot != defaults.YubiKeySlot || args.YubiKeyPIN != "" || args.YubiKeyManagementKey != "") {
-		return errors.New("the --yubikey-* options need --yubikey or --yubikey-generate-root")
+	if !args.YubiKey && !args.YubiKeyGenerateRoot && !args.AgeYubiKey && (args.YubiKeySerial != "" || args.YubiKeySlot != defaults.YubiKeySlot || args.YubiKeyPIN != "" || args.YubiKeyManagementKey != "") {
+		return errors.New("the --yubikey-* options need --yubikey, --yubikey-generate-root, or --age-yubikey")
+	}
+	if err := validateEncryption(args); err != nil {
+		return err
 	}
 	if args.ParentPublicCertificate != "" && args.ParentPrivateKey == "" {
 		return errors.New("--parent-private-key is required with --parent-public-certificate, to sign with the parent certificate's key")
@@ -280,8 +297,11 @@ func yubiKeyConfig(ctx context.Context, args Args) (yubikey.Config, error) {
 	}
 	if pin == "" {
 		mode := "--yubikey"
-		if args.YubiKeyGenerateRoot {
+		switch {
+		case args.YubiKeyGenerateRoot:
 			mode = "--yubikey-generate-root"
+		case args.AgeYubiKey && !args.YubiKey:
+			mode = "--age-yubikey"
 		}
 		return yubikey.Config{}, fmt.Errorf("%s needs the YubiKey PIN to sign with the key on the YubiKey: set --yubikey-pin or the %s environment variable", mode, YubiKeyPINEnv)
 	}
@@ -306,6 +326,9 @@ func yubiKeyConfig(ctx context.Context, args Args) (yubikey.Config, error) {
 		BeforeSign: func() {
 			logging.FromContext(ctx).Info("signing with the YubiKey, touch it if it is blinking")
 		},
+		BeforeDecrypt: func() {
+			logging.FromContext(ctx).Info("decrypting with the YubiKey, touch it if it is blinking")
+		},
 	}, nil
 }
 
@@ -321,7 +344,7 @@ func runYubiKeyGenerateRoot(ctx context.Context, args Args) error {
 		return err
 	}
 
-	certArgs, err := certificateArgs(ctx, args)
+	certArgs, err := certificateArgs(ctx, args, nil)
 	if err != nil {
 		return err
 	}
@@ -370,7 +393,7 @@ func parseChain(chain string) ([]int, error) {
 	return widths, nil
 }
 
-func runChain(ctx context.Context, args Args, issuer *certlib.Issuer) error {
+func runChain(ctx context.Context, args Args, issuer *certlib.Issuer, enc *certlib.KeyEncryption) error {
 	widths, err := parseChain(args.Chain)
 	if err != nil {
 		return err
@@ -384,7 +407,7 @@ func runChain(ctx context.Context, args Args, issuer *certlib.Issuer) error {
 	if args.ExportSpec != "" {
 		return writeSpecFile(ctx, specs, args.ExportSpec)
 	}
-	return generateAndLogResults(ctx, specs, args, issuer)
+	return generateAndLogResults(ctx, specs, args, issuer, enc)
 }
 
 // pfxPassword returns --pfx-password, or the PFXPasswordEnv environment
@@ -460,8 +483,11 @@ func writeSpecFile(ctx context.Context, specs []certlib.CertificateSpec, path st
 	return nil
 }
 
-func generateAndLogResults(ctx context.Context, specs []certlib.CertificateSpec, args Args, issuer *certlib.Issuer) error {
-	results, err := certlib.GenerateFromSpecWithOptions(specs, args.OutputDir, certlib.SpecOptions{Issuer: issuer, Overwrite: args.Overwrite})
+func generateAndLogResults(ctx context.Context, specs []certlib.CertificateSpec, args Args, issuer *certlib.Issuer, enc *certlib.KeyEncryption) error {
+	results, err := certlib.GenerateFromSpecWithOptions(specs, args.OutputDir, certlib.SpecOptions{Issuer: issuer, Overwrite: args.Overwrite, Encryption: enc})
+	if errors.Is(err, certlib.ErrNoAgeIdentity) {
+		return fmt.Errorf("%w; to decrypt it, pass --age-identity-file or --age-yubikey, or set %s; or pass --overwrite to regenerate every certificate", err, AgeIdentityEnv)
+	}
 	if errors.Is(err, certlib.ErrExistingFiles) {
 		return fmt.Errorf("%w; or pass --overwrite to regenerate every certificate", err)
 	}
@@ -483,7 +509,7 @@ func generateAndLogResults(ctx context.Context, specs []certlib.CertificateSpec,
 	return nil
 }
 
-func runSpec(ctx context.Context, args Args, issuer *certlib.Issuer) error {
+func runSpec(ctx context.Context, args Args, issuer *certlib.Issuer, enc *certlib.KeyEncryption) error {
 	specs, err := certlib.ReadSpec(args.Spec)
 	if err != nil {
 		return err
@@ -493,7 +519,7 @@ func runSpec(ctx context.Context, args Args, issuer *certlib.Issuer) error {
 		logging.FromContext(ctx).Warn("the spec stores .pfx passwords in plain text; use pfxPasswordEnv to read them from the environment instead", "specs", names)
 	}
 
-	if names := certlib.SpecsWithUnprotectedPFX(specs); len(names) > 0 && args.ExportSpec == "" {
+	if names := certlib.SpecsWithUnprotectedPFX(specs); len(names) > 0 && args.ExportSpec == "" && !enc.Encrypts() {
 		logging.FromContext(ctx).Warn("these specs make a .pfx without a password, so anyone who can read it can sign code with its key; set pfxPasswordEnv", "specs", names)
 	}
 
@@ -508,32 +534,42 @@ func runSpec(ctx context.Context, args Args, issuer *certlib.Issuer) error {
 		}
 		return writeSpecFile(ctx, specs, args.ExportSpec)
 	}
-	return generateAndLogResults(ctx, specs, args, issuer)
+	return generateAndLogResults(ctx, specs, args, issuer, enc)
 }
 
 // legacyPFXWarning explains the cost of the Windows 7 .pfx format.
 const legacyPFXWarning = "the windows7 target writes a legacy .pfx (3DES with a SHA-1 MAC) that Windows 7 and 8 can import, but its password is far easier to brute-force; use a long random password, and the windows10 target for anything newer"
 
-func generateAndWriteKeyPair(ctx context.Context, args Args, certArgs *certlib.Args) error {
+func generateAndWriteKeyPair(ctx context.Context, args Args, certArgs *certlib.Args, enc *certlib.KeyEncryption) error {
 	kp, err := certlib.GenerateKeyPair(certArgs)
 	if err != nil {
 		return err
 	}
 	if len(kp.PFX) > 0 {
-		if certArgs.PFXPassword == "" {
+		if certArgs.PFXPassword == "" && !enc.Encrypts() {
 			logging.FromContext(ctx).Warn("the .pfx has no password, so anyone who can read it can sign code with its key; set "+PFXPasswordEnv+" or --pfx-password", "pfx", args.PFXOutput)
 		}
 		if profile, err := certlib.GetProfile(certArgs.Target); err == nil && profile.LegacyPFX {
 			logging.FromContext(ctx).Warn(legacyPFXWarning, "pfx", args.PFXOutput)
 		}
-		return certlib.WritePFX(kp, args.PFXOutput)
+		path, err := enc.WritePFX(kp, args.PFXOutput)
+		if err != nil {
+			return err
+		}
+		logEncrypted(ctx, enc, path)
+		return nil
 	}
-	return certlib.WriteKeyPair(kp, args.PublicCertificate, args.PrivateKey)
+	path, err := enc.WriteKeyPair(kp, args.PublicCertificate, args.PrivateKey)
+	if err != nil {
+		return err
+	}
+	logEncrypted(ctx, enc, path)
+	return nil
 }
 
 // certificateArgs converts the options to the arguments of a single
 // certificate.
-func certificateArgs(ctx context.Context, args Args) (*certlib.Args, error) {
+func certificateArgs(ctx context.Context, args Args, enc *certlib.KeyEncryption) (*certlib.Args, error) {
 	var kt *certlib.KeyType
 	if args.KeyType != "" || !args.CodeSigning {
 		algorithm, keyLength, err := stringToKeyType(args.KeyType)
@@ -558,9 +594,9 @@ func certificateArgs(ctx context.Context, args Args) (*certlib.Args, error) {
 	var parent *certlib.KeyPair
 	if args.ParentPublicCertificate != "" {
 		var err error
-		parent, err = certlib.ReadKeyPairFromFile(args.ParentPublicCertificate, args.ParentPrivateKey)
+		parent, err = enc.ReadKeyPairFromFile(args.ParentPublicCertificate, args.ParentPrivateKey)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("--parent-private-key: %w; to decrypt a key encrypted with age, pass --age-identity-file or --age-yubikey, or set %s", err, AgeIdentityEnv)
 		}
 	}
 

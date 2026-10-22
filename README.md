@@ -25,6 +25,7 @@ curl -fLo certtool https://github.com/cloudfra/certtool/releases/latest/download
 * Create CA (root) certificates for establishing a chain of trust.
 * Sign certificates with a parent CA to build certificate chains.
 * Keep the root CA key on a YubiKey: generate it on the device and sign certificates with it, without the key ever leaving the YubiKey.
+* Encrypt private key and `.pfx` files to a key on a YubiKey, or other [age](https://age-encryption.org) recipients, with `--encrypt-to`, so reading them needs the YubiKey instead of a password.
 * Generate whole certificate hierarchies (root, intermediates, leaves) in one command with `--chain`, or from a YAML spec with `--spec`.
 * RSA (2048, 4096-bit) and ECDSA (P-256, P-384, P-521) key algorithms, signed with a hash that matches the key (SHA-256, or SHA-384/SHA-512 for P-384/P-521).
 * Subject Alternative Names (SANs) for hostnames and IP addresses.
@@ -118,6 +119,19 @@ read -rs -p "YubiKey PIN: " CERTTOOL_YUBIKEY_PIN && export CERTTOOL_YUBIKEY_PIN
 
 `--yubikey` signs with a root CA that is already on the YubiKey, made by `--yubikey-generate-root` or by any other tool. It works on Windows with the prebuilt downloads, and on Linux, macOS, FreeBSD, and OpenBSD when certtool is built with `CGO_ENABLED=1`. Guide: [YubiKey root CA](docs/use-cases/yubikey-root-ca.md), covering both a new and an existing root, requirements, automation, and troubleshooting.
 
+### Encrypted private keys
+
+Keys that must stay files, such as server keys, can be encrypted to a key on a YubiKey made by [age-plugin-yubikey](https://github.com/str4d/age-plugin-yubikey), and to a backup. Encrypting needs neither the YubiKey nor the plugin:
+
+```bash
+./certtool --spec certs.yaml --output-dir certs --encrypt-to age1yubikey1...,age1...   # writes .key.age and .pfx.age files
+
+# Later runs decrypt the keys they reuse with the YubiKey; CERTTOOL_YUBIKEY_PIN holds the PIN
+./certtool --spec certs.yaml --output-dir certs --encrypt-to age1yubikey1...,age1... --age-yubikey
+```
+
+See [Encrypted private keys](docs/use-cases/encrypted-keys.md).
+
 ### Flags
 
 #### TLS flags
@@ -174,6 +188,14 @@ read -rs -p "YubiKey PIN: " CERTTOOL_YUBIKEY_PIN && export CERTTOOL_YUBIKEY_PIN
 | `--yubikey-management-key` | | Management key in hex for `--yubikey-generate-root` (defaults to `CERTTOOL_YUBIKEY_MANAGEMENT_KEY`, otherwise the PIN-protected or factory default key) |
 | `--yubikey-touch-policy` | `always` | Touch requirement for a key made by `--yubikey-generate-root`: `always` (every signature), `cached` (one touch per 15 seconds), or `never` |
 | `--yubikey-overwrite` | `false` | Allow `--yubikey-generate-root` to replace a slot that already holds a certificate. The old key is destroyed |
+
+#### Encryption flags
+
+| Flag | Default | Description |
+| ---- | ------- | ----------- |
+| `--encrypt-to` | | Encrypt every private key and `.pfx` to these comma-separated age recipients, written with an `.age` suffix: `age1...`, `age1pq1...`, `age1tag1...`, or `age1yubikey1...` (a key on a YubiKey) |
+| `--age-identity-file` | | Age identity files that decrypt encrypted keys certtool reads: `--parent-private-key`, and the keys `--spec` and `--chain` reuse. `CERTTOOL_AGE_IDENTITY` can hold identities too |
+| `--age-yubikey` | `false` | Decrypt those keys with the age key on the YubiKey. Needs the PIN |
 
 #### General flags
 

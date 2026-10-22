@@ -57,6 +57,9 @@ type Config struct {
 	// BeforeSign is called before each signature made with the CA key, for
 	// example to remind the user to touch the YubiKey. It may be nil.
 	BeforeSign func()
+	// BeforeDecrypt is called before each decryption with an age key on the
+	// YubiKey. It may be nil.
+	BeforeDecrypt func()
 }
 
 // TouchPolicy is whether the YubiKey must be touched to use the CA key.

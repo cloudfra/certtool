@@ -27,8 +27,6 @@ import (
 	"fmt"
 	"math/big"
 	"net"
-	"os"
-	"path/filepath"
 	"slices"
 	"sort"
 	"strings"
@@ -826,6 +824,9 @@ func ReadKeyPair(publicCertFileData []byte, privateKeyFileData []byte) (*x509.Ce
 		return nil, nil, fmt.Errorf("cannot parse X.509 certificate, %w", err)
 	}
 
+	if IsAgeEncrypted(privateKeyFileData) {
+		return nil, nil, fmt.Errorf("private key is encrypted with age; decrypt it with KeyEncryption.ReadKeyPairFromFile, or with certtool's --age-identity-file or --age-yubikey")
+	}
 	privateKeyPemBlock, remainder := pem.Decode(privateKeyFileData)
 	if privateKeyPemBlock == nil {
 		return nil, nil, fmt.Errorf("private key contains no PEM data")
@@ -934,29 +935,8 @@ func ParseName(subject string) (pkix.Name, error) {
 
 // ReadKeyPairFromFile is a convenience method for loading the key pair from a file.
 func ReadKeyPairFromFile(publicCertificateFile string, privateKeyFile string) (*KeyPair, error) {
-	if publicCertificateFile == "" && privateKeyFile == "" {
-		return nil, fmt.Errorf("public certificate and private key were not provided")
-	}
-	if publicCertificateFile != "" && privateKeyFile == "" {
-		return nil, fmt.Errorf("public certificate was provided without a private key")
-	}
-	if publicCertificateFile == "" && privateKeyFile != "" {
-		return nil, fmt.Errorf("private key was provided without a public certificate")
-	}
-
-	pub, err := os.ReadFile(filepath.Clean(publicCertificateFile))
-	if err != nil {
-		return nil, fmt.Errorf("cannot read the public certificate file (%s), %w", publicCertificateFile, err)
-	}
-	priv, err := os.ReadFile(filepath.Clean(privateKeyFile))
-	if err != nil {
-		return nil, fmt.Errorf("cannot read the private key file (%s), %w", privateKeyFile, err)
-	}
-
-	return &KeyPair{
-		PublicCertificate: pub,
-		PrivateKey:        priv,
-	}, nil
+	var plain *KeyEncryption
+	return plain.ReadKeyPairFromFile(publicCertificateFile, privateKeyFile)
 }
 
 // GenerateAndWriteKeyPair generates a new key pair and writes it to the specified files.
