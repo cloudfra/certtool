@@ -4,9 +4,13 @@ Sign Windows executables, installers, and PowerShell scripts with a certificate 
 
 ## Windows 10 and 11
 
+certtool reads the `.pfx` password from `CERTTOOL_PFX_PASSWORD`, so it stays out of the command line, where other users can see it, and out of your shell history. `--pfx-password` also works and takes precedence. Without a password, anyone who can read the `.pfx` can sign code with its key, so certtool logs a warning.
+
 ```bash
+read -rs -p "PFX password: " CERTTOOL_PFX_PASSWORD && export CERTTOOL_PFX_PASSWORD
+
 certtool --code-sign --common-name "Acme Internal Software" --organization Acme \
-  --pfx-output codesign.pfx --pfx-password "change-me"
+  --pfx-output codesign.pfx
 ```
 
 This writes `codesign.pfx`, a PKCS#12 bundle with an ECDSA P-256 key and the certificate, encrypted with AES-256. `--target windows11` makes the same certificate.
@@ -16,10 +20,10 @@ This writes `codesign.pfx`, a PKCS#12 bundle with an ECDSA P-256 key and the cer
 `signtool.exe` is part of the Windows SDK.
 
 ```powershell
-signtool sign /fd SHA256 /f codesign.pfx /p change-me app.exe
+signtool sign /fd SHA256 /f codesign.pfx /p $env:CERTTOOL_PFX_PASSWORD app.exe
 
 # Add a timestamp, so the signature stays valid after the certificate expires
-signtool sign /fd SHA256 /f codesign.pfx /p change-me /tr http://timestamp.digicert.com /td SHA256 app.exe
+signtool sign /fd SHA256 /f codesign.pfx /p $env:CERTTOOL_PFX_PASSWORD /tr http://timestamp.digicert.com /td SHA256 app.exe
 ```
 
 ### Trust the certificate on a test machine
@@ -60,7 +64,7 @@ Windows 7 cannot import AES-encrypted PKCS#12 files, and its `signtool.exe` does
 
 ```bash
 certtool --code-sign --target windows7 --common-name "Acme Internal Software" \
-  --pfx-output codesign-legacy.pfx --pfx-password "change-me"
+  --pfx-output codesign-legacy.pfx
 ```
 
 ## Sign Windows binaries from Linux or macOS
@@ -79,7 +83,7 @@ osslsigncode verify -CAfile codesign.crt -in app-signed.exe
 `osslsigncode` also accepts the `.pfx` from the Windows targets:
 
 ```bash
-osslsigncode sign -pkcs12 codesign.pfx -pass "change-me" -h sha256 -in app.exe -out app-signed.exe
+osslsigncode sign -pkcs12 codesign.pfx -pass "$CERTTOOL_PFX_PASSWORD" -h sha256 -in app.exe -out app-signed.exe
 ```
 
 ## Sign with a CA instead
@@ -90,7 +94,7 @@ Code signing certificates must be signed by a CA that allows code signing. CAs m
 
 ```bash
 certtool --yubikey --code-sign --common-name "Acme Release Signing" --organization Acme \
-  --pfx-output release.pfx --pfx-password "change-me"
+  --pfx-output release.pfx
 ```
 
 Then install the YubiKey root certificate (`root.crt`), not `release.pfx`, in `Cert:\LocalMachine\Root` on the machines that run your software.

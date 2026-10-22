@@ -41,6 +41,8 @@ const (
 	oneYear                          = time.Hour * 24 * 365
 	rsaPrivateKeyPEMType             = "RSA PRIVATE KEY"
 	ecPrivateKeyPEMType              = "EC PRIVATE KEY"
+	pkcs8PrivateKeyPEMType           = "PRIVATE KEY"
+	encryptedPKCS8PEMType            = "ENCRYPTED PRIVATE KEY"
 	numDistinguishedNameSegmentParts = 2
 	subjectDelimiter                 = "/"
 	partDelimiter                    = "="
@@ -685,6 +687,16 @@ func ReadKeyPair(publicCertFileData []byte, privateKeyFileData []byte) (*x509.Ce
 		}
 
 		return publicCertificate, privateKey, nil
+	case pkcs8PrivateKeyPEMType:
+		// The format written by openssl genpkey and most other tools.
+		privateKey, err := x509.ParsePKCS8PrivateKey(privateKeyPemBlock.Bytes)
+		if err != nil {
+			return nil, nil, fmt.Errorf("cannot parse PKCS8 private key, %w", err)
+		}
+
+		return publicCertificate, privateKey, nil
+	case encryptedPKCS8PEMType:
+		return nil, nil, fmt.Errorf("the private key is encrypted; decrypt it first, for example with `openssl pkey -in key.pem -out key-decrypted.pem`")
 	}
 
 	return nil, nil, fmt.Errorf("cannot parse private key PEM type, %s, is not supported", privateKeyPemBlock.Type)

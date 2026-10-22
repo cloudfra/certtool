@@ -13,7 +13,7 @@
 | `--validity` | `8760h` | Lifetime as a Go duration (`h`, `m`, `s`; no `d`). |
 | `--hostnames` | | DNS names and IP addresses added as SANs. `localhost` and `127.0.0.1` are always added in TLS mode. Ports are removed; a wildcard must be the leftmost label of a name with two more labels (`*.example.com`). |
 | `--parent-public-certificate` | | Issuer certificate. Requires `--parent-private-key`. |
-| `--parent-private-key` | | Issuer private key. Requires `--parent-public-certificate`. |
+| `--parent-private-key` | | Issuer private key, as unencrypted PEM (PKCS#1, SEC 1, or PKCS#8). Requires `--parent-public-certificate`. |
 
 ## Subject
 
@@ -33,7 +33,7 @@
 | `--code-sign` | `false` | Make a code signing certificate instead of a TLS certificate. |
 | `--target` | `windows10` | `windows10`/`win10` and `windows11`/`win11`: ECDSA P-256 in an AES-256 `.pfx`. `windows7`/`win7`/`windows8`/`win8`: RSA-2048 in a 3DES `.pfx`. `linux`: PEM certificate and key for `osslsigncode`. |
 | `--pfx-output` | `codesign.pfx` | `.pfx` file for Windows targets. |
-| `--pfx-password` | empty (no password) | `.pfx` password. |
+| `--pfx-password` | `$CERTTOOL_PFX_PASSWORD` | `.pfx` password. Prefer the environment variable. Empty means no password. |
 
 ## Hierarchies and specs
 

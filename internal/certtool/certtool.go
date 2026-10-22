@@ -45,6 +45,8 @@ const (
 	YubiKeyPINEnv = "CERTTOOL_YUBIKEY_PIN"
 	// YubiKeyManagementKeyEnv is read when Args.YubiKeyManagementKey is empty.
 	YubiKeyManagementKeyEnv = "CERTTOOL_YUBIKEY_MANAGEMENT_KEY"
+	// PFXPasswordEnv is read when Args.PFXPassword is empty.
+	PFXPasswordEnv = "CERTTOOL_PFX_PASSWORD" //nolint:gosec // The name of an environment variable, not a credential.
 )
 
 // Args holds the certtool command line options, one field per flag. Comma
@@ -89,7 +91,8 @@ type Args struct {
 	Target string
 	// PFXOutput is --pfx-output.
 	PFXOutput string
-	// PFXPassword is --pfx-password.
+	// PFXPassword is --pfx-password. When empty, the PFXPasswordEnv
+	// environment variable is used.
 	PFXPassword string
 
 	// Spec is --spec.
@@ -360,6 +363,15 @@ func runChain(args Args, issuer *certlib.Issuer) error {
 	return generateAndLogResults(specs, args.OutputDir, issuer)
 }
 
+// pfxPassword returns --pfx-password, or the PFXPasswordEnv environment
+// variable when the flag is empty.
+func pfxPassword(args Args) string {
+	if args.PFXPassword != "" {
+		return args.PFXPassword
+	}
+	return os.Getenv(PFXPasswordEnv)
+}
+
 func runExportSpec(args Args) error {
 	specs, err := argsToSpec(args)
 	if err != nil {
@@ -384,7 +396,6 @@ func argsToSpec(args Args) ([]certlib.CertificateSpec, error) {
 		CertificateAuthority: args.CA,
 		CodeSigning:          args.CodeSigning,
 		Target:               args.Target,
-		PFXPassword:          args.PFXPassword,
 		KeyType:              args.KeyType,
 		Validity:             args.Validity.String(),
 		Organization:         args.Organization,
@@ -396,6 +407,11 @@ func argsToSpec(args Args) ([]certlib.CertificateSpec, error) {
 	}
 	if s.KeyType == "" && !s.CodeSigning {
 		s.KeyType = "RSA-2048"
+	}
+	if pfxPassword(args) != "" {
+		// Never write the password itself into the spec file.
+		s.PFXPasswordEnv = PFXPasswordEnv
+		slog.Warn("the exported spec reads the .pfx password from the environment instead of storing it", "env", PFXPasswordEnv)
 	}
 	return []certlib.CertificateSpec{s}, nil
 }
@@ -434,7 +450,19 @@ func runSpec(args Args, issuer *certlib.Issuer) error {
 		return err
 	}
 
+	if names := certlib.SpecsWithPFXPassword(specs); len(names) > 0 {
+		slog.Warn("the spec stores .pfx passwords in plain text; use pfxPasswordEnv to read them from the environment instead", "specs", names)
+	}
+
+	if names := certlib.SpecsWithUnprotectedPFX(specs); len(names) > 0 && args.ExportSpec == "" {
+		slog.Warn("these specs make a .pfx without a password, so anyone who can read it can sign code with its key; set pfxPasswordEnv", "specs", names)
+	}
+
 	if args.ExportSpec != "" {
+		if names := certlib.SpecsWithPFXPassword(specs); len(names) > 0 {
+			certlib.ReplacePFXPasswords(specs, PFXPasswordEnv)
+			slog.Warn("the exported spec reads the .pfx passwords from the environment instead of storing them", "env", PFXPasswordEnv, "specs", names)
+		}
 		return writeSpecFile(specs, args.ExportSpec)
 	}
 	return generateAndLogResults(specs, args.OutputDir, issuer)
@@ -446,6 +474,9 @@ func generateAndWriteKeyPair(args Args, certArgs *certlib.Args) error {
 		return err
 	}
 	if len(kp.PFX) > 0 {
+		if certArgs.PFXPassword == "" {
+			slog.Warn("the .pfx has no password, so anyone who can read it can sign code with its key; set "+PFXPasswordEnv+" or --pfx-password", "pfx", args.PFXOutput)
+		}
 		return certlib.WritePFX(kp, args.PFXOutput)
 	}
 	return certlib.WriteKeyPair(kp, args.PublicCertificate, args.PrivateKey)
@@ -506,7 +537,7 @@ func certificateArgs(args Args) (*certlib.Args, error) {
 		ParentKeyPair:      parent,
 		CodeSigning:        args.CodeSigning,
 		Target:             args.Target,
-		PFXPassword:        args.PFXPassword,
+		PFXPassword:        pfxPassword(args),
 	}, nil
 }
 

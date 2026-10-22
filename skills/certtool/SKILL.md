@@ -61,7 +61,7 @@ certtool --chain 1,2,3 --common-name svc --organization Acme --output-dir certs
 
 # Windows code signing: writes codesign.pfx (ECDSA P-256, AES-256)
 certtool --code-sign --common-name "Acme Release Signing" --organization Acme \
-  --pfx-output release.pfx --pfx-password "$PFX_PASSWORD"
+  --pfx-output release.pfx   # password from CERTTOOL_PFX_PASSWORD
 
 # Linux code signing (osslsigncode): PEM certificate and key, no .pfx
 certtool --code-sign --target linux --public-certificate sign.crt --private-key sign.key
@@ -92,7 +92,7 @@ certtool --yubikey --ca --common-name "Acme Issuing CA" --organization Acme \
 ## Rules
 
 - Never invent a PIN, management key, or `.pfx` password. If one is needed and not given, ask the user, or let certtool fail and report its error.
-- Pass secrets through `CERTTOOL_YUBIKEY_PIN`, `CERTTOOL_YUBIKEY_MANAGEMENT_KEY`, or a variable such as `"$PFX_PASSWORD"`, not as literal values on the command line.
+- Pass secrets through `CERTTOOL_PFX_PASSWORD`, `CERTTOOL_YUBIKEY_PIN`, and `CERTTOOL_YUBIKEY_MANAGEMENT_KEY`, not on the command line. In specs, use `pfxPasswordEnv`, never `pfxPassword`.
 - Never commit generated `.key` or `.pfx` files. Add them to `.gitignore` when generating inside a repository.
 - Set `--organization` (and the other subject flags) for anything beyond a throwaway test. The defaults (`cloudfra`, `gows`, `Seattle`, `WA`, `US`) are placeholders.
 

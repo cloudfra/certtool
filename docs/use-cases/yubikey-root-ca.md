@@ -288,7 +288,7 @@ Without `--yubikey`, the same spec makes `Acme Issuing CA` and `Acme Release Sig
 
 ```bash
 certtool --yubikey --code-sign --common-name "Acme Release Signing" --organization Acme \
-  --pfx-output release.pfx --pfx-password "change-me"
+  --pfx-output release.pfx   # password from CERTTOOL_PFX_PASSWORD
 ```
 
 See [Code signing](code-signing.md) for using `release.pfx`.

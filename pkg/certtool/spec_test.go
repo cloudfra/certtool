@@ -22,6 +22,9 @@ import (
 	"slices"
 	"strings"
 	"testing"
+
+	"github.com/google/go-cmp/cmp"
+	"software.sslmate.com/src/go-pkcs12"
 )
 
 const (
@@ -237,6 +240,11 @@ func TestUnmarshalSpec_Errors(t *testing.T) {
 			name:    "nested filename with parent directory",
 			yaml:    "- commonName: Root\n  certificateAuthority: true\n  children:\n    - commonName: Leaf\n      filename: ../leaf\n",
 			wantErr: `spec "Leaf" has filename "../leaf"`,
+		},
+		{
+			name:    "pfxPassword and pfxPasswordEnv",
+			yaml:    "- commonName: Sign\n  codeSigning: true\n  pfxPassword: x\n  pfxPasswordEnv: PW\n",
+			wantErr: `spec "Sign" sets both pfxPassword and pfxPasswordEnv`,
 		},
 		{
 			name:    "invalid YAML",
@@ -974,5 +982,62 @@ func TestChainToSpec_BlankNamePrefixIsEmpty(t *testing.T) {
 	if plain[0].CommonName != blank[0].CommonName || plain[0].Children[0].CommonName != blank[0].Children[0].CommonName {
 		t.Errorf("blank prefix changed names: %q/%q vs %q/%q",
 			blank[0].CommonName, blank[0].Children[0].CommonName, plain[0].CommonName, plain[0].Children[0].CommonName)
+	}
+}
+
+func TestGenerateFromSpec_PFXPasswordEnv(t *testing.T) {
+	specs := []CertificateSpec{{CommonName: "Sign", CodeSigning: true, PFXPasswordEnv: "CERTTOOL_TEST_PFX_PASSWORD", Filename: "sign"}} //nolint:gosec // An environment variable name, not a credential.
+
+	t.Setenv("CERTTOOL_TEST_PFX_PASSWORD", "")
+	_, err := GenerateFromSpec(specs, t.TempDir())
+	if err == nil || !strings.Contains(err.Error(), `spec "Sign" reads its .pfx password from the environment variable CERTTOOL_TEST_PFX_PASSWORD, which is not set`) {
+		t.Errorf("GenerateFromSpec() without the variable err = %v, want a not set error", err)
+	}
+
+	t.Setenv("CERTTOOL_TEST_PFX_PASSWORD", "from-env")
+	out, err := GenerateFromSpec(specs, t.TempDir())
+	if err != nil {
+		t.Fatalf("GenerateFromSpec() err = %v", err)
+	}
+	if _, _, err := pkcs12.Decode(out[0].KeyPair.PFX, "from-env"); err != nil {
+		t.Errorf("pkcs12.Decode() with the environment password err = %v", err)
+	}
+}
+
+func TestReplacePFXPasswords(t *testing.T) {
+	t.Parallel()
+	specs := []CertificateSpec{
+		{CommonName: "a", PFXPassword: "x"},
+		{CommonName: "ca", CertificateAuthority: true, Children: []CertificateSpec{{CommonName: "b", PFXPassword: "y"}, {CommonName: "c"}}},
+	}
+	if diff := cmp.Diff([]string{"a", "b"}, SpecsWithPFXPassword(specs)); diff != "" {
+		t.Errorf("SpecsWithPFXPassword() mismatch (-want +got):\n%s", diff)
+	}
+
+	ReplacePFXPasswords(specs, "PW")
+	data, err := MarshalSpec(specs)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(data), "pfxPassword:") || strings.Count(string(data), "pfxPasswordEnv: PW") != 2 {
+		t.Errorf("MarshalSpec() after ReplacePFXPasswords =\n%s\nwant two pfxPasswordEnv entries and no passwords", data)
+	}
+	if got := SpecsWithPFXPassword(specs); len(got) != 0 {
+		t.Errorf("SpecsWithPFXPassword() after replacing = %v, want none", got)
+	}
+}
+
+func TestSpecsWithUnprotectedPFX(t *testing.T) {
+	t.Parallel()
+	specs := []CertificateSpec{
+		{CommonName: "default target", CodeSigning: true},
+		{CommonName: "windows7", CodeSigning: true, Target: "win7"},
+		{CommonName: "password", CodeSigning: true, PFXPassword: "x"},
+		{CommonName: "password env", CodeSigning: true, PFXPasswordEnv: "PW"},
+		{CommonName: "linux", CodeSigning: true, Target: "linux"},
+		{CommonName: "tls", CertificateAuthority: true, Children: []CertificateSpec{{CommonName: "leaf"}}},
+	}
+	if diff := cmp.Diff([]string{"default target", "windows7"}, SpecsWithUnprotectedPFX(specs)); diff != "" {
+		t.Errorf("SpecsWithUnprotectedPFX() mismatch (-want +got):\n%s", diff)
 	}
 }

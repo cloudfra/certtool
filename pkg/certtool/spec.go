@@ -59,6 +59,11 @@ type CertificateSpec struct {
 	// does not produce PFX output.
 	PFXPassword string `yaml:"pfxPassword,omitempty"`
 
+	// PFXPasswordEnv names an environment variable that holds the PKCS#12
+	// password, so the spec file does not have to contain it. The variable
+	// must be set and not empty. Mutually exclusive with PFXPassword.
+	PFXPasswordEnv string `yaml:"pfxPasswordEnv,omitempty"`
+
 	// KeyType specifies the key algorithm and size as "ALGORITHM-BITS",
 	// for example "RSA-2048", "RSA-4096", "ECDSA-256", "ECDSA-384".
 	// When empty, defaults are applied: for code signing certificates the
@@ -142,6 +147,9 @@ func validateSpec(spec *CertificateSpec) error {
 	if err := validateFilename(spec); err != nil {
 		return err
 	}
+	if spec.PFXPassword != "" && spec.PFXPasswordEnv != "" {
+		return fmt.Errorf("spec %q sets both pfxPassword and pfxPasswordEnv; keep only pfxPasswordEnv", spec.CommonName)
+	}
 	for _, hostname := range spec.Hostnames {
 		if err := ValidateHostname(hostname); err != nil {
 			return fmt.Errorf("spec %q: %w", spec.CommonName, err)
@@ -185,6 +193,51 @@ func validateFilenames(specs []CertificateSpec) error {
 		}
 	}
 	return nil
+}
+
+// SpecsWithPFXPassword returns the common names of the specs in the tree that
+// hold a .pfx password in plain text in pfxPassword.
+func SpecsWithPFXPassword(specs []CertificateSpec) []string {
+	var names []string
+	for i := range specs {
+		if specs[i].PFXPassword != "" {
+			names = append(names, specs[i].CommonName)
+		}
+		names = append(names, SpecsWithPFXPassword(specs[i].Children)...)
+	}
+	return names
+}
+
+// SpecsWithUnprotectedPFX returns the common names of the specs in the tree
+// that produce a .pfx bundle without a password, which anyone who can read
+// the file can use to sign code.
+func SpecsWithUnprotectedPFX(specs []CertificateSpec) []string {
+	var names []string
+	for i := range specs {
+		s := &specs[i]
+		target := s.Target
+		if target == "" {
+			target = windows10Target
+		}
+		if profile, err := GetProfile(target); err == nil && s.CodeSigning && profile.OutputPFX && s.PFXPassword == "" && s.PFXPasswordEnv == "" {
+			names = append(names, s.CommonName)
+		}
+		names = append(names, SpecsWithUnprotectedPFX(s.Children)...)
+	}
+	return names
+}
+
+// ReplacePFXPasswords replaces every plain text pfxPassword in the tree with
+// pfxPasswordEnv set to env, so the spec can be written out without the
+// passwords.
+func ReplacePFXPasswords(specs []CertificateSpec, env string) {
+	for i := range specs {
+		if specs[i].PFXPassword != "" {
+			specs[i].PFXPassword = ""
+			specs[i].PFXPasswordEnv = env
+		}
+		ReplacePFXPasswords(specs[i].Children, env)
+	}
 }
 
 // MarshalSpec serializes certificate specs to YAML.
@@ -421,6 +474,13 @@ func generateSpec(spec *CertificateSpec, parentKP *KeyPair, issuer *Issuer, outp
 	args := specToArgs(spec)
 	args.ParentKeyPair = parentKP
 	args.Issuer = issuer
+	if spec.PFXPasswordEnv != "" {
+		password := os.Getenv(spec.PFXPasswordEnv)
+		if password == "" {
+			return nil, fmt.Errorf("spec %q reads its .pfx password from the environment variable %s, which is not set", spec.CommonName, spec.PFXPasswordEnv)
+		}
+		args.PFXPassword = password
+	}
 
 	kp, err := GenerateKeyPair(args)
 	if err != nil {
