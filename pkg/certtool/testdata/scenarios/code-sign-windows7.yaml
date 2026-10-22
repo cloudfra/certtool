@@ -1,0 +1,12 @@
+# Self-signed code signing certificate. Machines must trust code-sign.crt to accept what it signs.
+# The key is also written to code-sign.pfx for signtool. Anyone who has the key can sign code as you.
+- commonName: Acme Code Signing
+  codeSigning: true
+  # windows7, windows10, windows11, or linux. The key type comes from the target unless keyType is set.
+  # windows7 writes a legacy .pfx (3DES with a SHA-1 MAC) that is easy to brute-force: use a long random password.
+  target: windows7
+  # Set this environment variable to a long random password before running the spec. The spec never stores the password.
+  pfxPasswordEnv: CERTTOOL_TEST_SCENARIO_PFX_PASSWORD
+  validity: 26280h
+  organization: Acme
+  filename: code-sign

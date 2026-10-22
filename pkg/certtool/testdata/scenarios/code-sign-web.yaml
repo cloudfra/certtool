@@ -1,0 +1,42 @@
+# Self-signed code signing certificate. Machines must trust code-sign.crt to accept what it signs.
+- commonName: Acme Code Signing
+  codeSigning: true
+  # windows7, windows10, windows11, or linux. The key type comes from the target unless keyType is set.
+  target: linux
+  validity: 26280h
+  organization: Acme
+  filename: code-sign
+# Root CA: install web-root-ca.crt on the clients. Its key can sign anything within the name constraints,
+# so move web-root-ca.key offline once the issuing CA exists, or keep the root on a YubiKey (--yubikey).
+- commonName: Acme Web Root CA
+  certificateAuthority: true
+  keyType: ECDSA-384
+  # 10 years.
+  validity: 87600h
+  organization: Acme
+  filename: web-root-ca
+  # Name constraints: certificates below this CA may only use these names and their subdomains.
+  # Add a domain before you issue a certificate for it; changing them later means regenerating the CA and everything below it.
+  # IP addresses are not limited, so certtool still adds 127.0.0.1; add permittedIPRanges to limit them.
+  permittedDNSDomains:
+    - example.com
+  children:
+    # Issuing CA: signs the day-to-day certificates. Renew it well before it expires, because a certificate is only valid while its issuers are.
+    - commonName: Acme Web Issuing CA
+      certificateAuthority: true
+      keyType: ECDSA-256
+      # 3 years.
+      validity: 26280h
+      organization: Acme
+      filename: web-issuing-ca
+      children:
+        # Server certificate. Serve web-server.crt followed by web-issuing-ca.crt, so clients only need to trust the root.
+        # To add a server, copy this entry with a new commonName, hostnames, and filename.
+        - commonName: '*.example.com'
+          keyType: ECDSA-256
+          # Short-lived. To renew, delete web-server.crt and web-server.key, then run the spec again.
+          validity: 2160h
+          organization: Acme
+          hostnames:
+            - '*.example.com'
+          filename: web-server

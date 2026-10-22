@@ -340,9 +340,73 @@ A reused certificate must still fit the spec. certtool stops with an error, befo
 
 A reused entry's other fields, such as `hostnames` or `validity`, are not compared. To regenerate one certificate, delete its `.crt` and `.key` files, along with those of everything below it. To regenerate everything, pass `--overwrite`. A code signing entry whose `.pfx` is missing gets a new `.pfx` built from its existing key.
 
+## Starting from a scenario
+
+`--scenario` writes a commented spec for a common situation, to review and then generate with `--spec`. It writes the YAML to `--export-spec` (`-` for standard output) and no certificates.
+
+| Scenario | Writes |
+| -------- | ------ |
+| `web` | A root CA and an issuing CA, both name constrained to `--hostnames`, and a 90-day server certificate for `--hostnames`. Use it for websites, APIs, LDAPS, databases, and VPN gateways. |
+| `local-dev` | A self-signed certificate for `localhost`, `127.0.0.1`, `::1`, and `--hostnames`. See [Local development HTTPS](use-cases/local-development.md). |
+| `mtls` | The same CAs as `web`, a server certificate for `--hostnames`, and a client certificate for each name in `--clients`. |
+| `code-sign` | A self-signed code signing certificate for `--target` (default `windows10`). Its `.pfx` password comes from `CERTTOOL_PFX_PASSWORD`; the spec never holds a password. |
+
+Separate scenarios with commas, such as `--scenario web,code-sign`. Each adds its own top-level entries, and every file name starts with the scenario name, so `web` writes `web-root-ca`, `web-issuing-ca`, and `web-server`.
+
+The subject flags (`--organization`, `--country`, and so on), `--key-type`, and `--validity` set the leaf certificates; CAs use ECDSA keys, 10 years for a root and 3 for an issuing CA. A flag that no chosen scenario uses is an error. With `--yubikey`, the root CA is left out because it is on the YubiKey, and the issuing CA becomes a top-level entry to run with `certtool --yubikey --spec`.
+
+```bash
+certtool --scenario web --organization Acme --hostnames www.example.com,example.com --export-spec certs.yaml
+```
+
+```yaml
+# Root CA: install web-root-ca.crt on the clients. Its key can sign anything within the name constraints,
+# so move web-root-ca.key offline once the issuing CA exists, or keep the root on a YubiKey (--yubikey).
+- commonName: Acme Web Root CA
+  certificateAuthority: true
+  keyType: ECDSA-384
+  # 10 years.
+  validity: 87600h
+  organization: Acme
+  filename: web-root-ca
+  # Name constraints: certificates below this CA may only use these names and their subdomains.
+  # Add a domain before you issue a certificate for it; changing them later means regenerating the CA and everything below it.
+  # IP addresses are not limited, so certtool still adds 127.0.0.1; add permittedIPRanges to limit them.
+  permittedDNSDomains:
+    - www.example.com
+    - example.com
+  children:
+    # Issuing CA: signs the day-to-day certificates. Renew it well before it expires, because a certificate is only valid while its issuers are.
+    - commonName: Acme Web Issuing CA
+      certificateAuthority: true
+      keyType: ECDSA-256
+      # 3 years.
+      validity: 26280h
+      organization: Acme
+      filename: web-issuing-ca
+      children:
+        # Server certificate. Serve web-server.crt followed by web-issuing-ca.crt, so clients only need to trust the root.
+        # To add a server, copy this entry with a new commonName, hostnames, and filename.
+        - commonName: www.example.com
+          keyType: ECDSA-256
+          # Short-lived. To renew, delete web-server.crt and web-server.key, then run the spec again.
+          validity: 2160h
+          organization: Acme
+          hostnames:
+            - www.example.com
+            - example.com
+          filename: web-server
+```
+
+Review the file, then generate the certificates. The file starts with a comment that repeats this command:
+
+```bash
+certtool --spec certs.yaml --output-dir certs
+```
+
 ## Exporting a spec with --export-spec
 
-`--export-spec <path>` writes the spec as YAML instead of generating certificates. It works with `--chain`, `--spec`, and plain flags, so you can start from a generated hierarchy and customise it.
+`--export-spec <path>` writes the spec as YAML instead of generating certificates, or to standard output when the path is `-`. It works with `--scenario`, `--chain`, `--spec`, and plain flags, so you can start from a generated hierarchy and customise it.
 
 ```bash
 certtool --chain 1,2,1 --common-name svc --organization Acme --export-spec certs.yaml

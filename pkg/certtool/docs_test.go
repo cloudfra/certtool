@@ -19,6 +19,7 @@ import (
 	"io/fs"
 	"os"
 	"regexp"
+	"slices"
 	"testing"
 )
 
@@ -51,6 +52,24 @@ func TestSpecDocExamplesAreValid(t *testing.T) {
 	}
 }
 
+// TestSpecDocScenarioExample keeps the --scenario web example in docs/spec.md
+// identical to what the scenario writes.
+func TestSpecDocScenarioExample(t *testing.T) {
+	t.Parallel()
+	doc, err := fs.ReadFile(os.DirFS("../.."), "docs/spec.md")
+	if err != nil {
+		t.Fatalf("ReadFile() err = %v", err)
+	}
+	golden, err := os.ReadFile("testdata/scenarios/web.yaml")
+	if err != nil {
+		t.Fatalf("ReadFile() err = %v", err)
+	}
+	want := normalizeNewlines(golden)
+	if !slices.ContainsFunc(yamlExamples(doc), func(b []byte) bool { return bytes.Equal(b, want) }) {
+		t.Errorf("docs/spec.md has no yaml example equal to testdata/scenarios/web.yaml; copy it into the \"Starting from a scenario\" section")
+	}
+}
+
 // TestYAMLExamplesCRLF guards against Windows checkouts, where the markdown
 // files have CRLF line endings.
 func TestYAMLExamplesCRLF(t *testing.T) {
@@ -67,11 +86,15 @@ func TestYAMLExamplesCRLF(t *testing.T) {
 // yamlExamples returns the contents of every fenced yaml block in a markdown
 // document, regardless of its line-ending style.
 func yamlExamples(doc []byte) [][]byte {
-	doc = bytes.ReplaceAll(doc, []byte("\r\n"), []byte("\n"))
+	doc = normalizeNewlines(doc)
 	matches := yamlFence.FindAllSubmatch(doc, -1)
 	blocks := make([][]byte, 0, len(matches))
 	for _, m := range matches {
 		blocks = append(blocks, m[1])
 	}
 	return blocks
+}
+
+func normalizeNewlines(b []byte) []byte {
+	return bytes.ReplaceAll(b, []byte("\r\n"), []byte("\n"))
 }

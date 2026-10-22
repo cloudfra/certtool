@@ -1,6 +1,6 @@
 # certtool spec format
 
-A spec is a YAML list of certificates. An entry with `children` is a CA that signs each child. Generate with `certtool --spec certs.yaml --output-dir certs`. To get a starting file, run `certtool --chain 1,2,1 --organization Acme --export-spec certs.yaml`.
+A spec is a YAML list of certificates. An entry with `children` is a CA that signs each child. Generate with `certtool --spec certs.yaml --output-dir certs`. To get a starting file, run `certtool --scenario web --organization Acme --hostnames api.example.com --export-spec certs.yaml` (scenarios: `web`, `local-dev`, `mtls`, `code-sign`), or `certtool --chain 1,2,1 --organization Acme --export-spec certs.yaml` for a bare hierarchy.
 
 ## Fields
 

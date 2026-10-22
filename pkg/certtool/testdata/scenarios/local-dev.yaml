@@ -1,0 +1,11 @@
+# Self-signed certificate for this machine. certtool adds localhost and 127.0.0.1 itself.
+# Trust local-dev.crt only on the machine that holds local-dev.key; see docs/use-cases/local-development.md.
+- commonName: myapp.localhost
+  keyType: ECDSA-256
+  validity: 8760h
+  organization: Acme
+  # Add the names you browse to, such as myapp.localhost.
+  hostnames:
+    - myapp.localhost
+    - ::1
+  filename: local-dev

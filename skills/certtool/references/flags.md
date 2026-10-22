@@ -47,7 +47,9 @@
 | `--spec` | | YAML spec to generate from. Cannot be combined with `--chain`. |
 | `--output-dir` | `.` | Directory for `--chain` and `--spec` output. Created if missing. |
 | `--overwrite` | `false` | With `--spec` or `--chain`, regenerate every certificate instead of reusing the `.crt` and `.key` files already in `--output-dir`. |
-| `--export-spec` | | Write the spec built from `--chain`, `--spec`, or plain flags to this YAML file and generate nothing. |
+| `--export-spec` | | Write the spec built from `--scenario`, `--chain`, `--spec`, or plain flags to this YAML file and generate nothing. `-` writes to standard output. |
+| `--scenario` | | Write a commented spec to `--export-spec`. Comma separated: `web` (root and issuing CA name constrained to `--hostnames`, one server certificate), `local-dev` (self-signed localhost), `mtls` (CAs, a server for `--hostnames`, clients for `--clients`), `code-sign` (for `--target`, password from `CERTTOOL_PFX_PASSWORD`). Uses the subject flags, `--key-type`, and `--validity` for the leaves; other flags are errors. With `--yubikey` the root is left out. |
+| `--clients` | | Common names of the client certificates made by `--scenario mtls`, comma separated. |
 
 ## YubiKey
 

@@ -110,8 +110,12 @@ type Args struct {
 	NamePrefix string
 	// OutputDir is --output-dir.
 	OutputDir string
-	// ExportSpec is --export-spec.
+	// ExportSpec is --export-spec. "-" writes the spec to standard output.
 	ExportSpec string
+	// Scenario is --scenario, comma separated.
+	Scenario string
+	// Clients is --clients, comma separated.
+	Clients string
 
 	// YubiKey is --yubikey.
 	YubiKey bool
@@ -170,6 +174,10 @@ func Run(ctx context.Context, args Args) error {
 	if args.Version {
 		fmt.Printf("certtool %s (built %s)\n", internal.Version(), internal.Buildstamp())
 		return nil
+	}
+
+	if args.Scenario != "" {
+		return runScenario(ctx, args)
 	}
 
 	if args.Target != "" && !args.CodeSigning {
@@ -474,6 +482,15 @@ func argsToSpec(ctx context.Context, args Args) ([]certlib.CertificateSpec, erro
 func writeSpecFile(ctx context.Context, specs []certlib.CertificateSpec, path string) error {
 	data, err := certlib.MarshalSpec(specs)
 	if err != nil {
+		return err
+	}
+	return writeSpecData(ctx, data, path)
+}
+
+// writeSpecData writes a spec to path, or to standard output when path is "-".
+func writeSpecData(ctx context.Context, data []byte, path string) error {
+	if path == "-" {
+		_, err := os.Stdout.Write(data)
 		return err
 	}
 	if err := safefile.WritePrivate(filepath.Clean(path), data); err != nil {
