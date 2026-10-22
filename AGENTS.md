@@ -12,7 +12,7 @@ certtool is a Go CLI and library (`github.com/cloudfra/certtool`) that generates
 | ---- | -------- |
 | `cmd/certtool` | `main`: parses flags into `certtool.Args` and calls `certtool.Run`. Nothing else belongs here. |
 | `internal/certtool` | `Args`, `DefaultArgs`, `Run`, flag validation, and the modes (single, `--chain`, `--spec`, `--export-spec`, YubiKey). |
-| `internal/logging` | zap-backed `slog` logger writing to stderr. |
+| `internal/logging` | zap-backed `slog` logger writing to stderr, and `WithLogger`/`FromContext` for passing a logger in a context. |
 | `pkg/certtool` | Public library: certificate generation, specs, profiles, PKCS#12. |
 | `pkg/yubikey` | YubiKey PIV issuer. `yubikey_piv.go` is the real implementation, `yubikey_stub.go` the fallback for builds without PC/SC. |
 | `pkg/certtool/testdata` | Example specs, also used by tests and docs. |
@@ -41,6 +41,7 @@ The real YubiKey code builds on Windows without cgo and elsewhere with `CGO_ENAB
 ## Rules
 
 - **Never prompt.** certtool runs unattended. A missing input is an error that names the flag (and environment variable, if any) and says why it is needed. The only wait allowed is the YubiKey touch.
+- **Log through the context.** Code in `internal/certtool` logs with `logging.FromContext(ctx)`. Tests capture logs by passing `logging.WithLogger(t.Context(), logger)` to `Run`, never with `slog.SetDefault`, so they can run in parallel.
 - **Errors name flags.** Write `--flag-name` in error messages so the user knows what to change.
 - **New flag:** add a field to `Args`, its default to `DefaultArgs`, the binding in `cmd/certtool/certtool.go`, a case in `TestParseFlags`, and document it in `README.md` and `skills/certtool/references/flags.md`. `TestSkillFlags` fails if the skill names a flag that does not exist or leaves one out.
 - **Tests never touch a real YubiKey.** Use the fakes in `pkg/yubikey/fake_test.go`, or select serial `1`, which no device has.

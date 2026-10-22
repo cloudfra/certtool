@@ -16,7 +16,6 @@ package certtool
 
 import (
 	"errors"
-	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
@@ -63,7 +62,7 @@ func countFiles(t *testing.T, dir, pattern string) int {
 func TestRunVersion(t *testing.T) {
 	args := testArgs(t)
 	args.Version = true
-	if err := Run(args); err != nil {
+	if err := Run(t.Context(), args); err != nil {
 		t.Errorf("Run() err = %v, want nil when --version is set", err)
 	}
 	assertNoFiles(t, args.OutputDir)
@@ -71,7 +70,7 @@ func TestRunVersion(t *testing.T) {
 
 func TestRun(t *testing.T) {
 	args := testArgs(t)
-	if err := Run(args); err != nil {
+	if err := Run(t.Context(), args); err != nil {
 		t.Fatalf("Run() err = %v", err)
 	}
 	for _, f := range []string{args.PublicCertificate, args.PrivateKey} {
@@ -171,7 +170,7 @@ func TestRunErrors(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			args := testArgs(t)
 			tc.set(t, &args)
-			err := Run(args)
+			err := Run(t.Context(), args)
 			if err == nil {
 				t.Fatal("Run() err = nil, want an error")
 			}
@@ -185,7 +184,7 @@ func TestRunErrors(t *testing.T) {
 func TestRunTargetWithoutCodeSign(t *testing.T) {
 	args := testArgs(t)
 	args.Target = defaultCodeSignTarget
-	if err := Run(args); err != nil {
+	if err := Run(t.Context(), args); err != nil {
 		t.Errorf("Run() err = %v, want nil; --target should only warn, not fail, when --code-sign is unset", err)
 	}
 }
@@ -193,7 +192,7 @@ func TestRunTargetWithoutCodeSign(t *testing.T) {
 func TestRunCodeSignPFX(t *testing.T) {
 	args := testArgs(t)
 	args.CodeSigning, args.Target = true, defaultCodeSignTarget
-	if err := Run(args); err != nil {
+	if err := Run(t.Context(), args); err != nil {
 		t.Fatalf("Run() err = %v", err)
 	}
 	if _, err := os.Stat(args.PFXOutput); err != nil {
@@ -204,19 +203,19 @@ func TestRunCodeSignPFX(t *testing.T) {
 func TestRunParentCertificate(t *testing.T) {
 	args := testArgs(t)
 	args.CA = true
-	if err := Run(args); err != nil {
+	if err := Run(t.Context(), args); err != nil {
 		t.Fatalf("Run() for the CA err = %v", err)
 	}
 
 	child := testArgs(t)
 	child.ParentPublicCertificate, child.ParentPrivateKey = args.PublicCertificate, args.PrivateKey
-	if err := Run(child); err != nil {
+	if err := Run(t.Context(), child); err != nil {
 		t.Fatalf("Run() for the child err = %v", err)
 	}
 }
 
 func TestCertificateArgs(t *testing.T) {
-	certArgs, err := certificateArgs(DefaultArgs())
+	certArgs, err := certificateArgs(t.Context(), DefaultArgs())
 	if err != nil {
 		t.Fatalf("certificateArgs() err = %v", err)
 	}
@@ -240,7 +239,7 @@ func TestCertificateArgsFields(t *testing.T) {
 	args.CommonName = "my-service.example.com"
 	args.Hostnames = "a.example.com, b.example.com"
 
-	certArgs, err := certificateArgs(args)
+	certArgs, err := certificateArgs(t.Context(), args)
 	if err != nil {
 		t.Fatalf("certificateArgs() err = %v", err)
 	}
@@ -261,7 +260,7 @@ func TestCertificateArgsCodeSigningKeyType(t *testing.T) {
 			args := DefaultArgs()
 			args.CodeSigning, args.KeyType, args.Target = true, "ECDSA-256", target
 
-			certArgs, err := certificateArgs(args)
+			certArgs, err := certificateArgs(t.Context(), args)
 			if err != nil {
 				t.Fatalf("certificateArgs() err = %v", err)
 			}
@@ -274,7 +273,7 @@ func TestCertificateArgsCodeSigningKeyType(t *testing.T) {
 	t.Run("profile default", func(t *testing.T) {
 		args := DefaultArgs()
 		args.CodeSigning = true
-		certArgs, err := certificateArgs(args)
+		certArgs, err := certificateArgs(t.Context(), args)
 		if err != nil {
 			t.Fatalf("certificateArgs() err = %v", err)
 		}
@@ -299,7 +298,7 @@ func TestCertificateArgsErrors(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			args := DefaultArgs()
 			tc.set(t, &args)
-			if _, err := certificateArgs(args); err == nil {
+			if _, err := certificateArgs(t.Context(), args); err == nil {
 				t.Error("certificateArgs() err = nil, want an error")
 			}
 		})
@@ -403,7 +402,7 @@ func TestRunSpec(t *testing.T) {
         - leaf.example.com
 `)
 
-	if err := Run(args); err != nil {
+	if err := Run(t.Context(), args); err != nil {
 		t.Fatalf("Run() err = %v", err)
 	}
 	for _, f := range []string{"test-root-ca.crt", "test-root-ca-leaf-example-com.crt"} {
@@ -421,7 +420,7 @@ func TestRunSpecCodeSigningPFX(t *testing.T) {
   target: windows10
 `)
 
-	if err := Run(args); err != nil {
+	if err := Run(t.Context(), args); err != nil {
 		t.Fatalf("Run() err = %v", err)
 	}
 	if got := countFiles(t, args.OutputDir, "*.pfx"); got != 1 {
@@ -443,7 +442,7 @@ func TestRunChain(t *testing.T) {
 		t.Run(tc.chain, func(t *testing.T) {
 			args := testArgs(t)
 			args.Chain = tc.chain
-			if err := Run(args); err != nil {
+			if err := Run(t.Context(), args); err != nil {
 				t.Fatalf("Run() err = %v", err)
 			}
 			if got := countFiles(t, args.OutputDir, "*.crt"); got != tc.wantCerts {
@@ -459,7 +458,7 @@ func TestRunChain(t *testing.T) {
 func TestRunChainNamePrefix(t *testing.T) {
 	args := testArgs(t)
 	args.Chain, args.NamePrefix = "1,1", "prod"
-	if err := Run(args); err != nil {
+	if err := Run(t.Context(), args); err != nil {
 		t.Fatalf("Run() err = %v", err)
 	}
 	for _, f := range []string{"prod-cloudfra-root-ca.crt", "prod-cloudfra-root-ca-prod-cloudfra.crt"} {
@@ -472,7 +471,7 @@ func TestRunChainNamePrefix(t *testing.T) {
 func TestRunNamePrefixWithoutChain(t *testing.T) {
 	args := testArgs(t)
 	args.NamePrefix = "prod"
-	if err := Run(args); err != nil {
+	if err := Run(t.Context(), args); err != nil {
 		t.Errorf("Run() err = %v, want nil; --name-prefix should only warn, not fail, when --chain is unset", err)
 	}
 }
@@ -480,7 +479,7 @@ func TestRunNamePrefixWithoutChain(t *testing.T) {
 func TestRunExportSpec(t *testing.T) {
 	args := testArgs(t)
 	args.ExportSpec, args.Chain = filepath.Join(args.OutputDir, "exported.yaml"), "2"
-	if err := Run(args); err != nil {
+	if err := Run(t.Context(), args); err != nil {
 		t.Fatalf("Run() err = %v", err)
 	}
 	if _, err := os.Stat(args.ExportSpec); err != nil {
@@ -494,7 +493,7 @@ func TestRunExportSpec(t *testing.T) {
 func TestRunExportSpecFromFlags(t *testing.T) {
 	args := testArgs(t)
 	args.ExportSpec = filepath.Join(args.OutputDir, "flags.yaml")
-	if err := Run(args); err != nil {
+	if err := Run(t.Context(), args); err != nil {
 		t.Fatalf("Run() err = %v", err)
 	}
 
@@ -512,7 +511,7 @@ func TestRunExportSpecFromFlags(t *testing.T) {
 func TestRunExportSpecCodeSigningKeyType(t *testing.T) {
 	args := testArgs(t)
 	args.ExportSpec, args.CodeSigning = filepath.Join(args.OutputDir, "codesign.yaml"), true
-	if err := Run(args); err != nil {
+	if err := Run(t.Context(), args); err != nil {
 		t.Fatalf("Run() err = %v", err)
 	}
 
@@ -537,7 +536,7 @@ func TestRunSpecWithExportSpec(t *testing.T) {
 `)
 	args.ExportSpec = filepath.Join(args.OutputDir, "output.yaml")
 
-	if err := Run(args); err != nil {
+	if err := Run(t.Context(), args); err != nil {
 		t.Fatalf("Run() err = %v", err)
 	}
 	if _, err := os.Stat(args.ExportSpec); err != nil {
@@ -560,7 +559,7 @@ func TestRunReusesExistingFiles(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			args := testArgs(t)
 			set(t, &args)
-			if err := Run(args); err != nil {
+			if err := Run(t.Context(), args); err != nil {
 				t.Fatalf("Run() err = %v", err)
 			}
 			keys := func() string {
@@ -580,7 +579,7 @@ func TestRunReusesExistingFiles(t *testing.T) {
 			}
 			first := keys()
 
-			if err := Run(args); err != nil {
+			if err := Run(t.Context(), args); err != nil {
 				t.Fatalf("Run() again err = %v", err)
 			}
 			if keys() != first {
@@ -588,7 +587,7 @@ func TestRunReusesExistingFiles(t *testing.T) {
 			}
 
 			args.Overwrite = true
-			if err := Run(args); err != nil {
+			if err := Run(t.Context(), args); err != nil {
 				t.Fatalf("Run() with --overwrite err = %v", err)
 			}
 			if keys() == first {
@@ -601,13 +600,13 @@ func TestRunReusesExistingFiles(t *testing.T) {
 func TestRunUnusableFilesSuggestOverwrite(t *testing.T) {
 	args := testArgs(t)
 	args.Spec = writeSpec(t, t.TempDir(), "certs.yaml", "- commonName: Leaf\n  keyType: ECDSA-256\n  filename: leaf\n")
-	if err := Run(args); err != nil {
+	if err := Run(t.Context(), args); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.Remove(filepath.Join(args.OutputDir, "leaf.key")); err != nil {
 		t.Fatal(err)
 	}
-	err := Run(args)
+	err := Run(t.Context(), args)
 	if !errors.Is(err, certlib.ErrExistingFiles) || !strings.Contains(err.Error(), "or pass --overwrite to regenerate every certificate") {
 		t.Errorf("Run() err = %v, want ErrExistingFiles suggesting --overwrite", err)
 	}
@@ -622,16 +621,14 @@ func TestValidateModesOverwrite(t *testing.T) {
 }
 
 func TestRunWarnsAboutLegacyPFX(t *testing.T) {
-	var logs strings.Builder
-	previous := slog.Default()
-	slog.SetDefault(slog.New(slog.NewTextHandler(&logs, &slog.HandlerOptions{Level: slog.LevelWarn})))
-	t.Cleanup(func() { slog.SetDefault(previous) })
+	t.Parallel()
+	ctx, logs := captureWarnings(t)
 
 	for _, target := range []string{"windows7", "win8"} {
 		logs.Reset()
 		args := testArgs(t)
 		args.CodeSigning, args.Target = true, target
-		if err := Run(args); err != nil {
+		if err := Run(ctx, args); err != nil {
 			t.Fatalf("Run(--target %s) err = %v", target, err)
 		}
 		if !strings.Contains(logs.String(), "legacy .pfx") {
@@ -642,7 +639,7 @@ func TestRunWarnsAboutLegacyPFX(t *testing.T) {
 	logs.Reset()
 	args := testArgs(t)
 	args.Spec = writeSpec(t, t.TempDir(), "certs.yaml", "- commonName: Old Signing\n  codeSigning: true\n  target: windows7\n  filename: old\n- commonName: New Signing\n  codeSigning: true\n  filename: new\n")
-	if err := Run(args); err != nil {
+	if err := Run(ctx, args); err != nil {
 		t.Fatalf("Run(--spec) err = %v", err)
 	}
 	var legacy string
@@ -658,7 +655,7 @@ func TestRunWarnsAboutLegacyPFX(t *testing.T) {
 	logs.Reset()
 	args = testArgs(t)
 	args.CodeSigning, args.Target = true, "windows10"
-	if err := Run(args); err != nil {
+	if err := Run(ctx, args); err != nil {
 		t.Fatal(err)
 	}
 	if strings.Contains(logs.String(), "legacy") {

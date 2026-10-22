@@ -15,12 +15,14 @@
 package certtool
 
 import (
+	"context"
 	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
+	"github.com/cloudfra/certtool/internal/logging"
 	certlib "github.com/cloudfra/certtool/pkg/certtool"
 	"software.sslmate.com/src/go-pkcs12"
 )
@@ -43,7 +45,7 @@ func TestRunPFXPasswordFromEnvironment(t *testing.T) {
 	t.Setenv(PFXPasswordEnv, "from-env")
 	args := testArgs(t)
 	args.CodeSigning, args.Target = true, defaultCodeSignTarget
-	if err := Run(args); err != nil {
+	if err := Run(t.Context(), args); err != nil {
 		t.Fatalf("Run() err = %v", err)
 	}
 	assertPFXPassword(t, args.PFXOutput, "from-env")
@@ -53,7 +55,7 @@ func TestRunPFXPasswordFlagOverridesEnvironment(t *testing.T) {
 	t.Setenv(PFXPasswordEnv, "from-env")
 	args := testArgs(t)
 	args.CodeSigning, args.Target, args.PFXPassword = true, defaultCodeSignTarget, "from-flag"
-	if err := Run(args); err != nil {
+	if err := Run(t.Context(), args); err != nil {
 		t.Fatalf("Run() err = %v", err)
 	}
 	assertPFXPassword(t, args.PFXOutput, "from-flag")
@@ -71,7 +73,7 @@ func TestRunExportSpecOmitsPFXPassword(t *testing.T) {
 			args.CodeSigning, args.Target = true, defaultCodeSignTarget
 			args.ExportSpec = filepath.Join(t.TempDir(), "out.yaml")
 			set(t, &args)
-			if err := Run(args); err != nil {
+			if err := Run(t.Context(), args); err != nil {
 				t.Fatalf("Run() err = %v", err)
 			}
 
@@ -98,7 +100,7 @@ func TestRunExportSpecWithoutPFXPassword(t *testing.T) {
 	args := testArgs(t)
 	args.CodeSigning, args.Target = true, defaultCodeSignTarget
 	args.ExportSpec = filepath.Join(t.TempDir(), "out.yaml")
-	if err := Run(args); err != nil {
+	if err := Run(t.Context(), args); err != nil {
 		t.Fatalf("Run() err = %v", err)
 	}
 	data, err := os.ReadFile(args.ExportSpec)
@@ -117,7 +119,7 @@ func TestRunSpecExportReplacesPFXPasswords(t *testing.T) {
 	spec := writeSpec(t, dir, "in.yaml", "- commonName: Signing\n  codeSigning: true\n  pfxPassword: s3cret-value\n  filename: sign\n")
 	args := testArgs(t)
 	args.Spec, args.ExportSpec = spec, filepath.Join(dir, "out.yaml")
-	if err := Run(args); err != nil {
+	if err := Run(t.Context(), args); err != nil {
 		t.Fatalf("Run() export err = %v", err)
 	}
 	data, err := os.ReadFile(args.ExportSpec)
@@ -131,32 +133,31 @@ func TestRunSpecExportReplacesPFXPasswords(t *testing.T) {
 	t.Setenv(PFXPasswordEnv, "s3cret-value")
 	gen := testArgs(t)
 	gen.Spec = args.ExportSpec
-	if err := Run(gen); err != nil {
+	if err := Run(t.Context(), gen); err != nil {
 		t.Fatalf("Run() generate err = %v", err)
 	}
 	assertPFXPassword(t, filepath.Join(gen.OutputDir, "sign.pfx"), "s3cret-value")
 }
 
-// captureWarnings records the messages logged at warning level while the test
-// runs.
-func captureWarnings(t *testing.T) *strings.Builder {
+// captureWarnings returns a context whose logger records warnings in the
+// returned builder. It never touches the default logger, so tests using it can
+// run in parallel.
+func captureWarnings(t *testing.T) (context.Context, *strings.Builder) {
 	t.Helper()
 
-	var logs strings.Builder
-	previous := slog.Default()
-	slog.SetDefault(slog.New(slog.NewTextHandler(&logs, &slog.HandlerOptions{Level: slog.LevelWarn})))
-	t.Cleanup(func() { slog.SetDefault(previous) })
-	return &logs
+	logs := &strings.Builder{}
+	logger := slog.New(slog.NewTextHandler(logs, &slog.HandlerOptions{Level: slog.LevelWarn}))
+	return logging.WithLogger(t.Context(), logger), logs
 }
 
 // A .pfx without a password lets anyone who can read it sign code, so certtool
 // must say so.
 func TestRunWarnsAboutPFXWithoutPassword(t *testing.T) {
 	t.Setenv(PFXPasswordEnv, "")
-	logs := captureWarnings(t)
+	ctx, logs := captureWarnings(t)
 	args := testArgs(t)
 	args.CodeSigning, args.Target = true, defaultCodeSignTarget
-	if err := Run(args); err != nil {
+	if err := Run(ctx, args); err != nil {
 		t.Fatalf("Run() err = %v", err)
 	}
 	if !strings.Contains(logs.String(), "the .pfx has no password") {
@@ -165,7 +166,7 @@ func TestRunWarnsAboutPFXWithoutPassword(t *testing.T) {
 
 	logs.Reset()
 	args.PFXPassword = "set"
-	if err := Run(args); err != nil {
+	if err := Run(ctx, args); err != nil {
 		t.Fatalf("Run() err = %v", err)
 	}
 	if strings.Contains(logs.String(), "no password") {
@@ -174,10 +175,11 @@ func TestRunWarnsAboutPFXWithoutPassword(t *testing.T) {
 }
 
 func TestRunSpecWarnsAboutPFXWithoutPassword(t *testing.T) {
-	logs := captureWarnings(t)
+	t.Parallel()
+	ctx, logs := captureWarnings(t)
 	args := testArgs(t)
 	args.Spec = writeSpec(t, t.TempDir(), "certs.yaml", "- commonName: Open Signing\n  codeSigning: true\n  filename: open\n- commonName: Linux Signing\n  codeSigning: true\n  target: linux\n  filename: linux\n")
-	if err := Run(args); err != nil {
+	if err := Run(ctx, args); err != nil {
 		t.Fatalf("Run() err = %v", err)
 	}
 	if !strings.Contains(logs.String(), "Open Signing") || strings.Contains(logs.String(), "Linux Signing") {

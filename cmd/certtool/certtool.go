@@ -16,8 +16,8 @@
 package main
 
 import (
+	"context"
 	"flag"
-	"log/slog"
 	"os"
 
 	"github.com/cloudfra/certtool/internal/certtool"
@@ -29,10 +29,10 @@ func main() {
 	if err != nil {
 		os.Exit(2)
 	}
-	logging.Init()
+	logger := logging.Init()
 
-	if err := certtool.Run(args); err != nil {
-		slog.Error("certtool failed", "error", err)
+	if err := certtool.Run(logging.WithLogger(context.Background(), logger), args); err != nil {
+		logger.Error("certtool failed", "error", err)
 		os.Exit(1)
 	}
 }

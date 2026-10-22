@@ -129,7 +129,7 @@ func TestYubiKeyConfig(t *testing.T) {
 	args.YubiKey = true
 	args.YubiKeySerial, args.YubiKeySlot, args.YubiKeyPIN, args.YubiKeyManagementKey = "1234567", "9a", "111111", "abcd"
 
-	cfg, err := yubiKeyConfig(args)
+	cfg, err := yubiKeyConfig(t.Context(), args)
 	if err != nil {
 		t.Fatalf("yubiKeyConfig() err = %v", err)
 	}
@@ -148,7 +148,7 @@ func TestYubiKeyConfigEnvironment(t *testing.T) {
 	args := DefaultArgs()
 	args.YubiKey = true
 
-	cfg, err := yubiKeyConfig(args)
+	cfg, err := yubiKeyConfig(t.Context(), args)
 	if err != nil {
 		t.Fatalf("yubiKeyConfig() err = %v", err)
 	}
@@ -162,7 +162,7 @@ func TestYubiKeyConfigInvalidSerial(t *testing.T) {
 		t.Run(serial, func(t *testing.T) {
 			args := DefaultArgs()
 			args.YubiKey, args.YubiKeyPIN, args.YubiKeySerial = true, "123456", serial
-			if _, err := yubiKeyConfig(args); err == nil || !strings.Contains(err.Error(), "is not a valid serial number") {
+			if _, err := yubiKeyConfig(t.Context(), args); err == nil || !strings.Contains(err.Error(), "is not a valid serial number") {
 				t.Errorf("yubiKeyConfig() with serial %q err = %v, want an invalid serial number error", serial, err)
 			}
 		})
@@ -184,7 +184,7 @@ func TestYubiKeyMissingPIN(t *testing.T) {
 		t.Run(tc.mode, func(t *testing.T) {
 			args := testArgs(t)
 			tc.set(&args)
-			err := Run(args)
+			err := Run(t.Context(), args)
 			for _, want := range []string{tc.mode + " needs the YubiKey PIN", "--yubikey-pin", YubiKeyPINEnv} {
 				if err == nil || !strings.Contains(err.Error(), want) {
 					t.Errorf("Run() err = %v, want it to contain %q", err, want)
@@ -211,7 +211,7 @@ func TestRunYubiKeyUnavailable(t *testing.T) {
 			args.YubiKeySerial, args.YubiKeyPIN = "1", "123456"
 			set(&args)
 
-			if err := Run(args); err == nil {
+			if err := Run(t.Context(), args); err == nil {
 				t.Error("Run() err = nil, want an error without a usable YubiKey")
 			}
 			assertNoFiles(t, args.OutputDir)
