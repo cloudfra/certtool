@@ -1,0 +1,15 @@
+# Scenario proxy: A CA for a TLS-inspecting proxy (Squid, mitmproxy), which signs a certificate for each site on the fly.
+
+# CA for a TLS-inspecting proxy, which signs a certificate for every site its clients visit. Its key sits on the proxy
+# and can impersonate any site to the machines that trust it: install proxy-ca.crt only on managed machines.
+# Squid: tls-cert=proxy-ca.crt tls-key=proxy-ca.key on an ssl-bump http_port.
+# mitmproxy: cat proxy-ca.key proxy-ca.crt > ~/.mitmproxy/mitmproxy-ca.pem
+- commonName: Acme TLS Inspection CA
+  certificateAuthority: true
+  # RSA, which every proxy and client supports.
+  keyType: RSA-2048
+  validity: 26280h
+  organization: Acme
+  filename: proxy-ca
+  # 0: the proxy may sign site certificates but not other CAs.
+  maxPathLen: 0

@@ -109,7 +109,7 @@ func TestRunScenarioErrors(t *testing.T) {
 		edit func(*Args)
 		want string
 	}{
-		{"unknown scenario", func(a *Args) { a.Scenario = "web,kubernetes" }, `--scenario "kubernetes"`},
+		{"unknown scenario", func(a *Args) { a.Scenario = "web,nomad" }, `--scenario "nomad"`},
 		{"no export spec", func(a *Args) { a.ExportSpec = "" }, "--export-spec"},
 		{"common name", func(a *Args) { a.CommonName = "x" }, "--common-name does not apply"},
 		{"ca", func(a *Args) { a.CA = true }, "--ca does not apply"},
@@ -117,11 +117,13 @@ func TestRunScenarioErrors(t *testing.T) {
 		{"output dir", func(a *Args) { a.OutputDir = "certs" }, "--output-dir does not apply"},
 		{"chain", func(a *Args) { a.Chain = "1,1" }, "--chain does not apply"},
 		{"yubikey pin", func(a *Args) { a.YubiKey = true; a.YubiKeyPIN = "123456" }, "--yubikey-pin does not apply"},
-		{"target without code-sign", func(a *Args) { a.Target = "linux" }, "--target only applies"},
-		{"clients without mtls", func(a *Args) { a.Clients = "billing" }, "--clients only applies"},
+		{"target without code-sign", func(a *Args) { a.Target = "linux" }, "--target does not apply"},
+		{"clients without a client scenario", func(a *Args) { a.Clients = "billing" }, "--clients does not apply"},
 		{"hostnames with only code-sign", func(a *Args) { a.Scenario = "code-sign" }, "--hostnames does not apply"},
-		{"web without hostnames", func(a *Args) { a.Hostnames = "" }, "need --hostnames"},
-		{"mtls without clients", func(a *Args) { a.Scenario = "mtls" }, "needs --clients"},
+		{"web without hostnames", func(a *Args) { a.Hostnames = "" }, "--scenario web needs --hostnames"},
+		{"mtls without clients", func(a *Args) { a.Scenario = "mtls" }, "--scenario mtls needs --clients"},
+		{"active directory without hostnames", func(a *Args) { a.Scenario = "active-directory"; a.Hostnames = "" }, "FQDN of each domain controller"},
+		{"android signing with yubikey", func(a *Args) { a.Scenario = "android-signing"; a.Hostnames = ""; a.YubiKey = true }, "cannot be combined with --yubikey"},
 		{"bad hostname", func(a *Args) { a.Hostnames = "*.com" }, "--hostnames"},
 		{"bad key type", func(a *Args) { a.KeyType = "DSA-1024" }, "--key-type"},
 		{"bad validity", func(a *Args) { a.Validity = -time.Hour }, "--validity"},

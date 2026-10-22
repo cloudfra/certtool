@@ -1,4 +1,7 @@
+# Scenario code-sign: A code signing certificate for Windows (signtool) or Linux (osslsigncode).
+
 # Self-signed code signing certificate. Machines must trust code-sign.crt to accept what it signs.
+# Anyone who has its key can sign code as you; see docs/use-cases/code-signing.md for signing and verifying.
 - commonName: Acme Code Signing
   codeSigning: true
   # windows7, windows10, windows11, or linux. The key type comes from the target unless keyType is set.
@@ -6,8 +9,11 @@
   validity: 26280h
   organization: Acme
   filename: code-sign
-# Root CA: install web-root-ca.crt on the clients. Its key can sign anything within the name constraints,
-# so move web-root-ca.key offline once the issuing CA exists, or keep the root on a YubiKey (--yubikey).
+# Scenario web: A root CA and an issuing CA, name constrained to the hostnames, and a server certificate for websites and APIs.
+
+# Root CA. Install web-root-ca.crt in the trust store of every client: the operating system, the browser, or the HTTP client's CA bundle.
+# Its key can sign anything below it, so move web-root-ca.key offline once the issuing CA exists,
+# or keep the root on a YubiKey: certtool --scenario web --yubikey.
 - commonName: Acme Web Root CA
   certificateAuthority: true
   keyType: ECDSA-384
@@ -21,7 +27,8 @@
   permittedDNSDomains:
     - example.com
   children:
-    # Issuing CA: signs the day-to-day certificates. Renew it well before it expires, because a certificate is only valid while its issuers are.
+    # Issuing CA: signs the day-to-day certificates. Renew it well before it expires, because a certificate is only valid
+    # while its issuers are.
     - commonName: Acme Web Issuing CA
       certificateAuthority: true
       keyType: ECDSA-256
@@ -30,11 +37,12 @@
       organization: Acme
       filename: web-issuing-ca
       children:
-        # Server certificate. Serve web-server.crt followed by web-issuing-ca.crt, so clients only need to trust the root.
+        # Server certificate for the hostnames, valid for 90 days. nginx: ssl_certificate takes web-server.crt followed by
+        # web-issuing-ca.crt in one file, and ssl_certificate_key takes web-server.key.
         # To add a server, copy this entry with a new commonName, hostnames, and filename.
         - commonName: '*.example.com'
           keyType: ECDSA-256
-          # Short-lived. To renew, delete web-server.crt and web-server.key, then run the spec again.
+          # To renew, delete web-server.crt and web-server.key, then run the spec again.
           validity: 2160h
           organization: Acme
           hostnames:

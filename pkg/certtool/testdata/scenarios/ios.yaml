@@ -1,0 +1,38 @@
+# Scenario ios: A development CA for iPhone and iPad apps, a backend certificate that meets Apple's TLS rules, and client identities.
+
+# CA. On a device, AirDrop or email ios-ca.crt, install the profile in Settings, then turn on full trust in
+# Settings > General > About > Certificate Trust Settings. In the Simulator: xcrun simctl keychain booted add-root-cert ios-ca.crt.
+# App Transport Security then accepts the backend without exceptions. Apps themselves are signed with certificates from Apple.
+# Its key signs every certificate below it: keep ios-ca.key off the servers, and use it only to issue certificates.
+- commonName: Acme iOS Development CA
+  certificateAuthority: true
+  keyType: ECDSA-384
+  # 10 years.
+  validity: 87600h
+  organization: Acme
+  filename: ios-ca
+  # Name constraints: certificates below this CA may only use these names and their subdomains.
+  # Add a domain before you issue a certificate for it; changing them later means regenerating the CA and everything below it.
+  # IP addresses are not limited, so certtool still adds 127.0.0.1; add permittedIPRanges to limit them.
+  permittedDNSDomains:
+    - api.dev.example.com
+  children:
+    # Backend certificate. Apple platforms reject TLS server certificates that are valid for more than 825 days, lack the
+    # name in hostnames, or have RSA keys under 2048 bits; this one is valid for 397 days.
+    - commonName: api.dev.example.com
+      keyType: ECDSA-256
+      # To renew, delete ios-server.crt and ios-server.key, then run the spec again.
+      validity: 9528h
+      organization: Acme
+      hostnames:
+        - api.dev.example.com
+      filename: ios-server
+    # Client identity for test-device. The app loads ios-client-test-device.pfx with SecPKCS12Import, or a configuration profile installs it.
+    # The .pfx uses the legacy format, which older iOS and macOS releases need to import it; give it a long random password.
+    - commonName: test-device
+      pfx: legacy
+      pfxPasswordEnv: CERTTOOL_PFX_PASSWORD
+      keyType: ECDSA-256
+      validity: 8760h
+      organization: Acme
+      filename: ios-client-test-device

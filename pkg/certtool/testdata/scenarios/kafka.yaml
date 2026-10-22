@@ -1,0 +1,65 @@
+# Scenario kafka: A CA that signs a certificate per Kafka broker, with PKCS#12 keystores, and client certificates.
+
+# CA. Brokers and clients trust kafka-ca.crt: ssl.truststore.type=PEM and ssl.truststore.location=kafka-ca.crt.
+# Its key signs every certificate below it: keep kafka-ca.key off the servers, and use it only to issue certificates.
+- commonName: Acme Kafka CA
+  certificateAuthority: true
+  keyType: ECDSA-384
+  # 10 years.
+  validity: 87600h
+  organization: Acme
+  filename: kafka-ca
+  # Name constraints: certificates below this CA may only use these names and their subdomains.
+  # Add a domain before you issue a certificate for it; changing them later means regenerating the CA and everything below it.
+  # IP addresses are not limited, so certtool still adds 127.0.0.1; add permittedIPRanges to limit them.
+  permittedDNSDomains:
+    - kafka-1.example.com
+    - kafka-2.example.com
+    - kafka-3.example.com
+  children:
+    # Broker certificate for kafka-1.example.com. In server.properties: ssl.keystore.type=PKCS12, ssl.keystore.location=kafka-kafka-1-example-com.pfx,
+    # ssl.keystore.password and ssl.key.password set to the .pfx password, and ssl.client.auth=required for mutual TLS.
+    - commonName: kafka-1.example.com
+      pfx: modern
+      pfxPasswordEnv: CERTTOOL_PFX_PASSWORD
+      keyType: ECDSA-256
+      # To renew, delete kafka-kafka-1-example-com.crt and kafka-kafka-1-example-com.key, then run the spec again.
+      validity: 8760h
+      organization: Acme
+      hostnames:
+        - kafka-1.example.com
+      filename: kafka-kafka-1-example-com
+    # Broker certificate for kafka-2.example.com. In server.properties: ssl.keystore.type=PKCS12, ssl.keystore.location=kafka-kafka-2-example-com.pfx,
+    # ssl.keystore.password and ssl.key.password set to the .pfx password, and ssl.client.auth=required for mutual TLS.
+    - commonName: kafka-2.example.com
+      pfx: modern
+      pfxPasswordEnv: CERTTOOL_PFX_PASSWORD
+      keyType: ECDSA-256
+      # To renew, delete kafka-kafka-2-example-com.crt and kafka-kafka-2-example-com.key, then run the spec again.
+      validity: 8760h
+      organization: Acme
+      hostnames:
+        - kafka-2.example.com
+      filename: kafka-kafka-2-example-com
+    # Broker certificate for kafka-3.example.com. In server.properties: ssl.keystore.type=PKCS12, ssl.keystore.location=kafka-kafka-3-example-com.pfx,
+    # ssl.keystore.password and ssl.key.password set to the .pfx password, and ssl.client.auth=required for mutual TLS.
+    - commonName: kafka-3.example.com
+      pfx: modern
+      pfxPasswordEnv: CERTTOOL_PFX_PASSWORD
+      keyType: ECDSA-256
+      # To renew, delete kafka-kafka-3-example-com.crt and kafka-kafka-3-example-com.key, then run the spec again.
+      validity: 8760h
+      organization: Acme
+      hostnames:
+        - kafka-3.example.com
+      filename: kafka-kafka-3-example-com
+    # Client certificate for orders-service, in kafka-client-orders-service.pfx for the client's ssl.keystore.location. Kafka's principal is the
+    # whole subject (User:CN=orders-service,O=...); to use the common name in ACLs, set
+    # ssl.principal.mapping.rules=RULE:^CN=([^,]+).*$/$1/,DEFAULT on the brokers.
+    - commonName: orders-service
+      pfx: modern
+      pfxPasswordEnv: CERTTOOL_PFX_PASSWORD
+      keyType: ECDSA-256
+      validity: 8760h
+      organization: Acme
+      filename: kafka-client-orders-service

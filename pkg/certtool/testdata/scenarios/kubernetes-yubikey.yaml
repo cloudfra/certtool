@@ -1,0 +1,94 @@
+# Scenario kubernetes: The certificates kubeadm puts in /etc/kubernetes/pki: the cluster, front proxy, and etcd CAs and the certificates they sign.
+
+# Cluster CA. The file names are kubeadm's: generate with --output-dir /etc/kubernetes/pki on the first control-plane
+# node, move the etcd files as the etcd CA says, then run kubeadm init. kubeadm uses these certificates and makes
+# the kubeconfig files, the service account key pair (sa.key, sa.pub), and anything else that is missing.
+# Kubernetes reads a client certificate's organization as a group, so do not bind RBAC roles to Acme.
+# Signed by the root CA on the YubiKey: run this spec with certtool --yubikey --spec. Kubernetes components trust
+# the CA file directly, so they do not need the YubiKey root.
+- commonName: kubernetes
+  certificateAuthority: true
+  keyType: RSA-2048
+  validity: 26280h
+  organization: Acme
+  filename: ca
+  children:
+    # API server certificate.
+    - commonName: kube-apiserver
+      keyType: RSA-2048
+      validity: 8760h
+      organization: Acme
+      # Every name and address clients use for the API server: the node, a load balancer, and the first address of
+      # the service CIDR (10.96.0.1 for kubeadm's default 10.96.0.0/12). Change cluster.local if the cluster domain differs.
+      hostnames:
+        - cp1
+        - kubernetes
+        - kubernetes.default
+        - kubernetes.default.svc
+        - kubernetes.default.svc.cluster.local
+        - 10.96.0.1
+      filename: apiserver
+    # The client certificate the API server presents to kubelets.
+    - commonName: kube-apiserver-kubelet-client
+      keyType: RSA-2048
+      validity: 8760h
+      # A Kubernetes group: system:masters may always use the kubelet API.
+      organization: system:masters
+      filename: apiserver-kubelet-client
+# Front proxy CA for the aggregation layer (--requestheader-client-ca-file). kubeadm keeps it separate from the
+# cluster CA, so a front proxy certificate cannot be used as a user's client certificate.
+# Signed by the root CA on the YubiKey: run this spec with certtool --yubikey --spec. Kubernetes components trust
+# the CA file directly, so they do not need the YubiKey root.
+- commonName: front-proxy-ca
+  certificateAuthority: true
+  keyType: RSA-2048
+  validity: 26280h
+  organization: Acme
+  filename: front-proxy-ca
+  children:
+    # The client certificate the API server presents to extension API servers.
+    - commonName: front-proxy-client
+      keyType: RSA-2048
+      validity: 8760h
+      organization: Acme
+      filename: front-proxy-client
+# etcd CA. kubeadm reads the etcd certificates from /etc/kubernetes/pki/etcd/: move etcd-ca, etcd-server, etcd-peer,
+# and etcd-healthcheck-client (.crt and .key) there as ca, server, peer, and healthcheck-client.
+# Signed by the root CA on the YubiKey: run this spec with certtool --yubikey --spec. Kubernetes components trust
+# the CA file directly, so they do not need the YubiKey root.
+- commonName: etcd-ca
+  certificateAuthority: true
+  keyType: RSA-2048
+  validity: 26280h
+  organization: Acme
+  filename: etcd-ca
+  children:
+    # etcd server certificate, named after the node.
+    - commonName: cp1
+      keyType: RSA-2048
+      validity: 8760h
+      organization: Acme
+      hostnames:
+        - cp1
+        - ::1
+      filename: etcd-server
+    # etcd peer certificate, for the other members of the etcd cluster. Its hostnames are the node's addresses.
+    - commonName: cp1
+      keyType: RSA-2048
+      validity: 8760h
+      organization: Acme
+      hostnames:
+        - cp1
+      filename: etcd-peer
+    # Client certificate for the etcd liveness probe.
+    - commonName: kube-etcd-healthcheck-client
+      keyType: RSA-2048
+      validity: 8760h
+      organization: Acme
+      filename: etcd-healthcheck-client
+    # The client certificate the API server presents to etcd. It stays in /etc/kubernetes/pki.
+    - commonName: kube-apiserver-etcd-client
+      keyType: RSA-2048
+      validity: 8760h
+      organization: Acme
+      filename: apiserver-etcd-client

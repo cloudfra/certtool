@@ -1,0 +1,16 @@
+# Scenario android-signing: An Android app signing (upload) key in a PKCS#12 keystore, valid for 25 years.
+
+# Android app signing key, in the PKCS#12 keystore android-signing.pfx. Sign with
+#   apksigner sign --ks android-signing.pfx --ks-type PKCS12 app.apk
+# or in Gradle with storeFile file("android-signing.pfx") and storeType "pkcs12" in signingConfigs;
+# keytool -list -keystore android-signing.pfx shows the key alias. With Play App Signing, register
+# android-signing.crt as the upload certificate; without it, losing this key means the app can never be updated.
+- commonName: Acme Android Upload Key
+  codeSigning: true
+  # The android target makes an RSA-4096 key unless keyType is set.
+  target: android
+  pfxPasswordEnv: CERTTOOL_PFX_PASSWORD
+  # 25 years: Android only accepts an update signed with the same key, so it must outlive the app.
+  validity: 219000h
+  organization: Acme
+  filename: android-signing

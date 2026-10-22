@@ -1,0 +1,48 @@
+# Scenario eap-tls: A CA that signs a RADIUS server certificate and client certificates for 802.1X EAP-TLS on Wi-Fi and wired networks.
+
+# CA. Configure every supplicant to trust only eap-tls-ca.crt for this network and to check the RADIUS server's name;
+# otherwise anyone with a certificate from another CA the device trusts could pose as the network.
+# Its key signs every certificate below it: keep eap-tls-ca.key off the servers, and use it only to issue certificates.
+- commonName: Acme Network Access CA
+  certificateAuthority: true
+  keyType: ECDSA-384
+  # 10 years.
+  validity: 87600h
+  organization: Acme
+  filename: eap-tls-ca
+  # Name constraints: certificates below this CA may only use these names and their subdomains.
+  # Add a domain before you issue a certificate for it; changing them later means regenerating the CA and everything below it.
+  # IP addresses are not limited, so certtool still adds 127.0.0.1; add permittedIPRanges to limit them.
+  permittedDNSDomains:
+    - radius.corp.example.com
+  children:
+    # RADIUS server certificate. FreeRADIUS: certificate_file, private_key_file, and ca_file in mods-available/eap.
+    # Windows NPS: import eap-tls-radius.pfx into the computer's Personal store and choose it in the network policy.
+    - commonName: radius.corp.example.com
+      pfx: modern
+      pfxPasswordEnv: CERTTOOL_PFX_PASSWORD
+      keyType: ECDSA-256
+      # To renew, delete eap-tls-radius.crt and eap-tls-radius.key, then run the spec again.
+      validity: 8760h
+      organization: Acme
+      hostnames:
+        - radius.corp.example.com
+      filename: eap-tls-radius
+    # Client certificate for alice-laptop. Windows, macOS, iOS, and Android import eap-tls-client-alice-laptop.pfx, or an MDM pushes it
+    # with the Wi-Fi profile. Linux wpa_supplicant uses client_cert and private_key. RADIUS can authorize on the common name.
+    - commonName: alice-laptop
+      pfx: modern
+      pfxPasswordEnv: CERTTOOL_PFX_PASSWORD
+      keyType: ECDSA-256
+      validity: 8760h
+      organization: Acme
+      filename: eap-tls-client-alice-laptop
+    # Client certificate for bob-phone. Windows, macOS, iOS, and Android import eap-tls-client-bob-phone.pfx, or an MDM pushes it
+    # with the Wi-Fi profile. Linux wpa_supplicant uses client_cert and private_key. RADIUS can authorize on the common name.
+    - commonName: bob-phone
+      pfx: modern
+      pfxPasswordEnv: CERTTOOL_PFX_PASSWORD
+      keyType: ECDSA-256
+      validity: 8760h
+      organization: Acme
+      filename: eap-tls-client-bob-phone

@@ -1,3 +1,5 @@
+# Scenario local-dev: A self-signed certificate for localhost and development hostnames.
+
 # Self-signed certificate for this machine. certtool adds localhost and 127.0.0.1 itself.
 # Trust local-dev.crt only on the machine that holds local-dev.key; see docs/use-cases/local-development.md.
 - commonName: myapp.localhost

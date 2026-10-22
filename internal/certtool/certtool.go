@@ -537,7 +537,7 @@ func runSpec(ctx context.Context, args Args, issuer *certlib.Issuer, enc *certli
 	}
 
 	if names := certlib.SpecsWithUnprotectedPFX(specs); len(names) > 0 && args.ExportSpec == "" && !enc.Encrypts() {
-		logging.FromContext(ctx).Warn("these specs make a .pfx without a password, so anyone who can read it can sign code with its key; set pfxPasswordEnv", "specs", names)
+		logging.FromContext(ctx).Warn("these specs make a .pfx without a password, so anyone who can read it has its key; set pfxPasswordEnv", "specs", names)
 	}
 
 	if names := certlib.SpecsWithLegacyPFX(specs); len(names) > 0 && args.ExportSpec == "" {

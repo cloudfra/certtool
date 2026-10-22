@@ -91,19 +91,28 @@ func validateScenario(args Args, scenarios []string) error {
 		}
 	}
 
-	has := func(s string) bool { return slices.Contains(scenarios, s) }
-	usesHostnames := has(certlib.ScenarioWeb) || has(certlib.ScenarioMTLS) || has(certlib.ScenarioLocalDev)
+	var usesHostnames, usesClients, usesTarget bool
+	for _, s := range scenarios {
+		info, _ := certlib.LookupScenario(s)
+		usesHostnames = usesHostnames || info.Hostnames != certlib.InputUnused
+		usesClients = usesClients || info.Clients != certlib.InputUnused
+		usesTarget = usesTarget || info.Target
+		switch {
+		case info.Hostnames == certlib.InputRequired && args.Hostnames == "":
+			return fmt.Errorf("--scenario %s needs --hostnames: %s", s, info.HostnamesHelp)
+		case info.Clients == certlib.InputRequired && args.Clients == "":
+			return fmt.Errorf("--scenario %s needs --clients: %s", s, info.ClientsHelp)
+		case info.SelfSigned && args.YubiKey:
+			return fmt.Errorf("--scenario %s makes a self-signed certificate, so it cannot be combined with --yubikey", s)
+		}
+	}
 	switch {
-	case args.Target != "" && !has(certlib.ScenarioCodeSign):
-		return errors.New("--target only applies to --scenario code-sign")
-	case args.Clients != "" && !has(certlib.ScenarioMTLS):
-		return errors.New("--clients only applies to --scenario mtls")
+	case args.Target != "" && !usesTarget:
+		return fmt.Errorf("--target does not apply to --scenario %s; it sets the code-sign target", args.Scenario)
+	case args.Clients != "" && !usesClients:
+		return fmt.Errorf("--clients does not apply to --scenario %s, which makes no client certificates", args.Scenario)
 	case args.Hostnames != "" && !usesHostnames:
-		return errors.New("--hostnames does not apply to --scenario code-sign")
-	case args.Hostnames == "" && (has(certlib.ScenarioWeb) || has(certlib.ScenarioMTLS)):
-		return errors.New("--scenario web and mtls need --hostnames: the names of the server certificate, which also become the CA's name constraints")
-	case args.Clients == "" && has(certlib.ScenarioMTLS):
-		return errors.New("--scenario mtls needs --clients: the names of the client certificates, such as billing,orders")
+		return fmt.Errorf("--hostnames does not apply to --scenario %s, which makes no TLS certificates", args.Scenario)
 	}
 	return nil
 }

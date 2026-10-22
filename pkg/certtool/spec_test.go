@@ -198,6 +198,16 @@ func TestUnmarshalSpec_Errors(t *testing.T) {
 			wantErr: "must have a commonName",
 		},
 		{
+			name:    "unknown pfx format",
+			yaml:    "- commonName: Server\n  pfx: aes\n",
+			wantErr: `unknown .pfx format "aes"`,
+		},
+		{
+			name:    "pfx on code signing",
+			yaml:    "- commonName: Signer\n  codeSigning: true\n  pfx: modern\n",
+			wantErr: "whose target decides its .pfx",
+		},
+		{
 			name:    "nested empty CN",
 			yaml:    "- commonName: Root\n  certificateAuthority: true\n  children:\n    - certificateAuthority: false\n",
 			wantErr: "must have a commonName",

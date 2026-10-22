@@ -116,7 +116,7 @@ Rerun the command from step 3 or 4 before the certificate expires. Each run make
 certtool --chain 1,1,2 --common-name svc --organization Acme --output-dir certs
 ```
 
-See the [certificate spec documentation](../spec.md) for naming, YAML specs, and more examples, including mutual TLS between microservices.
+`certtool --scenario web` (or `mtls`, `microservices`) writes this hierarchy as a commented spec, with name constraints and validities already chosen; see [Scenarios](../scenarios.md). The [certificate spec documentation](../spec.md) covers naming and the spec format.
 
 ## Limitation
 

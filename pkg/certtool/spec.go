@@ -58,10 +58,17 @@ type CertificateSpec struct {
 	Target string `yaml:"target,omitempty"`
 
 	// PFXPassword sets the password on the PKCS#12 (.pfx) bundle produced
-	// for code signing certificates on Windows targets. An empty string
+	// for code signing certificates on Windows targets, or by pfx. An empty string
 	// means no password. Ignored when CodeSigning is false or the target
 	// does not produce PFX output.
 	PFXPassword string `yaml:"pfxPassword,omitempty"`
+
+	// PFX adds a PKCS#12 (.pfx) bundle to a TLS certificate, for systems that
+	// import a certificate and key as one file, such as Windows, Java
+	// keystores, and phones: "modern" (AES-256) or "legacy" (3DES, for
+	// Windows 7 and 8 and older Apple systems). Code signing certificates get
+	// theirs from Target instead.
+	PFX string `yaml:"pfx,omitempty"`
 
 	// PFXPasswordEnv names an environment variable that holds the PKCS#12
 	// password, so the spec file does not have to contain it. The variable
@@ -165,6 +172,12 @@ func validateSpec(spec *CertificateSpec) error {
 	if err := validateFilename(spec); err != nil {
 		return err
 	}
+	if spec.PFX != "" && spec.CodeSigning {
+		return fmt.Errorf("spec %q sets pfx on a code signing certificate, whose target decides its .pfx; remove pfx", spec.CommonName)
+	}
+	if _, _, err := specPFX(spec); err != nil {
+		return fmt.Errorf("spec %q: %w", spec.CommonName, err)
+	}
 	if spec.PFXPassword != "" && spec.PFXPasswordEnv != "" {
 		return fmt.Errorf("spec %q sets both pfxPassword and pfxPasswordEnv; keep only pfxPasswordEnv", spec.CommonName)
 	}
@@ -235,13 +248,22 @@ func SpecsWithPFXPassword(specs []CertificateSpec) []string {
 	return names
 }
 
-// SpecsWithLegacyPFX returns the common names of the code signing specs in the
-// tree whose target writes a legacy .pfx (3DES with a SHA-1 MAC), which is far
-// easier to brute-force than the default.
+// specPFX reports whether spec makes a .pfx, and whether it is legacy.
+func specPFX(spec *CertificateSpec) (output, legacy bool, err error) {
+	target := spec.Target
+	if target == "" {
+		target = windows10Target
+	}
+	return pfxFormat(&Args{CodeSigning: spec.CodeSigning, Target: target, PFX: spec.PFX})
+}
+
+// SpecsWithLegacyPFX returns the common names of the specs in the tree that
+// write a legacy .pfx (3DES with a SHA-1 MAC), which is far easier to
+// brute-force than the default.
 func SpecsWithLegacyPFX(specs []CertificateSpec) []string {
 	var names []string
 	for i := range specs {
-		if profile, err := GetProfile(specs[i].Target); err == nil && specs[i].CodeSigning && profile.LegacyPFX {
+		if _, legacy, err := specPFX(&specs[i]); err == nil && legacy {
 			names = append(names, specs[i].CommonName)
 		}
 		names = append(names, SpecsWithLegacyPFX(specs[i].Children)...)
@@ -250,17 +272,13 @@ func SpecsWithLegacyPFX(specs []CertificateSpec) []string {
 }
 
 // SpecsWithUnprotectedPFX returns the common names of the specs in the tree
-// that produce a .pfx bundle without a password, which anyone who can read
-// the file can use to sign code.
+// that produce a .pfx bundle without a password, which gives its key to
+// anyone who can read the file.
 func SpecsWithUnprotectedPFX(specs []CertificateSpec) []string {
 	var names []string
 	for i := range specs {
 		s := &specs[i]
-		target := s.Target
-		if target == "" {
-			target = windows10Target
-		}
-		if profile, err := GetProfile(target); err == nil && s.CodeSigning && profile.OutputPFX && s.PFXPassword == "" && s.PFXPasswordEnv == "" {
+		if output, _, err := specPFX(s); err == nil && output && s.PFXPassword == "" && s.PFXPasswordEnv == "" {
 			names = append(names, s.CommonName)
 		}
 		names = append(names, SpecsWithUnprotectedPFX(s.Children)...)
@@ -669,7 +687,7 @@ func generateSpec(spec *CertificateSpec, parentKP *KeyPair, issuer *Issuer, outp
 // when neither file exists. The pair must still fit spec and its place in the
 // hierarchy described by args; anything else is an error wrapping
 // ErrExistingFiles, because reusing it would break the chain or ignore the
-// spec. For a code signing spec whose .pfx is missing, the .pfx is rebuilt
+// spec. For a spec whose .pfx is missing, the .pfx is rebuilt
 // from the reused key.
 func reuseKeyPair(spec *CertificateSpec, args *Args, certPath, keyPath, pfxPath string, enc *KeyEncryption) (*KeyPair, string, error) {
 	existingKey, err := existingPrivateFile(keyPath)
@@ -743,15 +761,8 @@ func checkReusedKeyPair(spec *CertificateSpec, args *Args, kp *KeyPair, certPath
 		return nil, problem("is not signed by %q, which issues it in the spec, probably because that certificate was regenerated", parent.Subject.CommonName)
 	}
 
-	if !spec.CodeSigning {
-		return kp, nil
-	}
-	target := args.Target
-	if target == "" {
-		target = windows10Target
-	}
-	profile, err := GetProfile(target)
-	if err != nil || !profile.OutputPFX {
+	outputPFX, legacyPFX, err := specPFX(spec)
+	if err != nil || !outputPFX {
 		return kp, err
 	}
 	existingPFX, err := existingPrivateFile(pfxPath)
@@ -764,7 +775,7 @@ func checkReusedKeyPair(spec *CertificateSpec, args *Args, kp *KeyPair, certPath
 		}
 		return kp, nil
 	}
-	if kp.PFX, err = toPFX(cert, key, args.PFXPassword, profile.LegacyPFX); err != nil {
+	if kp.PFX, err = toPFX(cert, key, args.PFXPassword, legacyPFX); err != nil {
 		return nil, fmt.Errorf("cannot rebuild the PFX for %q from %s: %w", spec.CommonName, keyPath, err)
 	}
 	return kp, nil
@@ -781,6 +792,7 @@ func specToArgs(spec *CertificateSpec) *Args {
 		CodeSigning:        spec.CodeSigning,
 		Target:             spec.Target,
 		PFXPassword:        spec.PFXPassword,
+		PFX:                spec.PFX,
 		CommonName:         spec.CommonName,
 		Organization:       spec.Organization,
 		OrganizationalUnit: spec.OrganizationalUnit,

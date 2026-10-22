@@ -101,11 +101,45 @@ type Args struct {
 	// auto-SANs (localhost/127.0.0.1) are added.
 	CodeSigning bool
 	// Target selects a named platform profile when CodeSigning is true.
-	// Valid values: windows7, windows10, windows11, linux (and aliases).
+	// Valid values: windows7, windows10, windows11, linux, android (and aliases).
 	// Defaults to "windows10" when empty and CodeSigning is true.
 	Target string
 	// PFXPassword is the password for PKCS#12 output. Empty string = no password.
 	PFXPassword string
+	// PFX adds a PKCS#12 bundle to a TLS certificate: PFXModern or PFXLegacy.
+	// Empty means none. Code signing certificates take theirs from Target.
+	PFX string
+}
+
+// PKCS#12 formats of a TLS certificate's .pfx.
+const (
+	// PFXModern encrypts with AES-256 and PBKDF2. Windows 10 and later, Java,
+	// Android, and OpenSSL 3 read it.
+	PFXModern = "modern"
+	// PFXLegacy encrypts with 3DES and a SHA-1 MAC, which is easier to
+	// brute-force, for importers that cannot read PFXModern, such as Windows
+	// 7 and 8 and older Apple systems.
+	PFXLegacy = "legacy"
+)
+
+// pfxFormat reports whether args makes a .pfx, and whether it is legacy.
+func pfxFormat(args *Args) (output, legacy bool, err error) {
+	if args.CodeSigning {
+		profile, err := GetProfile(args.Target)
+		if err != nil {
+			return false, false, err
+		}
+		return profile.OutputPFX, profile.LegacyPFX, nil
+	}
+	switch args.PFX {
+	case "":
+		return false, false, nil
+	case PFXModern:
+		return true, false, nil
+	case PFXLegacy:
+		return true, true, nil
+	}
+	return false, false, fmt.Errorf("unknown .pfx format %q: use %s or %s", args.PFX, PFXModern, PFXLegacy)
 }
 
 // GetKeyType returns the KeyType from the Args, or a default if nil.
@@ -428,22 +462,20 @@ func createCertificateAndPrivateKeyPEM(args *Args) (*KeyPair, error) {
 		PrivateKey:        privateKeyPemBytes,
 	}
 
-	if args.CodeSigning {
-		profile, profileErr := GetProfile(args.Target)
-		if profileErr != nil {
-			return nil, profileErr
+	outputPFX, legacyPFX, err := pfxFormat(args)
+	if err != nil {
+		return nil, err
+	}
+	if outputPFX {
+		parsedCert, parseErr := x509.ParseCertificate(cert)
+		if parseErr != nil {
+			return nil, fmt.Errorf("cannot parse generated certificate for PKCS#12: %w", parseErr)
 		}
-		if profile.OutputPFX {
-			parsedCert, parseErr := x509.ParseCertificate(cert)
-			if parseErr != nil {
-				return nil, fmt.Errorf("cannot parse generated certificate for PKCS#12: %w", parseErr)
-			}
-			pfxBytes, pfxErr := toPFX(parsedCert, privateKey, args.PFXPassword, profile.LegacyPFX)
-			if pfxErr != nil {
-				return nil, fmt.Errorf("cannot generate PKCS#12: %w", pfxErr)
-			}
-			kp.PFX = pfxBytes
+		pfxBytes, pfxErr := toPFX(parsedCert, privateKey, args.PFXPassword, legacyPFX)
+		if pfxErr != nil {
+			return nil, fmt.Errorf("cannot generate PKCS#12: %w", pfxErr)
 		}
+		kp.PFX = pfxBytes
 	}
 
 	return kp, nil

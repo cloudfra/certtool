@@ -1,0 +1,40 @@
+# Scenario android: A development CA that Android apps trust through a network security config, a backend certificate, and client certificates.
+
+# CA. Android apps do not trust user-installed CAs. Copy android-ca.crt to res/raw/android_ca.crt (resource names
+# cannot contain hyphens) and trust it in res/xml/network_security_config.xml, inside <debug-overrides> to keep it
+# out of release builds: <trust-anchors><certificates src="@raw/android_ca"/></trust-anchors>.
+# Its key signs every certificate below it: keep android-ca.key off the servers, and use it only to issue certificates.
+- commonName: Acme Android Development CA
+  certificateAuthority: true
+  keyType: ECDSA-384
+  # 10 years.
+  validity: 87600h
+  organization: Acme
+  filename: android-ca
+  # Name constraints: certificates below this CA may only use these names and their subdomains.
+  # Add a domain before you issue a certificate for it; changing them later means regenerating the CA and everything below it.
+  permittedDNSDomains:
+    - api.dev.example.com
+  # The IP addresses certificates below this CA may use.
+  permittedIPRanges:
+    - 10.0.2.2/32
+  children:
+    # Backend certificate. The emulator reaches the host machine at 10.0.2.2: pass it in --hostnames to use this from the emulator.
+    - commonName: api.dev.example.com
+      keyType: ECDSA-256
+      # To renew, delete android-server.crt and android-server.key, then run the spec again.
+      validity: 8760h
+      organization: Acme
+      hostnames:
+        - api.dev.example.com
+        - 10.0.2.2
+      filename: android-server
+    # Client certificate for test-device. Load android-client-test-device.pfx into a KeyStore of type PKCS12 for the app's SSLContext or
+    # OkHttp client, or install it in Settings > Security > Encryption & credentials for the browser.
+    - commonName: test-device
+      pfx: modern
+      pfxPasswordEnv: CERTTOOL_PFX_PASSWORD
+      keyType: ECDSA-256
+      validity: 8760h
+      organization: Acme
+      filename: android-client-test-device

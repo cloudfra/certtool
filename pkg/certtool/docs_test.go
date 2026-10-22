@@ -19,7 +19,6 @@ import (
 	"io/fs"
 	"os"
 	"regexp"
-	"slices"
 	"testing"
 )
 
@@ -31,6 +30,7 @@ var yamlFence = regexp.MustCompile("(?s)```yaml\\n(.*?)```")
 func TestSpecDocExamplesAreValid(t *testing.T) {
 	for _, path := range []string{
 		"docs/spec.md",
+		"docs/scenarios.md",
 		"skills/certtool/references/spec-format.md",
 	} {
 		t.Run(path, func(t *testing.T) {
@@ -49,24 +49,6 @@ func TestSpecDocExamplesAreValid(t *testing.T) {
 				}
 			}
 		})
-	}
-}
-
-// TestSpecDocScenarioExample keeps the --scenario web example in docs/spec.md
-// identical to what the scenario writes.
-func TestSpecDocScenarioExample(t *testing.T) {
-	t.Parallel()
-	doc, err := fs.ReadFile(os.DirFS("../.."), "docs/spec.md")
-	if err != nil {
-		t.Fatalf("ReadFile() err = %v", err)
-	}
-	golden, err := os.ReadFile("testdata/scenarios/web.yaml")
-	if err != nil {
-		t.Fatalf("ReadFile() err = %v", err)
-	}
-	want := normalizeNewlines(golden)
-	if !slices.ContainsFunc(yamlExamples(doc), func(b []byte) bool { return bytes.Equal(b, want) }) {
-		t.Errorf("docs/spec.md has no yaml example equal to testdata/scenarios/web.yaml; copy it into the \"Starting from a scenario\" section")
 	}
 }
 

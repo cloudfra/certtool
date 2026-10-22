@@ -36,6 +36,7 @@ func TestGetProfile(t *testing.T) {
 		{input: windows11Target, wantAlgo: ecdsaAlgorithm, wantLen: 256, wantPFX: true, wantLegacy: false},
 		{input: "win11", wantAlgo: ecdsaAlgorithm, wantLen: 256, wantPFX: true, wantLegacy: false},
 		{input: linuxTarget, wantAlgo: ecdsaAlgorithm, wantLen: 256, wantPFX: false, wantLegacy: false},
+		{input: androidTarget, wantAlgo: rsaAlgorithm, wantLen: 4096, wantPFX: true, wantLegacy: false},
 		{input: "WINDOWS10", wantAlgo: ecdsaAlgorithm, wantLen: 256, wantPFX: true, wantLegacy: false},
 	}
 	for _, tc := range testCases {
