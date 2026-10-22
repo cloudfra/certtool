@@ -4,7 +4,7 @@ Sign Windows executables, installers, and PowerShell scripts with a certificate 
 
 ## Windows 10 and 11
 
-certtool reads the `.pfx` password from `CERTTOOL_PFX_PASSWORD`, so it stays out of the command line, where other users can see it, and out of your shell history. `--pfx-password` also works and takes precedence.
+certtool reads the `.pfx` password from `CERTTOOL_PFX_PASSWORD`, so it stays out of the command line, where other users can see it, and out of your shell history. `--pfx-password` also works and takes precedence. Without a password, anyone who can read the `.pfx` can sign code with its key, so certtool logs a warning.
 
 ```bash
 read -rs -p "PFX password: " CERTTOOL_PFX_PASSWORD && export CERTTOOL_PFX_PASSWORD

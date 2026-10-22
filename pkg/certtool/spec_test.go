@@ -1026,3 +1026,18 @@ func TestReplacePFXPasswords(t *testing.T) {
 		t.Errorf("SpecsWithPFXPassword() after replacing = %v, want none", got)
 	}
 }
+
+func TestSpecsWithUnprotectedPFX(t *testing.T) {
+	t.Parallel()
+	specs := []CertificateSpec{
+		{CommonName: "default target", CodeSigning: true},
+		{CommonName: "windows7", CodeSigning: true, Target: "win7"},
+		{CommonName: "password", CodeSigning: true, PFXPassword: "x"},
+		{CommonName: "password env", CodeSigning: true, PFXPasswordEnv: "PW"},
+		{CommonName: "linux", CodeSigning: true, Target: "linux"},
+		{CommonName: "tls", CertificateAuthority: true, Children: []CertificateSpec{{CommonName: "leaf"}}},
+	}
+	if diff := cmp.Diff([]string{"default target", "windows7"}, SpecsWithUnprotectedPFX(specs)); diff != "" {
+		t.Errorf("SpecsWithUnprotectedPFX() mismatch (-want +got):\n%s", diff)
+	}
+}

@@ -13,7 +13,7 @@
 | `--validity` | `8760h` | Lifetime as a Go duration (`h`, `m`, `s`; no `d`). |
 | `--hostnames` | | DNS names and IP addresses added as SANs. `localhost` and `127.0.0.1` are always added in TLS mode. Ports are removed; a wildcard must be the leftmost label of a name with two more labels (`*.example.com`). |
 | `--parent-public-certificate` | | Issuer certificate. Requires `--parent-private-key`. |
-| `--parent-private-key` | | Issuer private key. Requires `--parent-public-certificate`. |
+| `--parent-private-key` | | Issuer private key, as unencrypted PEM (PKCS#1, SEC 1, or PKCS#8). Requires `--parent-public-certificate`. |
 
 ## Subject
 

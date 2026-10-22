@@ -442,6 +442,10 @@ func runSpec(args Args, issuer *certlib.Issuer) error {
 		slog.Warn("the spec stores .pfx passwords in plain text; use pfxPasswordEnv to read them from the environment instead", "specs", names)
 	}
 
+	if names := certlib.SpecsWithUnprotectedPFX(specs); len(names) > 0 && args.ExportSpec == "" {
+		slog.Warn("these specs make a .pfx without a password, so anyone who can read it can sign code with its key; set pfxPasswordEnv", "specs", names)
+	}
+
 	if args.ExportSpec != "" {
 		if names := certlib.SpecsWithPFXPassword(specs); len(names) > 0 {
 			certlib.ReplacePFXPasswords(specs, PFXPasswordEnv)
@@ -458,6 +462,9 @@ func generateAndWriteKeyPair(args Args, certArgs *certlib.Args) error {
 		return err
 	}
 	if len(kp.PFX) > 0 {
+		if certArgs.PFXPassword == "" {
+			slog.Warn("the .pfx has no password, so anyone who can read it can sign code with its key; set "+PFXPasswordEnv+" or --pfx-password", "pfx", args.PFXOutput)
+		}
 		return certlib.WritePFX(kp, args.PFXOutput)
 	}
 	return certlib.WriteKeyPair(kp, args.PublicCertificate, args.PrivateKey)

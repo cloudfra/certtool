@@ -22,6 +22,7 @@ import (
 	"crypto/sha256"
 	"crypto/x509"
 	"crypto/x509/pkix"
+	"encoding/pem"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -1216,5 +1217,50 @@ func BenchmarkSubjectAltNames(b *testing.B) {
 		if _, _, err := subjectAltNames([]string{testExampleCom, "test.com", "localhost", "127.0.0.1"}); err != nil {
 			b.Fatal(err)
 		}
+	}
+}
+
+// ReadKeyPair accepts PKCS#8 keys, the format openssl genpkey writes, and says
+// what to do with an encrypted one.
+func TestReadKeyPair_PKCS8(t *testing.T) {
+	t.Parallel()
+	for _, keyType := range []*KeyType{{Algorithm: rsaAlgorithm, KeyLength: 2048}, {Algorithm: ecdsaAlgorithm, KeyLength: 256}} {
+		t.Run(keyType.Algorithm, func(t *testing.T) {
+			t.Parallel()
+			kp, err := GenerateKeyPair(&Args{CA: true, KeyType: keyType})
+			if err != nil {
+				t.Fatal(err)
+			}
+			_, key, err := ReadKeyPair(kp.PublicCertificate, kp.PrivateKey)
+			if err != nil {
+				t.Fatal(err)
+			}
+			der, err := x509.MarshalPKCS8PrivateKey(key)
+			if err != nil {
+				t.Fatal(err)
+			}
+			pkcs8 := pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: der})
+
+			if _, _, err := ReadKeyPair(kp.PublicCertificate, pkcs8); err != nil {
+				t.Errorf("ReadKeyPair(PKCS#8) err = %v", err)
+			}
+			// The PKCS#8 key works as a parent.
+			if _, err := GenerateKeyPair(&Args{KeyType: keyType, ParentKeyPair: &KeyPair{PublicCertificate: kp.PublicCertificate, PrivateKey: pkcs8}}); err != nil {
+				t.Errorf("GenerateKeyPair() with a PKCS#8 parent key err = %v", err)
+			}
+		})
+	}
+
+	kp, err := GenerateKeyPair(&Args{KeyType: &KeyType{Algorithm: ecdsaAlgorithm, KeyLength: 256}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	encrypted := pem.EncodeToMemory(&pem.Block{Type: "ENCRYPTED PRIVATE KEY", Bytes: []byte("opaque")})
+	if _, _, err := ReadKeyPair(kp.PublicCertificate, encrypted); err == nil || !strings.Contains(err.Error(), "the private key is encrypted") {
+		t.Errorf("ReadKeyPair(encrypted) err = %v, want an encrypted key error", err)
+	}
+	broken := pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: []byte("not DER")})
+	if _, _, err := ReadKeyPair(kp.PublicCertificate, broken); err == nil || !strings.Contains(err.Error(), "cannot parse PKCS8 private key") {
+		t.Errorf("ReadKeyPair(broken PKCS#8) err = %v, want a parse error", err)
 	}
 }
