@@ -1,3 +1,10 @@
+# certtool spec for --scenario docker, written by:
+#   certtool --scenario docker --organization Acme --hostnames docker-host.example.com,192.168.1.50 --export-spec certs.yaml
+# Review it, then generate the certificates with:
+#   certtool --spec certs.yaml --output-dir certs
+# Running it again reuses the certificates already in the output directory,
+# so you can add entries later. Format: https://github.com/cloudfra/certtool/blob/main/docs/spec.md
+
 # Scenario docker: A CA that signs a Docker daemon certificate and client certificates, to protect the Docker API on port 2376.
 
 # CA. The daemon trusts docker-ca.crt to verify clients, and clients trust it to verify the daemon.

@@ -48,7 +48,7 @@
 | `--output-dir` | `.` | Directory for `--chain` and `--spec` output. Created if missing. |
 | `--overwrite` | `false` | With `--spec` or `--chain`, regenerate every certificate instead of reusing the `.crt` and `.key` files already in `--output-dir`. |
 | `--export-spec` | | Write the spec built from `--scenario`, `--chain`, `--spec`, or plain flags to this YAML file and generate nothing. `-` writes to standard output. |
-| `--scenario` | | Write a commented spec to `--export-spec`, comma separated: `web`, `local-dev`, `mtls`, `microservices`, `database`, `active-directory`, `kubernetes`, `vpn`, `eap-tls`, `iot`, `kafka`, `docker`, `ios`, `android`, `android-signing`, `code-sign`, `proxy`. Each scenario's inputs are `--hostnames`, `--clients`, or `--target`; `docs/scenarios.md` says which. Uses the subject flags, `--key-type`, and `--validity` for the leaves; other flags are errors. With `--yubikey` the root is left out. `.pfx` passwords come from `CERTTOOL_PFX_PASSWORD`. |
+| `--scenario` | | Write a commented spec to `--export-spec`, comma separated: `web`, `local-dev`, `mtls`, `microservices`, `database`, `active-directory`, `kubernetes`, `vpn`, `eap-tls`, `iot`, `kafka`, `docker`, `git`, `ssh`, `ftps`, `ios`, `android`, `android-signing`, `code-sign`, `proxy`. Each scenario's inputs are `--hostnames`, `--clients`, or `--target`; `docs/scenarios.md` says which. Uses the subject flags, `--key-type`, and `--validity` for the leaves; other flags are errors. With `--yubikey` the root is left out. `.pfx` passwords come from `CERTTOOL_PFX_PASSWORD`. |
 | `--clients` | | Common names of the client certificates, users, or devices a scenario makes, comma separated. |
 
 ## YubiKey

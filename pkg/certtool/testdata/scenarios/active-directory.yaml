@@ -1,3 +1,10 @@
+# certtool spec for --scenario active-directory, written by:
+#   certtool --scenario active-directory --organization Acme --hostnames dc01.corp.example.com,dc02.corp.example.com --export-spec certs.yaml
+# Review it, then generate the certificates with:
+#   certtool --spec certs.yaml --output-dir certs
+# Running it again reuses the certificates already in the output directory,
+# so you can add entries later. Format: https://github.com/cloudfra/certtool/blob/main/docs/spec.md
+
 # Scenario active-directory: An enterprise root CA and issuing CA that sign LDAPS certificates for Active Directory domain controllers, with .pfx files to import.
 
 # Root CA. Publish active-directory-root-ca.crt to every domain member with Group Policy (Computer Configuration > Policies >

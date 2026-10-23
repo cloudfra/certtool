@@ -1,3 +1,10 @@
+# certtool spec for --scenario android, written by:
+#   certtool --scenario android --organization Acme --hostnames api.dev.example.com,10.0.2.2 --clients test-device --export-spec certs.yaml
+# Review it, then generate the certificates with:
+#   certtool --spec certs.yaml --output-dir certs
+# Running it again reuses the certificates already in the output directory,
+# so you can add entries later. Format: https://github.com/cloudfra/certtool/blob/main/docs/spec.md
+
 # Scenario android: A development CA that Android apps trust through a network security config, a backend certificate, and client certificates.
 
 # CA. Android apps do not trust user-installed CAs. Copy android-ca.crt to res/raw/android_ca.crt (resource names

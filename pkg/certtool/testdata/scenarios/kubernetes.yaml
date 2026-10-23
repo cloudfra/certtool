@@ -1,3 +1,10 @@
+# certtool spec for --scenario kubernetes, written by:
+#   certtool --scenario kubernetes --organization Acme --hostnames cp1,192.168.1.100,k8s-api.example.com --export-spec certs.yaml
+# Review it, then generate the certificates with:
+#   certtool --spec certs.yaml --output-dir certs
+# Running it again reuses the certificates already in the output directory,
+# so you can add entries later. Format: https://github.com/cloudfra/certtool/blob/main/docs/spec.md
+
 # Scenario kubernetes: The certificates kubeadm puts in /etc/kubernetes/pki: the cluster, front proxy, and etcd CAs and the certificates they sign.
 
 # Cluster CA. The file names are kubeadm's: generate with --output-dir /etc/kubernetes/pki on the first control-plane

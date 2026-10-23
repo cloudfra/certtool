@@ -61,6 +61,9 @@ var scenarioCases = []scenarioCase{
 	newScenarioCase(ScenarioIoT, []string{ScenarioIoT}, []string{"mqtt.example.com"}, []string{"sensor-0001", "sensor-0002"}, nil),
 	newScenarioCase(ScenarioKafka, []string{ScenarioKafka}, []string{"kafka-1.example.com", "kafka-2.example.com", "kafka-3.example.com"}, []string{"orders-service"}, nil),
 	newScenarioCase(ScenarioDocker, []string{ScenarioDocker}, []string{"docker-host.example.com", "192.168.1.50"}, nil, nil),
+	newScenarioCase(ScenarioGit, []string{ScenarioGit}, []string{"git.example.com"}, []string{"alice@example.com", "bob@example.com", "ci"}, nil),
+	newScenarioCase(ScenarioSSH, []string{ScenarioSSH}, []string{"sftp.example.com", "bastion.example.com"}, []string{"alice", "backup"}, nil),
+	newScenarioCase(ScenarioFTPS, []string{ScenarioFTPS}, []string{"ftp.example.com"}, []string{"partner-upload"}, nil),
 	newScenarioCase(ScenarioIOS, []string{ScenarioIOS}, []string{"api.dev.example.com"}, []string{"test-device"}, nil),
 	newScenarioCase(ScenarioAndroid, []string{ScenarioAndroid}, []string{"api.dev.example.com", "10.0.2.2"}, []string{"test-device"}, nil),
 	newScenarioCase(ScenarioAndroidSigning, []string{ScenarioAndroidSigning}, nil, nil, nil),
@@ -73,6 +76,8 @@ var scenarioCases = []scenarioCase{
 	newScenarioCase("mtls-rsa", []string{ScenarioMTLS}, []string{"api.internal.example.com"}, []string{"Order Service"}, func(o *ScenarioOptions) {
 		o.KeyType, o.Validity, o.Country = "RSA-2048", "720h", "CA"
 	}),
+	newScenarioCase("git-server", []string{ScenarioGit}, []string{"git.example.com"}, nil, nil),
+	newScenarioCase("git-yubikey", []string{ScenarioGit}, []string{"git.example.com"}, []string{"alice@example.com"}, func(o *ScenarioOptions) { o.ExternalRoot = true }),
 	newScenarioCase("code-sign-windows7", []string{ScenarioCodeSign}, nil, nil, func(o *ScenarioOptions) { o.Target = "windows7" }),
 	newScenarioCase("code-sign-web", []string{ScenarioCodeSign, ScenarioWeb}, []string{"*.example.com"}, nil, func(o *ScenarioOptions) { o.Target = "linux" }),
 }
@@ -251,6 +256,8 @@ func TestScenarioSpecErrors(t *testing.T) {
 		{"domain controller address", []string{ScenarioActiveDirectory}, with(func(o *ScenarioOptions) { o.Hostnames = []string{"10.0.0.1"} }), "FQDN"},
 		{"bad target", []string{ScenarioCodeSign}, with(func(o *ScenarioOptions) { o.Target = "macos" }), "unknown target"},
 		{"pfx without password env", []string{ScenarioActiveDirectory}, with(func(o *ScenarioOptions) { o.Hostnames = []string{"dc01.corp.example.com"}; o.PFXPasswordEnv = "" }), "password"},
+		{"ssh without clients", []string{ScenarioSSH}, web, "needs clients"},
+		{"duplicate git person", []string{ScenarioGit}, with(func(o *ScenarioOptions) { o.Clients = []string{"a@example.com", "A@example.com"} }), "would both be written"},
 		{"android signing on a YubiKey", []string{ScenarioAndroidSigning}, with(func(o *ScenarioOptions) { o.ExternalRoot = true }), "self-signed"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -335,7 +342,7 @@ func scenarioDocs() ([]byte, error) {
 	for _, info := range ScenarioInfos() {
 		fmt.Fprintf(&b, "| [`%s`](#%s) | %s |\n", info.Name, info.Name, info.Summary)
 	}
-	b.WriteString("\nOther systems fit one of these: `web` for OpenLDAP, mail servers, and Elasticsearch over HTTPS; `mtls` for gRPC; `microservices` for a service mesh without its own CA.\n")
+	b.WriteString("\nOther systems fit one of these: `web` for OpenLDAP, mail servers, and Elasticsearch over HTTPS; `git` for Subversion and Mercurial over HTTPS; `ssh` for SFTP-only accounts and rsync backups; `mtls` for gRPC; `microservices` for a service mesh without its own CA.\n")
 
 	for _, info := range ScenarioInfos() {
 		i := slices.IndexFunc(scenarioCases, func(c scenarioCase) bool { return c.name == info.Name })
@@ -373,4 +380,70 @@ func scenarioDocs() ([]byte, error) {
 		fmt.Fprintf(&b, "```bash\n%s\n%s\n```\n\n```yaml\n%s```\n", scenarioCommand(tc), run, spec)
 	}
 	return []byte(b.String()), nil
+}
+
+// TestScenarioGitIdentities checks that a person's certificate signs email
+// under a CA gpgsm accepts, and that people and machines get SSH keys.
+func TestScenarioGitIdentities(t *testing.T) {
+	t.Setenv(scenarioPFXPasswordEnv, "correct horse battery staple")
+	opts := ScenarioOptions{Organization: "Acme", Hostnames: []string{"git.example.com"}, Clients: []string{"alice@example.com", "ci"}, PFXPasswordEnv: scenarioPFXPasswordEnv}
+	data, err := ScenarioSpec([]string{ScenarioGit}, opts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	specs, err := UnmarshalSpec(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	dir := t.TempDir()
+	out, err := GenerateFromSpec(specs, dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	certs := map[string]*x509.Certificate{}
+	for _, o := range out {
+		certs[o.CommonName] = parseGenCert(t, o)
+	}
+
+	identityCA := certs["Acme Git Identity CA"]
+	if identityCA == nil || len(identityCA.PermittedDNSDomains) > 0 || !slices.Contains(identityCA.ExtKeyUsage, x509.ExtKeyUsageEmailProtection) {
+		t.Fatalf("identity CA = %+v, want one without name constraints that allows email protection", identityCA)
+	}
+	alice := certs["alice@example.com"]
+	if !slices.Equal(alice.EmailAddresses, []string{"alice@example.com"}) || len(alice.DNSNames) > 0 || len(alice.IPAddresses) > 0 {
+		t.Errorf("alice's names = %v %v %v, want only the email address", alice.EmailAddresses, alice.DNSNames, alice.IPAddresses)
+	}
+	roots := x509.NewCertPool()
+	roots.AddCert(identityCA)
+	if _, err := alice.Verify(x509.VerifyOptions{Roots: roots, KeyUsages: []x509.ExtKeyUsage{x509.ExtKeyUsageEmailProtection}}); err != nil {
+		t.Errorf("alice's certificate is not valid for email protection: %v", err)
+	}
+	if ci := certs["ci"]; len(ci.EmailAddresses) > 0 {
+		t.Errorf("machine certificate has email addresses %v", ci.EmailAddresses)
+	}
+	for _, name := range []string{"git-person-alice-example-com", "git-machine-ci"} {
+		if _, err := os.Stat(filepath.Join(dir, name+".key.pub")); err != nil {
+			t.Errorf("no SSH public key for %s: %v", name, err)
+		}
+	}
+	if _, err := os.Stat(filepath.Join(dir, "git-person-alice-example-com.pfx")); err != nil {
+		t.Errorf("no .pfx for gpgsm: %v", err)
+	}
+}
+
+func TestScenarioSpecHeader(t *testing.T) {
+	t.Parallel()
+	opts := ScenarioOptions{Organization: "Acme Corp", Hostnames: []string{"a.example.com"}, KeyType: "RSA-2048", ExternalRoot: true, SpecPath: "my specs/web.yaml"}
+	data, err := ScenarioSpec([]string{ScenarioWeb}, opts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{
+		"#   certtool --scenario web --organization 'Acme Corp' --hostnames a.example.com --key-type RSA-2048 --yubikey --export-spec 'my specs/web.yaml'\n",
+		"#   certtool --yubikey --spec 'my specs/web.yaml' --output-dir certs\n",
+	} {
+		if !strings.Contains(string(data), want) {
+			t.Errorf("header does not contain %q:\n%s", want, data)
+		}
+	}
 }

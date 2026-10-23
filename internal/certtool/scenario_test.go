@@ -117,6 +117,8 @@ func TestRunScenarioErrors(t *testing.T) {
 		{"output dir", func(a *Args) { a.OutputDir = "certs" }, "--output-dir does not apply"},
 		{"chain", func(a *Args) { a.Chain = "1,1" }, "--chain does not apply"},
 		{"yubikey pin", func(a *Args) { a.YubiKey = true; a.YubiKeyPIN = "123456" }, "--yubikey-pin does not apply"},
+		{"encrypt to", func(a *Args) { a.EncryptTo = "age1..." }, "--encrypt-to does not apply"},
+		{"age yubikey", func(a *Args) { a.AgeYubiKey = true }, "--age-yubikey does not apply"},
 		{"target without code-sign", func(a *Args) { a.Target = "linux" }, "--target does not apply"},
 		{"clients without a client scenario", func(a *Args) { a.Clients = "billing" }, "--clients does not apply"},
 		{"hostnames with only code-sign", func(a *Args) { a.Scenario = "code-sign" }, "--hostnames does not apply"},

@@ -1,3 +1,10 @@
+# certtool spec for --scenario database, written by:
+#   certtool --scenario database --organization Acme --hostnames postgres.internal.example.com,redis.internal.example.com --clients app --export-spec certs.yaml
+# Review it, then generate the certificates with:
+#   certtool --spec certs.yaml --output-dir certs
+# Running it again reuses the certificates already in the output directory,
+# so you can add entries later. Format: https://github.com/cloudfra/certtool/blob/main/docs/spec.md
+
 # Scenario database: A CA that signs a server certificate per database host and client certificates for database users (PostgreSQL, MySQL, Redis, MongoDB).
 
 # CA. Clients verify the servers with database-ca.crt: PostgreSQL sslrootcert with sslmode=verify-full, MySQL ssl-ca

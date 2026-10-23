@@ -40,7 +40,7 @@ func runScenario(ctx context.Context, args Args) error {
 	if err != nil {
 		return err
 	}
-	return writeSpecData(ctx, append(scenarioHeader(args), body...), args.ExportSpec)
+	return writeSpecData(ctx, body, args.ExportSpec)
 }
 
 // validateScenario rejects options that --scenario does not use, so a flag is
@@ -84,6 +84,9 @@ func validateScenario(args Args, scenarios []string) error {
 		{"--yubikey-management-key", args.YubiKeyManagementKey != ""},
 		{"--yubikey-touch-policy", args.YubiKeyTouchPolicy != defaults.YubiKeyTouchPolicy},
 		{"--yubikey-overwrite", args.YubiKeyOverwrite},
+		{"--encrypt-to", args.EncryptTo != ""},
+		{"--age-identity-file", args.AgeIdentityFile != ""},
+		{"--age-yubikey", args.AgeYubiKey},
 	}
 	for _, u := range unused {
 		if u.set {
@@ -146,6 +149,9 @@ func scenarioOptions(args Args) (certlib.ScenarioOptions, error) {
 		PFXPasswordEnv:     PFXPasswordEnv,
 		ExternalRoot:       args.YubiKey,
 	}
+	if args.ExportSpec != "-" {
+		opts.SpecPath = args.ExportSpec
+	}
 	if opts.Organization == "" {
 		return certlib.ScenarioOptions{}, errors.New("--scenario needs --organization to name the certificates")
 	}
@@ -171,30 +177,4 @@ func specDuration(d time.Duration) string {
 		return fmt.Sprintf("%dh", d/time.Hour)
 	}
 	return d.String()
-}
-
-// scenarioHeader is the comment at the top of a scenario spec, which says
-// how to use it.
-func scenarioHeader(args Args) []byte {
-	path := args.ExportSpec
-	if path == "-" {
-		path = "certs.yaml"
-	}
-	run := "certtool --spec " + path + " --output-dir certs"
-	if args.YubiKey {
-		run = "certtool --yubikey --spec " + path + " --output-dir certs"
-	}
-	lines := []string{
-		"certtool spec for --scenario " + args.Scenario + ".",
-		"Review it, then generate the certificates with:",
-		"  " + run,
-		"Running it again reuses the certificates already in the output directory,",
-		"so you can add entries later. Format: https://github.com/cloudfra/certtool/blob/main/docs/spec.md",
-	}
-	var b strings.Builder
-	for _, l := range lines {
-		b.WriteString("# " + l + "\n")
-	}
-	b.WriteString("\n")
-	return []byte(b.String())
 }

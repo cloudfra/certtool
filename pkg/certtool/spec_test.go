@@ -15,8 +15,10 @@
 package certtool
 
 import (
+	"bytes"
 	"crypto/x509"
 	"encoding/pem"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -25,6 +27,7 @@ import (
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
+	"golang.org/x/crypto/ssh"
 	"software.sslmate.com/src/go-pkcs12"
 )
 
@@ -201,6 +204,26 @@ func TestUnmarshalSpec_Errors(t *testing.T) {
 			name:    "unknown pfx format",
 			yaml:    "- commonName: Server\n  pfx: aes\n",
 			wantErr: `unknown .pfx format "aes"`,
+		},
+		{
+			name:    "emailAddresses on a CA",
+			yaml:    "- commonName: CA\n  certificateAuthority: true\n  emailAddresses: [ca@example.com]\n",
+			wantErr: "emailAddresses, which only apply to a leaf",
+		},
+		{
+			name:    "emailAddresses on code signing",
+			yaml:    "- commonName: Signer\n  codeSigning: true\n  emailAddresses: [a@example.com]\n",
+			wantErr: "emailAddresses, which only apply to a leaf",
+		},
+		{
+			name:    "bad email address",
+			yaml:    "- commonName: Alice\n  emailAddresses: [\"Alice <alice@example.com>\"]\n",
+			wantErr: "bare address",
+		},
+		{
+			name:    "sshPublicKey on a CA",
+			yaml:    "- commonName: CA\n  certificateAuthority: true\n  sshPublicKey: true\n",
+			wantErr: "sshPublicKey on a CA",
 		},
 		{
 			name:    "pfx on code signing",
@@ -1128,5 +1151,85 @@ func TestGenerateFromSpec_NameConstraints(t *testing.T) {
 	specs[0].Children[0].Hostnames = []string{"api.example.org"}
 	if _, err := GenerateFromSpec(specs, t.TempDir()); err == nil || !strings.Contains(err.Error(), `reject the name "api.example.org"`) {
 		t.Errorf("GenerateFromSpec() with a name outside the constraints err = %v, want a name constraint error", err)
+	}
+}
+
+func TestGenerateFromSpec_EmailAndSSH(t *testing.T) {
+	t.Parallel()
+	specs, err := UnmarshalSpec([]byte(`
+- commonName: CA
+  certificateAuthority: true
+  keyType: ECDSA-256
+  children:
+    - commonName: Alice
+      keyType: ECDSA-256
+      emailAddresses: [alice@example.com]
+      sshPublicKey: true
+      filename: alice
+    - commonName: server.example.com
+      keyType: ECDSA-256
+      hostnames: [server.example.com]
+`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	dir := t.TempDir()
+	out, err := GenerateFromSpec(specs, dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ca, alice, server := parseGenCert(t, out[0]), parseGenCert(t, out[1]), parseGenCert(t, out[2])
+	if !slices.Contains(ca.ExtKeyUsage, x509.ExtKeyUsageEmailProtection) {
+		t.Errorf("CA extended key usages = %v, want email protection for the certificate below it", ca.ExtKeyUsage)
+	}
+	if !slices.Equal(alice.ExtKeyUsage, []x509.ExtKeyUsage{x509.ExtKeyUsageEmailProtection, x509.ExtKeyUsageClientAuth}) {
+		t.Errorf("person extended key usages = %v, want email protection and TLS client", alice.ExtKeyUsage)
+	}
+	if !slices.Equal(alice.EmailAddresses, []string{"alice@example.com"}) || len(alice.DNSNames)+len(alice.IPAddresses) > 0 {
+		t.Errorf("person names = %v %v %v, want only alice@example.com", alice.EmailAddresses, alice.DNSNames, alice.IPAddresses)
+	}
+	if slices.Contains(server.ExtKeyUsage, x509.ExtKeyUsageEmailProtection) {
+		t.Error("a TLS certificate got email protection")
+	}
+
+	want := filepath.Join(dir, "alice.key.pub")
+	if out[1].SSHPublicKeyPath != want || out[2].SSHPublicKeyPath != "" {
+		t.Errorf("SSHPublicKeyPath = %q, %q; want %q and none", out[1].SSHPublicKeyPath, out[2].SSHPublicKeyPath, want)
+	}
+	data, err := os.ReadFile(filepath.Clean(want))
+	if err != nil {
+		t.Fatal(err)
+	}
+	pub, comment, _, _, err := ssh.ParseAuthorizedKey(data)
+	if err != nil {
+		t.Fatalf("ParseAuthorizedKey() err = %v", err)
+	}
+	sshPub, err := ssh.NewPublicKey(alice.PublicKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(pub.Marshal(), sshPub.Marshal()) || comment != "alice@example.com" {
+		t.Errorf("SSH public key = %s %q, want the certificate's key and the email address", pub.Type(), comment)
+	}
+}
+
+func TestGenerateFromSpec_ReusedCAWithoutEmailProtection(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	ca := "- commonName: CA\n  certificateAuthority: true\n  keyType: ECDSA-256\n  children:\n    - commonName: server\n      keyType: ECDSA-256\n"
+	specs, err := UnmarshalSpec([]byte(ca))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := GenerateFromSpec(specs, dir); err != nil {
+		t.Fatal(err)
+	}
+	specs, err = UnmarshalSpec([]byte(ca + "    - commonName: Alice\n      emailAddresses: [alice@example.com]\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = GenerateFromSpec(specs, dir)
+	if !errors.Is(err, ErrExistingFiles) || !strings.Contains(err.Error(), "does not allow email protection") {
+		t.Errorf("GenerateFromSpec() err = %v, want one saying the CA does not allow email protection", err)
 	}
 }

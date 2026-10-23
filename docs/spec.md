@@ -32,6 +32,8 @@ A spec file is a YAML list of `CertificateSpec` entries. Each entry defines one 
 | `locality` | string | | Subject locality (L). |
 | `province` | string | | Subject state/province (ST). |
 | `hostnames` | list | | DNS names and IPs added as SANs. A port suffix is removed; a wildcard must be the leftmost label with at least two labels after it (`*.example.com`). |
+| `emailAddresses` | list | | Leaf TLS certificates only. Makes the certificate a person's, for S/MIME and Git commit signing: the addresses become SANs, the extended key usages are email protection and TLS client, and `localhost` and `127.0.0.1` are not added. The CAs above it allow email protection. |
+| `sshPublicKey` | bool | `false` | Leaf certificates only. Also write the key's public half in OpenSSH format to `<filename>.key.pub`, for `authorized_keys`, `known_hosts`, SFTP, and Git SSH signing. OpenSSH reads the `.key` as it is. Rewritten on every run. |
 | `filename` | string | | Override the output filename (without extension). Must be a plain file name: directories, `..`, and absolute paths are rejected so every file stays in `--output-dir`. |
 | `maxPathLen` | int | | CAs only. How many CAs may sit below this one. Default: the number of CA levels below it in the spec, so `--chain 1,2,3` gives the root 1 and the intermediates 0. `-1` means no limit. |
 | `permittedDNSDomains` | list | | CAs only. DNS domains that certificates below the CA may use, as critical name constraints. `example.com` permits it and its subdomains; `.example.com` only its subdomains. |
@@ -343,7 +345,7 @@ A reused entry's other fields, such as `hostnames` or `validity`, are not compar
 
 ## Starting from a scenario
 
-`--scenario` writes a commented spec for a common situation, to review and then generate with `--spec`: web servers, local HTTPS, mutual TLS, microservices, databases, Active Directory LDAPS, Kubernetes, VPNs, 802.1X EAP-TLS, IoT and MQTT, Kafka, Docker, iOS and Android apps, Android app signing, code signing, and TLS-inspecting proxies.
+`--scenario` writes a commented spec for a common situation, to review and then generate with `--spec`: web servers, local HTTPS, mutual TLS, microservices, databases, Active Directory LDAPS, Kubernetes, VPNs, 802.1X EAP-TLS, IoT and MQTT, Kafka, Docker, Git servers and commit signing, SSH and SFTP keys, FTPS, iOS and Android apps, Android app signing, code signing, and TLS-inspecting proxies.
 
 ```bash
 certtool --scenario active-directory --organization Acme --hostnames dc01.corp.example.com,dc02.corp.example.com --export-spec certs.yaml

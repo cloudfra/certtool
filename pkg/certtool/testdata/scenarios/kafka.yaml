@@ -1,3 +1,10 @@
+# certtool spec for --scenario kafka, written by:
+#   certtool --scenario kafka --organization Acme --hostnames kafka-1.example.com,kafka-2.example.com,kafka-3.example.com --clients orders-service --export-spec certs.yaml
+# Review it, then generate the certificates with:
+#   certtool --spec certs.yaml --output-dir certs
+# Running it again reuses the certificates already in the output directory,
+# so you can add entries later. Format: https://github.com/cloudfra/certtool/blob/main/docs/spec.md
+
 # Scenario kafka: A CA that signs a certificate per Kafka broker, with PKCS#12 keystores, and client certificates.
 
 # CA. Brokers and clients trust kafka-ca.crt: ssl.truststore.type=PEM and ssl.truststore.location=kafka-ca.crt.

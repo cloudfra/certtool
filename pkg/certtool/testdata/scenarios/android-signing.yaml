@@ -1,3 +1,10 @@
+# certtool spec for --scenario android-signing, written by:
+#   certtool --scenario android-signing --organization Acme --export-spec certs.yaml
+# Review it, then generate the certificates with:
+#   certtool --spec certs.yaml --output-dir certs
+# Running it again reuses the certificates already in the output directory,
+# so you can add entries later. Format: https://github.com/cloudfra/certtool/blob/main/docs/spec.md
+
 # Scenario android-signing: An Android app signing (upload) key in a PKCS#12 keystore, valid for 25 years.
 
 # Android app signing key, in the PKCS#12 keystore android-signing.pfx. Sign with

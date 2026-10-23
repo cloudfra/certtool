@@ -517,11 +517,14 @@ func generateAndLogResults(ctx context.Context, specs []certlib.CertificateSpec,
 		if r.Reused {
 			msg = "reused existing certificate"
 		}
+		attrs := []any{"cn", r.CommonName, "cert", r.CertPath, "key", r.KeyPath}
 		if r.PFXPath != "" {
-			logging.FromContext(ctx).Info(msg, "cn", r.CommonName, "cert", r.CertPath, "key", r.KeyPath, "pfx", r.PFXPath)
-		} else {
-			logging.FromContext(ctx).Info(msg, "cn", r.CommonName, "cert", r.CertPath, "key", r.KeyPath)
+			attrs = append(attrs, "pfx", r.PFXPath)
 		}
+		if r.SSHPublicKeyPath != "" {
+			attrs = append(attrs, "ssh", r.SSHPublicKeyPath)
+		}
+		logging.FromContext(ctx).Info(msg, attrs...)
 	}
 	return nil
 }

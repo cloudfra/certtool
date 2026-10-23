@@ -1,3 +1,10 @@
+# certtool spec for --scenario microservices, written by:
+#   certtool --scenario microservices --organization Acme --hostnames api.platform.svc.cluster.local,orders.platform.svc.cluster.local,payments.platform.svc.cluster.local --export-spec certs.yaml
+# Review it, then generate the certificates with:
+#   certtool --spec certs.yaml --output-dir certs
+# Running it again reuses the certificates already in the output directory,
+# so you can add entries later. Format: https://github.com/cloudfra/certtool/blob/main/docs/spec.md
+
 # Scenario microservices: A root CA and an issuing CA that sign one certificate per service, used both to serve and to call the other services.
 
 # Root CA. Every service trusts microservices-root-ca.crt to verify its peers, and requires a client certificate from them.

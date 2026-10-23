@@ -10,7 +10,7 @@ Step-by-step command lines for common jobs. Each guide starts from nothing and e
 | [YubiKey root CA](yubikey-root-ca.md) | Keep the root CA private key on a YubiKey so it can never be copied |
 | [Encrypted private keys](encrypted-keys.md) | Encrypt the key files certtool writes to a YubiKey, so reading them needs the YubiKey instead of a password |
 
-For whole hierarchies described in YAML, start from a [scenario](../scenarios.md): `certtool --scenario` writes a commented spec for Active Directory, Kubernetes, databases, VPNs, Wi-Fi (EAP-TLS), IoT, Kafka, Docker, iOS and Android apps, and more. The [certificate spec documentation](../spec.md) describes the format.
+For whole hierarchies described in YAML, start from a [scenario](../scenarios.md): `certtool --scenario` writes a commented spec for Active Directory, Kubernetes, databases, VPNs, Wi-Fi (EAP-TLS), IoT, Kafka, Docker, Git servers and commit signing (S/MIME or SSH), SSH and SFTP keys, FTPS, iOS and Android apps, and more. The [certificate spec documentation](../spec.md) describes the format.
 
 ## Conventions
 

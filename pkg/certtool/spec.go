@@ -15,8 +15,10 @@
 package certtool
 
 import (
+	"bytes"
 	"crypto"
 	"crypto/x509"
+	"encoding/pem"
 	"errors"
 	"fmt"
 	"net"
@@ -28,7 +30,10 @@ import (
 	"strings"
 	"time"
 
+	"golang.org/x/crypto/ssh"
 	"gopkg.in/yaml.v3"
+
+	"github.com/cloudfra/certtool/internal/safefile"
 )
 
 // CertificateSpec defines a certificate to generate. Specs form a tree: each
@@ -107,6 +112,19 @@ type CertificateSpec struct {
 	// is removed, because SANs cannot hold ports.
 	Hostnames []string `yaml:"hostnames,omitempty"`
 
+	// EmailAddresses makes a leaf a person's certificate, for S/MIME and Git
+	// commit signing: the addresses become subject alternative names, the
+	// extended key usages are email protection and TLS client, and
+	// localhost and 127.0.0.1 are not added. The CAs above it allow email
+	// protection.
+	EmailAddresses []string `yaml:"emailAddresses,omitempty"`
+
+	// SSHPublicKey also writes the certificate's public key in OpenSSH
+	// format to <filename>.key.pub, next to the key where OpenSSH looks for
+	// it, for SSH and SFTP logins and Git commit signing with gpg.format
+	// ssh. OpenSSH reads the .key as it is. Leaf certificates only.
+	SSHPublicKey bool `yaml:"sshPublicKey,omitempty"`
+
 	// Filename overrides the default output filename (without extension).
 	// By default filenames are derived from the slugified common name path
 	// through the tree (e.g. "root-ca-leaf-example-com"). It must be a plain
@@ -183,6 +201,17 @@ func validateSpec(spec *CertificateSpec) error {
 	}
 	for _, hostname := range spec.Hostnames {
 		if err := ValidateHostname(hostname); err != nil {
+			return fmt.Errorf("spec %q: %w", spec.CommonName, err)
+		}
+	}
+	if len(spec.EmailAddresses) > 0 && (spec.CertificateAuthority || spec.CodeSigning) {
+		return fmt.Errorf("spec %q sets emailAddresses, which only apply to a leaf TLS certificate; remove certificateAuthority and codeSigning, or emailAddresses", spec.CommonName)
+	}
+	if spec.SSHPublicKey && spec.CertificateAuthority {
+		return fmt.Errorf("spec %q sets sshPublicKey on a CA, whose key should only sign certificates; set it on a leaf", spec.CommonName)
+	}
+	for _, email := range spec.EmailAddresses {
+		if err := ValidateEmailAddress(email); err != nil {
 			return fmt.Errorf("spec %q: %w", spec.CommonName, err)
 		}
 	}
@@ -490,6 +519,9 @@ type GenerationOutput struct {
 	// PFXPath is the filesystem path where the PKCS#12 bundle was written.
 	// Empty when the certificate does not produce PFX output.
 	PFXPath string
+	// SSHPublicKeyPath is where the OpenSSH public key was written. Empty
+	// unless the spec sets sshPublicKey.
+	SSHPublicKeyPath string
 	// Reused is set when the certificate and key already existed in the
 	// output directory and were kept instead of generated.
 	Reused bool
@@ -614,6 +646,7 @@ func generateSpec(spec *CertificateSpec, parentKP *KeyPair, issuer *Issuer, outp
 		}
 		args.PermittedDNSDomains = spec.PermittedDNSDomains
 		args.PermittedIPRanges = ranges
+		args.EmailProtection = signsEmail(spec)
 	}
 
 	enc := opts.Encryption
@@ -667,6 +700,17 @@ func generateSpec(spec *CertificateSpec, parentKP *KeyPair, issuer *Issuer, outp
 			}
 		}
 		output.PFXPath = existing
+	}
+
+	if spec.SSHPublicKey {
+		comment := spec.CommonName
+		if len(spec.EmailAddresses) > 0 {
+			comment = spec.EmailAddresses[0]
+		}
+		output.SSHPublicKeyPath = keyPath + ".pub"
+		if err := writeSSHPublicKey(kp, output.SSHPublicKeyPath, comment); err != nil {
+			return nil, fmt.Errorf("cannot write the SSH public key of %q: %w", spec.CommonName, err)
+		}
 	}
 
 	results := []GenerationOutput{output}
@@ -739,6 +783,9 @@ func checkReusedKeyPair(spec *CertificateSpec, args *Args, kp *KeyPair, certPath
 	if time.Now().After(cert.NotAfter) {
 		return nil, problem("expired at %s", cert.NotAfter.Format(time.RFC3339))
 	}
+	if args.EmailProtection && len(cert.ExtKeyUsage) > 0 && !slices.Contains(cert.ExtKeyUsage, x509.ExtKeyUsageEmailProtection) {
+		return nil, problem("does not allow email protection, which the certificates with emailAddresses below it need")
+	}
 
 	var parent *x509.Certificate
 	switch {
@@ -781,6 +828,37 @@ func checkReusedKeyPair(spec *CertificateSpec, args *Args, kp *KeyPair, certPath
 	return kp, nil
 }
 
+// writeSSHPublicKey writes the public key of kp to path in the OpenSSH
+// authorized_keys format, ending with comment. It is derived from the
+// certificate, so it is rewritten on every run.
+func writeSSHPublicKey(kp *KeyPair, path, comment string) error {
+	block, _ := pem.Decode(kp.PublicCertificate)
+	if block == nil {
+		return errors.New("the certificate is not PEM encoded")
+	}
+	cert, err := x509.ParseCertificate(block.Bytes)
+	if err != nil {
+		return err
+	}
+	pub, err := ssh.NewPublicKey(cert.PublicKey)
+	if err != nil {
+		return err
+	}
+	line := bytes.TrimSuffix(ssh.MarshalAuthorizedKey(pub), []byte("\n"))
+	return safefile.WritePublic(path, append(line, []byte(" "+strings.ReplaceAll(comment, " ", "_")+"\n")...))
+}
+
+// signsEmail reports whether a certificate below the CA spec has email
+// addresses, so the CA must allow email protection.
+func signsEmail(spec *CertificateSpec) bool {
+	for i := range spec.Children {
+		if len(spec.Children[i].EmailAddresses) > 0 || signsEmail(&spec.Children[i]) {
+			return true
+		}
+	}
+	return false
+}
+
 func fileExists(path string) bool {
 	_, err := os.Stat(path)
 	return err == nil
@@ -800,6 +878,7 @@ func specToArgs(spec *CertificateSpec) *Args {
 		Locality:           spec.Locality,
 		Province:           spec.Province,
 		Hostnames:          spec.Hostnames,
+		EmailAddresses:     spec.EmailAddresses,
 	}
 
 	if spec.Validity != "" {

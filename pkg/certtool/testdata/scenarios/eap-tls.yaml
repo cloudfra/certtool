@@ -1,3 +1,10 @@
+# certtool spec for --scenario eap-tls, written by:
+#   certtool --scenario eap-tls --organization Acme --hostnames radius.corp.example.com --clients alice-laptop,bob-phone --export-spec certs.yaml
+# Review it, then generate the certificates with:
+#   certtool --spec certs.yaml --output-dir certs
+# Running it again reuses the certificates already in the output directory,
+# so you can add entries later. Format: https://github.com/cloudfra/certtool/blob/main/docs/spec.md
+
 # Scenario eap-tls: A CA that signs a RADIUS server certificate and client certificates for 802.1X EAP-TLS on Wi-Fi and wired networks.
 
 # CA. Configure every supplicant to trust only eap-tls-ca.crt for this network and to check the RADIUS server's name;

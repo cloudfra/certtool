@@ -37,6 +37,9 @@ const (
 	ScenarioIoT             = "iot"
 	ScenarioKafka           = "kafka"
 	ScenarioDocker          = "docker"
+	ScenarioGit             = "git"
+	ScenarioSSH             = "ssh"
+	ScenarioFTPS            = "ftps"
 	ScenarioIOS             = "ios"
 	ScenarioAndroid         = "android"
 	ScenarioAndroidSigning  = "android-signing"
@@ -180,6 +183,33 @@ var scenarioInfos = []ScenarioInfo{
 		build:         dockerScenario,
 	},
 	{
+		Name:          ScenarioGit,
+		Summary:       "Certificates for a Git server over HTTPS, and identities that sign commits with S/MIME or SSH and log in with a certificate or an SSH key.",
+		Hostnames:     InputRequired,
+		HostnamesHelp: "the names of the Git server (Gitea, GitLab, Bitbucket, or nginx in front of git http-backend)",
+		Clients:       InputOptional,
+		ClientsHelp:   "people, by email address such as `alice@example.com`, who sign commits; and machines, such as ci, that only log in",
+		build:         gitScenario,
+	},
+	{
+		Name:          ScenarioSSH,
+		Summary:       "SSH keys for SSH, SFTP, SCP, and rsync: host keys that clients pin in known_hosts, and user keys for authorized_keys.",
+		Hostnames:     InputOptional,
+		HostnamesHelp: "the SSH or SFTP servers, one host key each",
+		Clients:       InputRequired,
+		ClientsHelp:   "the users or automation accounts that log in, one key each",
+		build:         sshScenario,
+	},
+	{
+		Name:          ScenarioFTPS,
+		Summary:       "A CA that signs an FTPS (FTP over TLS) server certificate and optional client certificates, for vsftpd, ProFTPD, and FileZilla Server.",
+		Hostnames:     InputRequired,
+		HostnamesHelp: "the names clients connect to the FTP server by",
+		Clients:       InputOptional,
+		ClientsHelp:   "the users that log in with a certificate",
+		build:         ftpsScenario,
+	},
+	{
 		Name:          ScenarioIOS,
 		Summary:       "A development CA for iPhone and iPad apps, a backend certificate that meets Apple's TLS rules, and client identities.",
 		Hostnames:     InputRequired,
@@ -292,6 +322,10 @@ type ScenarioOptions struct {
 	// ExternalRoot leaves the root CA out, because it lives elsewhere, such
 	// as on a YubiKey: the top-level certificates are signed by it.
 	ExternalRoot bool
+
+	// SpecPath is the file the spec is written to, which the header's
+	// commands name. Empty uses certs.yaml.
+	SpecPath string
 }
 
 // scenarioEntry is a certificate spec with the comments written next to it.
@@ -354,11 +388,67 @@ func ScenarioSpec(names []string, opts ScenarioOptions) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
+	data = append(scenarioHeader(names, &opts), data...)
 	// Never hand out a spec that certtool would refuse.
 	if _, err := UnmarshalSpec(data); err != nil {
 		return nil, fmt.Errorf("scenario spec is invalid: %w", err)
 	}
 	return data, nil
+}
+
+// scenarioHeader is the comment at the top of a scenario spec: the command
+// that wrote it, so it can be written again with other inputs, and the one
+// that generates its certificates.
+func scenarioHeader(names []string, o *ScenarioOptions) []byte {
+	path := o.SpecPath
+	if path == "" {
+		path = "certs.yaml"
+	}
+	made := []string{"certtool", "--scenario", strings.Join(names, ",")}
+	flag := func(name, value string) {
+		if value != "" {
+			made = append(made, "--"+name, shellQuote(value))
+		}
+	}
+	flag("organization", o.Organization)
+	flag("organizational-unit", o.OrganizationalUnit)
+	flag("country", o.Country)
+	flag("locality", o.Locality)
+	flag("province", o.Province)
+	flag("hostnames", strings.Join(o.Hostnames, ","))
+	flag("clients", strings.Join(o.Clients, ","))
+	flag("target", o.Target)
+	flag("key-type", o.KeyType)
+	flag("validity", o.Validity)
+	run := "certtool --spec " + shellQuote(path) + " --output-dir certs"
+	if o.ExternalRoot {
+		made = append(made, "--yubikey")
+		run = "certtool --yubikey --spec " + shellQuote(path) + " --output-dir certs"
+	}
+	flag("export-spec", path)
+
+	lines := []string{
+		"certtool spec for --scenario " + strings.Join(names, ",") + ", written by:",
+		"  " + strings.Join(made, " "),
+		"Review it, then generate the certificates with:",
+		"  " + run,
+		"Running it again reuses the certificates already in the output directory,",
+		"so you can add entries later. Format: https://github.com/cloudfra/certtool/blob/main/docs/spec.md",
+	}
+	var b strings.Builder
+	for _, l := range lines {
+		b.WriteString("# " + l + "\n")
+	}
+	b.WriteString("\n")
+	return []byte(b.String())
+}
+
+// shellQuote quotes s for a POSIX shell when it needs it.
+func shellQuote(s string) string {
+	if s != "" && strings.Trim(s, "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789._,:/@=+-") == "" {
+		return s
+	}
+	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
 }
 
 // setPFXPasswordEnv makes every entry that writes a .pfx read its password
@@ -935,6 +1025,144 @@ func dockerScenario(o *ScenarioOptions) ([]scenarioEntry, error) {
 			"and " + filename + ".key to ~/.docker as ca.pem, cert.pem, and key.pem, then run: docker --tlsverify -H=" + cleanHost(o.Hostnames[0]) + ":2376 version"
 	})
 	return plan.hierarchy(o, append([]scenarioEntry{daemon}, clients...))
+}
+
+func gitScenario(o *ScenarioOptions) ([]scenarioEntry, error) {
+	host := cleanHost(o.Hostnames[0])
+	plan := &caPlan{
+		scenario:  ScenarioGit,
+		label:     "Git",
+		constrain: true,
+		trust: "Clients trust " + ScenarioGit + "-ca.crt for the server: git config --global http.https://" + host + "/.sslCAInfo " + ScenarioGit + "-ca.crt.\n" +
+			"Subversion: ssl-authority-files in ~/.subversion/servers. Mercurial: " + host + ":verifycertsfile under [hostsecurity].",
+	}
+	servers := o.serverPerHost(ScenarioGit, scenarioLeafKeyType, validity1Year, func(host, _ string) string {
+		return "Server certificate for " + host + "."
+	})
+	for i := range servers {
+		filename := ScenarioGit + "-server-" + slugify(servers[i].spec.CommonName)
+		servers[i].spec.Filename = filename
+		servers[i].comment = "Server certificate for " + servers[i].spec.CommonName + ". Gitea: CERT_FILE " + filename + ".crt and KEY_FILE " + filename + ".key\n" +
+			"under [server] with PROTOCOL = https. GitLab: nginx['ssl_certificate'] and nginx['ssl_certificate_key'] in gitlab.rb.\n" +
+			"Bitbucket, or nginx in front of git http-backend: ssl_certificate and ssl_certificate_key."
+		servers[i].fieldComments["validity"] = renewComment(filename)
+	}
+	entries, err := plan.hierarchy(o, servers)
+	if err != nil || len(o.Clients) == 0 {
+		return entries, err
+	}
+
+	identity := &caPlan{
+		scenario: ScenarioGit + "-identity",
+		label:    "Git Identity",
+		trust: "Signs the people and machines below, and has no name constraints because gpgsm refuses chains that have them.\n" +
+			"S/MIME signing with gpgsm: gpgsm --import " + ScenarioGit + "-identity-ca.crt, add its fingerprint followed by \"S relax\" to\n" +
+			"~/.gnupg/trustlist.txt, and add disable-crl-checks to ~/.gnupg/gpgsm.conf, because certtool makes no CRLs. Then for each\n" +
+			"person: gpgsm --import their .pfx, and git config gpg.format x509, gpg.x509.program gpgsm, and user.signingkey <their email>.\n" +
+			"On Windows and macOS, import the .pfx into the certificate store or Keychain and use gpg.x509.program smimesign instead.\n" +
+			"SSH signing: git config gpg.format ssh and user.signingkey <their .key>; verifiers list each person in\n" +
+			"gpg.ssh.allowedSignersFile as <email> followed by the type and data in their .key.pub. GitHub marks S/MIME commits verified\n" +
+			"only when a public CA issued the certificate, so use SSH signing there.\n" +
+			"HTTPS logins with a certificate: git config http.sslCert <.crt> and http.sslKey <.key>, and on nginx ssl_verify_client on\n" +
+			"with ssl_client_certificate " + ScenarioGit + "-identity-ca.crt.",
+	}
+	var identities []scenarioEntry
+	for _, name := range o.Clients {
+		if ValidateEmailAddress(name) == nil {
+			identities = append(identities, o.gitPerson(name))
+		} else {
+			identities = append(identities, o.gitMachine(name))
+		}
+	}
+	people, err := identity.hierarchy(o, identities)
+	return append(entries, people...), err
+}
+
+// gitPerson is the certificate of a person who signs commits.
+func (o *ScenarioOptions) gitPerson(email string) scenarioEntry {
+	filename := ScenarioGit + "-person-" + slugify(email)
+	spec := o.leaf(email, filename, scenarioLeafKeyType, validity1Year)
+	spec.EmailAddresses = []string{email}
+	spec.SSHPublicKey = true
+	spec.PFX = PFXModern
+	return scenarioEntry{
+		spec: spec,
+		comment: email + ", who signs commits as git config user.email " + email + ". gpgsm imports " + filename + ".pfx;\n" +
+			"for SSH, add " + filename + ".key.pub to the Git server as both an authentication and a signing key.",
+		fieldComments: map[string]string{"validity": renewComment(filename)},
+	}
+}
+
+// gitMachine is the certificate of a machine, such as a CI runner, that
+// logs in to the Git server.
+func (o *ScenarioOptions) gitMachine(name string) scenarioEntry {
+	filename := ScenarioGit + "-machine-" + slugify(name)
+	spec := o.leaf(name, filename, scenarioLeafKeyType, validity90Days)
+	spec.SSHPublicKey = true
+	return scenarioEntry{
+		spec: spec,
+		comment: "The machine " + name + ", such as a CI runner, valid for 90 days. Add " + filename + ".key.pub to the repository as a\n" +
+			"deploy key and clone with GIT_SSH_COMMAND=\"ssh -i " + filename + ".key -o IdentitiesOnly=yes\", or log in over HTTPS with the certificate.",
+		fieldComments: map[string]string{"validity": renewComment(filename)},
+	}
+}
+
+func sshScenario(o *ScenarioOptions) ([]scenarioEntry, error) {
+	note := "\nSSH uses only the key: certtool writes a certificate too, which SSH ignores. certtool does not make OpenSSH certificates\n" +
+		"(ssh-keygen -s), so each key is trusted on its own."
+	entries := make([]scenarioEntry, 0, len(o.Hostnames)+len(o.Clients))
+	for _, hostname := range o.Hostnames {
+		host := cleanHost(hostname)
+		filename := ScenarioSSH + "-host-" + slugify(host)
+		spec := o.leaf(host, filename, scenarioLeafKeyType, validity10Years)
+		spec.Hostnames = []string{hostname}
+		spec.SSHPublicKey = true
+		entries = append(entries, scenarioEntry{
+			spec: spec,
+			comment: "Host key for " + host + ". sshd_config: HostKey /etc/ssh/" + filename + ".key, owned by root with mode 0600.\n" +
+				"Clients pin it, so the first connection is not a guess: add a line to ~/.ssh/known_hosts with " + host + " followed by the\n" +
+				"type and data in " + filename + ".key.pub. SFTP and SCP clients, such as WinSCP and FileZilla, show the same key's fingerprint:\n" +
+				"ssh-keygen -lf " + filename + ".key.pub." + note,
+			fieldComments: map[string]string{"validity": "10 years. SSH ignores it."},
+		})
+		note = ""
+	}
+	for _, name := range o.Clients {
+		filename := ScenarioSSH + "-user-" + slugify(name)
+		spec := o.leaf(name, filename, scenarioLeafKeyType, validity1Year)
+		spec.SSHPublicKey = true
+		entries = append(entries, scenarioEntry{
+			spec: spec,
+			comment: "Key of " + name + ". On each server, append " + filename + ".key.pub to ~" + name + "/.ssh/authorized_keys. Log in with\n" +
+				"ssh -i " + filename + ".key, sftp -i, scp -i, or rsync -e \"ssh -i " + filename + ".key\". For an account that may only transfer\n" +
+				"files, add to sshd_config: Match User " + name + " with ForceCommand internal-sftp and ChrootDirectory. In authorized_keys,\n" +
+				"restrict automation keys with from=\"<addresses>\",restrict before the key." + note,
+			fieldComments: map[string]string{"validity": "SSH ignores it. To rotate the key, delete " + filename + ".crt and " + filename + ".key, then run the spec again."},
+		})
+		note = ""
+	}
+	return entries, nil
+}
+
+func ftpsScenario(o *ScenarioOptions) ([]scenarioEntry, error) {
+	plan := &caPlan{
+		scenario:  ScenarioFTPS,
+		label:     "FTPS",
+		constrain: true,
+		trust: "Clients trust " + ScenarioFTPS + "-ca.crt: curl --ssl-reqd --cacert " + ScenarioFTPS + "-ca.crt, lftp set ssl:ca-file, or WinSCP's TLS options.\n" +
+			"For SFTP, which runs over SSH and uses no certificates, see --scenario ssh.",
+	}
+	// RSA, because some FTP servers only load RSA keys (vsftpd rsa_cert_file).
+	server := o.server(ScenarioFTPS+"-server", "RSA-2048", validity1Year,
+		"FTPS server certificate. vsftpd: ssl_enable=YES, rsa_cert_file and rsa_private_key_file, force_local_logins_ssl=YES and\n"+
+			"force_local_data_ssl=YES. ProFTPD mod_tls: TLSEngine on, TLSRSACertificateFile and TLSRSACertificateKeyFile, TLSRequired on.\n"+
+			"FileZilla Server: the certificate and key files under Server > Configure > FTP over TLS.")
+	clients := o.clients(o.Clients, ScenarioFTPS, "client", "RSA-2048", validity1Year, PFXModern, func(name, filename string) string {
+		return "Client certificate for " + name + ". vsftpd: require_cert=YES, validate_cert=YES, and ca_certs_file " + ScenarioFTPS + "-ca.crt.\n" +
+			"ProFTPD: TLSVerifyClient on and TLSCACertificateFile " + ScenarioFTPS + "-ca.crt. curl: --cert " + filename + ".crt --key " + filename + ".key;\n" +
+			"WinSCP: Advanced > TLS/SSL > Client certificate file takes " + filename + ".pfx."
+	})
+	return plan.hierarchy(o, append([]scenarioEntry{server}, clients...))
 }
 
 func iosScenario(o *ScenarioOptions) ([]scenarioEntry, error) {

@@ -1,3 +1,10 @@
+# certtool spec for --scenario web, written by:
+#   certtool --scenario web --organization Acme --hostnames www.example.com,example.com --export-spec certs.yaml
+# Review it, then generate the certificates with:
+#   certtool --spec certs.yaml --output-dir certs
+# Running it again reuses the certificates already in the output directory,
+# so you can add entries later. Format: https://github.com/cloudfra/certtool/blob/main/docs/spec.md
+
 # Scenario web: A root CA and an issuing CA, name constrained to the hostnames, and a server certificate for websites and APIs.
 
 # Root CA. Install web-root-ca.crt in the trust store of every client: the operating system, the browser, or the HTTP client's CA bundle.

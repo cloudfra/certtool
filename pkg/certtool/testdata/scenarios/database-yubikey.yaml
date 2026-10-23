@@ -1,3 +1,10 @@
+# certtool spec for --scenario database, written by:
+#   certtool --scenario database --organization Acme --hostnames postgres.internal.example.com --yubikey --export-spec certs.yaml
+# Review it, then generate the certificates with:
+#   certtool --yubikey --spec certs.yaml --output-dir certs
+# Running it again reuses the certificates already in the output directory,
+# so you can add entries later. Format: https://github.com/cloudfra/certtool/blob/main/docs/spec.md
+
 # Scenario database: A CA that signs a server certificate per database host and client certificates for database users (PostgreSQL, MySQL, Redis, MongoDB).
 
 # Signed by the root CA on the YubiKey: run this spec with certtool --yubikey --spec.

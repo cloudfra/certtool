@@ -30,13 +30,16 @@ certtool --spec certs.yaml --output-dir certs
 | [`iot`](#iot) | A root CA and a device CA that sign an MQTT broker certificate and long-lived device certificates. |
 | [`kafka`](#kafka) | A CA that signs a certificate per Kafka broker, with PKCS#12 keystores, and client certificates. |
 | [`docker`](#docker) | A CA that signs a Docker daemon certificate and client certificates, to protect the Docker API on port 2376. |
+| [`git`](#git) | Certificates for a Git server over HTTPS, and identities that sign commits with S/MIME or SSH and log in with a certificate or an SSH key. |
+| [`ssh`](#ssh) | SSH keys for SSH, SFTP, SCP, and rsync: host keys that clients pin in known_hosts, and user keys for authorized_keys. |
+| [`ftps`](#ftps) | A CA that signs an FTPS (FTP over TLS) server certificate and optional client certificates, for vsftpd, ProFTPD, and FileZilla Server. |
 | [`ios`](#ios) | A development CA for iPhone and iPad apps, a backend certificate that meets Apple's TLS rules, and client identities. |
 | [`android`](#android) | A development CA that Android apps trust through a network security config, a backend certificate, and client certificates. |
 | [`android-signing`](#android-signing) | An Android app signing (upload) key in a PKCS#12 keystore, valid for 25 years. |
 | [`code-sign`](#code-sign) | A code signing certificate for Windows (signtool) or Linux (osslsigncode). |
 | [`proxy`](#proxy) | A CA for a TLS-inspecting proxy (Squid, mitmproxy), which signs a certificate for each site on the fly. |
 
-Other systems fit one of these: `web` for OpenLDAP, mail servers, and Elasticsearch over HTTPS; `mtls` for gRPC; `microservices` for a service mesh without its own CA.
+Other systems fit one of these: `web` for OpenLDAP, mail servers, and Elasticsearch over HTTPS; `git` for Subversion and Mercurial over HTTPS; `ssh` for SFTP-only accounts and rsync backups; `mtls` for gRPC; `microservices` for a service mesh without its own CA.
 
 ## web
 
@@ -50,6 +53,13 @@ certtool --spec certs.yaml --output-dir certs
 ```
 
 ```yaml
+# certtool spec for --scenario web, written by:
+#   certtool --scenario web --organization Acme --hostnames www.example.com,example.com --export-spec certs.yaml
+# Review it, then generate the certificates with:
+#   certtool --spec certs.yaml --output-dir certs
+# Running it again reuses the certificates already in the output directory,
+# so you can add entries later. Format: https://github.com/cloudfra/certtool/blob/main/docs/spec.md
+
 # Scenario web: A root CA and an issuing CA, name constrained to the hostnames, and a server certificate for websites and APIs.
 
 # Root CA. Install web-root-ca.crt in the trust store of every client: the operating system, the browser, or the HTTP client's CA bundle.
@@ -105,6 +115,13 @@ certtool --spec certs.yaml --output-dir certs
 ```
 
 ```yaml
+# certtool spec for --scenario local-dev, written by:
+#   certtool --scenario local-dev --organization Acme --hostnames myapp.localhost --export-spec certs.yaml
+# Review it, then generate the certificates with:
+#   certtool --spec certs.yaml --output-dir certs
+# Running it again reuses the certificates already in the output directory,
+# so you can add entries later. Format: https://github.com/cloudfra/certtool/blob/main/docs/spec.md
+
 # Scenario local-dev: A self-signed certificate for localhost and development hostnames.
 
 # Self-signed certificate for this machine. certtool adds localhost and 127.0.0.1 itself.
@@ -133,6 +150,13 @@ certtool --spec certs.yaml --output-dir certs
 ```
 
 ```yaml
+# certtool spec for --scenario mtls, written by:
+#   certtool --scenario mtls --organization Acme --hostnames api.internal.example.com --clients billing,orders --export-spec certs.yaml
+# Review it, then generate the certificates with:
+#   certtool --spec certs.yaml --output-dir certs
+# Running it again reuses the certificates already in the output directory,
+# so you can add entries later. Format: https://github.com/cloudfra/certtool/blob/main/docs/spec.md
+
 # Scenario mtls: A root CA and an issuing CA that sign a server certificate and client certificates for mutual TLS, such as gRPC.
 
 # Root CA. Both sides trust mtls-root-ca.crt: the server to verify clients, and the clients to verify the server.
@@ -202,6 +226,13 @@ certtool --spec certs.yaml --output-dir certs
 ```
 
 ```yaml
+# certtool spec for --scenario microservices, written by:
+#   certtool --scenario microservices --organization Acme --hostnames api.platform.svc.cluster.local,orders.platform.svc.cluster.local,payments.platform.svc.cluster.local --export-spec certs.yaml
+# Review it, then generate the certificates with:
+#   certtool --spec certs.yaml --output-dir certs
+# Running it again reuses the certificates already in the output directory,
+# so you can add entries later. Format: https://github.com/cloudfra/certtool/blob/main/docs/spec.md
+
 # Scenario microservices: A root CA and an issuing CA that sign one certificate per service, used both to serve and to call the other services.
 
 # Root CA. Every service trusts microservices-root-ca.crt to verify its peers, and requires a client certificate from them.
@@ -280,6 +311,13 @@ certtool --spec certs.yaml --output-dir certs
 ```
 
 ```yaml
+# certtool spec for --scenario database, written by:
+#   certtool --scenario database --organization Acme --hostnames postgres.internal.example.com,redis.internal.example.com --clients app --export-spec certs.yaml
+# Review it, then generate the certificates with:
+#   certtool --spec certs.yaml --output-dir certs
+# Running it again reuses the certificates already in the output directory,
+# so you can add entries later. Format: https://github.com/cloudfra/certtool/blob/main/docs/spec.md
+
 # Scenario database: A CA that signs a server certificate per database host and client certificates for database users (PostgreSQL, MySQL, Redis, MongoDB).
 
 # CA. Clients verify the servers with database-ca.crt: PostgreSQL sslrootcert with sslmode=verify-full, MySQL ssl-ca
@@ -343,6 +381,13 @@ certtool --spec certs.yaml --output-dir certs
 ```
 
 ```yaml
+# certtool spec for --scenario active-directory, written by:
+#   certtool --scenario active-directory --organization Acme --hostnames dc01.corp.example.com,dc02.corp.example.com --export-spec certs.yaml
+# Review it, then generate the certificates with:
+#   certtool --spec certs.yaml --output-dir certs
+# Running it again reuses the certificates already in the output directory,
+# so you can add entries later. Format: https://github.com/cloudfra/certtool/blob/main/docs/spec.md
+
 # Scenario active-directory: An enterprise root CA and issuing CA that sign LDAPS certificates for Active Directory domain controllers, with .pfx files to import.
 
 # Root CA. Publish active-directory-root-ca.crt to every domain member with Group Policy (Computer Configuration > Policies >
@@ -424,6 +469,13 @@ certtool --spec certs.yaml --output-dir certs
 ```
 
 ```yaml
+# certtool spec for --scenario kubernetes, written by:
+#   certtool --scenario kubernetes --organization Acme --hostnames cp1,192.168.1.100,k8s-api.example.com --export-spec certs.yaml
+# Review it, then generate the certificates with:
+#   certtool --spec certs.yaml --output-dir certs
+# Running it again reuses the certificates already in the output directory,
+# so you can add entries later. Format: https://github.com/cloudfra/certtool/blob/main/docs/spec.md
+
 # Scenario kubernetes: The certificates kubeadm puts in /etc/kubernetes/pki: the cluster, front proxy, and etcd CAs and the certificates they sign.
 
 # Cluster CA. The file names are kubeadm's: generate with --output-dir /etc/kubernetes/pki on the first control-plane
@@ -534,6 +586,13 @@ certtool --spec certs.yaml --output-dir certs
 ```
 
 ```yaml
+# certtool spec for --scenario vpn, written by:
+#   certtool --scenario vpn --organization Acme --hostnames vpn.example.com,203.0.113.10 --clients alice,bob --export-spec certs.yaml
+# Review it, then generate the certificates with:
+#   certtool --spec certs.yaml --output-dir certs
+# Running it again reuses the certificates already in the output directory,
+# so you can add entries later. Format: https://github.com/cloudfra/certtool/blob/main/docs/spec.md
+
 # Scenario vpn: A CA that signs a VPN gateway certificate and client certificates, for OpenVPN and IKEv2/IPsec (strongSwan, Windows, macOS, iOS, Android).
 
 # CA. Gateways and clients trust vpn-ca.crt (OpenVPN: ca; strongSwan: /etc/swanctl/x509ca).
@@ -602,6 +661,13 @@ certtool --spec certs.yaml --output-dir certs
 ```
 
 ```yaml
+# certtool spec for --scenario eap-tls, written by:
+#   certtool --scenario eap-tls --organization Acme --hostnames radius.corp.example.com --clients alice-laptop,bob-phone --export-spec certs.yaml
+# Review it, then generate the certificates with:
+#   certtool --spec certs.yaml --output-dir certs
+# Running it again reuses the certificates already in the output directory,
+# so you can add entries later. Format: https://github.com/cloudfra/certtool/blob/main/docs/spec.md
+
 # Scenario eap-tls: A CA that signs a RADIUS server certificate and client certificates for 802.1X EAP-TLS on Wi-Fi and wired networks.
 
 # CA. Configure every supplicant to trust only eap-tls-ca.crt for this network and to check the RADIUS server's name;
@@ -665,6 +731,13 @@ certtool --spec certs.yaml --output-dir certs
 ```
 
 ```yaml
+# certtool spec for --scenario iot, written by:
+#   certtool --scenario iot --organization Acme --hostnames mqtt.example.com --clients sensor-0001,sensor-0002 --export-spec certs.yaml
+# Review it, then generate the certificates with:
+#   certtool --spec certs.yaml --output-dir certs
+# Running it again reuses the certificates already in the output directory,
+# so you can add entries later. Format: https://github.com/cloudfra/certtool/blob/main/docs/spec.md
+
 # Scenario iot: A root CA and a device CA that sign an MQTT broker certificate and long-lived device certificates.
 
 # Root CA. The broker trusts iot-root-ca.crt to verify devices, and every device carries it to verify the broker.
@@ -733,6 +806,13 @@ certtool --spec certs.yaml --output-dir certs
 ```
 
 ```yaml
+# certtool spec for --scenario kafka, written by:
+#   certtool --scenario kafka --organization Acme --hostnames kafka-1.example.com,kafka-2.example.com,kafka-3.example.com --clients orders-service --export-spec certs.yaml
+# Review it, then generate the certificates with:
+#   certtool --spec certs.yaml --output-dir certs
+# Running it again reuses the certificates already in the output directory,
+# so you can add entries later. Format: https://github.com/cloudfra/certtool/blob/main/docs/spec.md
+
 # Scenario kafka: A CA that signs a certificate per Kafka broker, with PKCS#12 keystores, and client certificates.
 
 # CA. Brokers and clients trust kafka-ca.crt: ssl.truststore.type=PEM and ssl.truststore.location=kafka-ca.crt.
@@ -813,6 +893,13 @@ certtool --spec certs.yaml --output-dir certs
 ```
 
 ```yaml
+# certtool spec for --scenario docker, written by:
+#   certtool --scenario docker --organization Acme --hostnames docker-host.example.com,192.168.1.50 --export-spec certs.yaml
+# Review it, then generate the certificates with:
+#   certtool --spec certs.yaml --output-dir certs
+# Running it again reuses the certificates already in the output directory,
+# so you can add entries later. Format: https://github.com/cloudfra/certtool/blob/main/docs/spec.md
+
 # Scenario docker: A CA that signs a Docker daemon certificate and client certificates, to protect the Docker API on port 2376.
 
 # CA. The daemon trusts docker-ca.crt to verify clients, and clients trust it to verify the daemon.
@@ -852,6 +939,248 @@ certtool --spec certs.yaml --output-dir certs
       filename: docker-client-docker-client
 ```
 
+## git
+
+Certificates for a Git server over HTTPS, and identities that sign commits with S/MIME or SSH and log in with a certificate or an SSH key.
+
+- `--hostnames`: the names of the Git server (Gitea, GitLab, Bitbucket, or nginx in front of git http-backend).
+- `--clients`: optional, people, by email address such as `alice@example.com`, who sign commits; and machines, such as ci, that only log in.
+
+```bash
+certtool --scenario git --organization Acme --hostnames git.example.com --clients alice@example.com,bob@example.com,ci --export-spec certs.yaml
+# CERTTOOL_PFX_PASSWORD must hold the password for the .pfx files
+certtool --spec certs.yaml --output-dir certs
+```
+
+```yaml
+# certtool spec for --scenario git, written by:
+#   certtool --scenario git --organization Acme --hostnames git.example.com --clients alice@example.com,bob@example.com,ci --export-spec certs.yaml
+# Review it, then generate the certificates with:
+#   certtool --spec certs.yaml --output-dir certs
+# Running it again reuses the certificates already in the output directory,
+# so you can add entries later. Format: https://github.com/cloudfra/certtool/blob/main/docs/spec.md
+
+# Scenario git: Certificates for a Git server over HTTPS, and identities that sign commits with S/MIME or SSH and log in with a certificate or an SSH key.
+
+# CA. Clients trust git-ca.crt for the server: git config --global http.https://git.example.com/.sslCAInfo git-ca.crt.
+# Subversion: ssl-authority-files in ~/.subversion/servers. Mercurial: git.example.com:verifycertsfile under [hostsecurity].
+# Its key signs every certificate below it: keep git-ca.key off the servers, and use it only to issue certificates.
+- commonName: Acme Git CA
+  certificateAuthority: true
+  keyType: ECDSA-384
+  # 10 years.
+  validity: 87600h
+  organization: Acme
+  filename: git-ca
+  # Name constraints: certificates below this CA may only use these names and their subdomains.
+  # Add a domain before you issue a certificate for it; changing them later means regenerating the CA and everything below it.
+  # IP addresses are not limited, so certtool still adds 127.0.0.1; add permittedIPRanges to limit them.
+  permittedDNSDomains:
+    - git.example.com
+  children:
+    # Server certificate for git.example.com. Gitea: CERT_FILE git-server-git-example-com.crt and KEY_FILE git-server-git-example-com.key
+    # under [server] with PROTOCOL = https. GitLab: nginx['ssl_certificate'] and nginx['ssl_certificate_key'] in gitlab.rb.
+    # Bitbucket, or nginx in front of git http-backend: ssl_certificate and ssl_certificate_key.
+    - commonName: git.example.com
+      keyType: ECDSA-256
+      # To renew, delete git-server-git-example-com.crt and git-server-git-example-com.key, then run the spec again.
+      validity: 8760h
+      organization: Acme
+      hostnames:
+        - git.example.com
+      filename: git-server-git-example-com
+# CA. Signs the people and machines below, and has no name constraints because gpgsm refuses chains that have them.
+# S/MIME signing with gpgsm: gpgsm --import git-identity-ca.crt, add its fingerprint followed by "S relax" to
+# ~/.gnupg/trustlist.txt, and add disable-crl-checks to ~/.gnupg/gpgsm.conf, because certtool makes no CRLs. Then for each
+# person: gpgsm --import their .pfx, and git config gpg.format x509, gpg.x509.program gpgsm, and user.signingkey <their email>.
+# On Windows and macOS, import the .pfx into the certificate store or Keychain and use gpg.x509.program smimesign instead.
+# SSH signing: git config gpg.format ssh and user.signingkey <their .key>; verifiers list each person in
+# gpg.ssh.allowedSignersFile as <email> followed by the type and data in their .key.pub. GitHub marks S/MIME commits verified
+# only when a public CA issued the certificate, so use SSH signing there.
+# HTTPS logins with a certificate: git config http.sslCert <.crt> and http.sslKey <.key>, and on nginx ssl_verify_client on
+# with ssl_client_certificate git-identity-ca.crt.
+# Its key signs every certificate below it: keep git-identity-ca.key off the servers, and use it only to issue certificates.
+- commonName: Acme Git Identity CA
+  certificateAuthority: true
+  keyType: ECDSA-384
+  # 10 years.
+  validity: 87600h
+  organization: Acme
+  filename: git-identity-ca
+  children:
+    # alice@example.com, who signs commits as git config user.email alice@example.com. gpgsm imports git-person-alice-example-com.pfx;
+    # for SSH, add git-person-alice-example-com.key.pub to the Git server as both an authentication and a signing key.
+    - commonName: alice@example.com
+      pfx: modern
+      pfxPasswordEnv: CERTTOOL_PFX_PASSWORD
+      keyType: ECDSA-256
+      # To renew, delete git-person-alice-example-com.crt and git-person-alice-example-com.key, then run the spec again.
+      validity: 8760h
+      organization: Acme
+      emailAddresses:
+        - alice@example.com
+      sshPublicKey: true
+      filename: git-person-alice-example-com
+    # bob@example.com, who signs commits as git config user.email bob@example.com. gpgsm imports git-person-bob-example-com.pfx;
+    # for SSH, add git-person-bob-example-com.key.pub to the Git server as both an authentication and a signing key.
+    - commonName: bob@example.com
+      pfx: modern
+      pfxPasswordEnv: CERTTOOL_PFX_PASSWORD
+      keyType: ECDSA-256
+      # To renew, delete git-person-bob-example-com.crt and git-person-bob-example-com.key, then run the spec again.
+      validity: 8760h
+      organization: Acme
+      emailAddresses:
+        - bob@example.com
+      sshPublicKey: true
+      filename: git-person-bob-example-com
+    # The machine ci, such as a CI runner, valid for 90 days. Add git-machine-ci.key.pub to the repository as a
+    # deploy key and clone with GIT_SSH_COMMAND="ssh -i git-machine-ci.key -o IdentitiesOnly=yes", or log in over HTTPS with the certificate.
+    - commonName: ci
+      keyType: ECDSA-256
+      # To renew, delete git-machine-ci.crt and git-machine-ci.key, then run the spec again.
+      validity: 2160h
+      organization: Acme
+      sshPublicKey: true
+      filename: git-machine-ci
+```
+
+## ssh
+
+SSH keys for SSH, SFTP, SCP, and rsync: host keys that clients pin in known_hosts, and user keys for authorized_keys.
+
+- `--hostnames`: optional, the SSH or SFTP servers, one host key each.
+- `--clients`: the users or automation accounts that log in, one key each.
+
+```bash
+certtool --scenario ssh --organization Acme --hostnames sftp.example.com,bastion.example.com --clients alice,backup --export-spec certs.yaml
+certtool --spec certs.yaml --output-dir certs
+```
+
+```yaml
+# certtool spec for --scenario ssh, written by:
+#   certtool --scenario ssh --organization Acme --hostnames sftp.example.com,bastion.example.com --clients alice,backup --export-spec certs.yaml
+# Review it, then generate the certificates with:
+#   certtool --spec certs.yaml --output-dir certs
+# Running it again reuses the certificates already in the output directory,
+# so you can add entries later. Format: https://github.com/cloudfra/certtool/blob/main/docs/spec.md
+
+# Scenario ssh: SSH keys for SSH, SFTP, SCP, and rsync: host keys that clients pin in known_hosts, and user keys for authorized_keys.
+
+# Host key for sftp.example.com. sshd_config: HostKey /etc/ssh/ssh-host-sftp-example-com.key, owned by root with mode 0600.
+# Clients pin it, so the first connection is not a guess: add a line to ~/.ssh/known_hosts with sftp.example.com followed by the
+# type and data in ssh-host-sftp-example-com.key.pub. SFTP and SCP clients, such as WinSCP and FileZilla, show the same key's fingerprint:
+# ssh-keygen -lf ssh-host-sftp-example-com.key.pub.
+# SSH uses only the key: certtool writes a certificate too, which SSH ignores. certtool does not make OpenSSH certificates
+# (ssh-keygen -s), so each key is trusted on its own.
+- commonName: sftp.example.com
+  keyType: ECDSA-256
+  # 10 years. SSH ignores it.
+  validity: 87600h
+  organization: Acme
+  hostnames:
+    - sftp.example.com
+  sshPublicKey: true
+  filename: ssh-host-sftp-example-com
+# Host key for bastion.example.com. sshd_config: HostKey /etc/ssh/ssh-host-bastion-example-com.key, owned by root with mode 0600.
+# Clients pin it, so the first connection is not a guess: add a line to ~/.ssh/known_hosts with bastion.example.com followed by the
+# type and data in ssh-host-bastion-example-com.key.pub. SFTP and SCP clients, such as WinSCP and FileZilla, show the same key's fingerprint:
+# ssh-keygen -lf ssh-host-bastion-example-com.key.pub.
+- commonName: bastion.example.com
+  keyType: ECDSA-256
+  # 10 years. SSH ignores it.
+  validity: 87600h
+  organization: Acme
+  hostnames:
+    - bastion.example.com
+  sshPublicKey: true
+  filename: ssh-host-bastion-example-com
+# Key of alice. On each server, append ssh-user-alice.key.pub to ~alice/.ssh/authorized_keys. Log in with
+# ssh -i ssh-user-alice.key, sftp -i, scp -i, or rsync -e "ssh -i ssh-user-alice.key". For an account that may only transfer
+# files, add to sshd_config: Match User alice with ForceCommand internal-sftp and ChrootDirectory. In authorized_keys,
+# restrict automation keys with from="<addresses>",restrict before the key.
+- commonName: alice
+  keyType: ECDSA-256
+  # SSH ignores it. To rotate the key, delete ssh-user-alice.crt and ssh-user-alice.key, then run the spec again.
+  validity: 8760h
+  organization: Acme
+  sshPublicKey: true
+  filename: ssh-user-alice
+# Key of backup. On each server, append ssh-user-backup.key.pub to ~backup/.ssh/authorized_keys. Log in with
+# ssh -i ssh-user-backup.key, sftp -i, scp -i, or rsync -e "ssh -i ssh-user-backup.key". For an account that may only transfer
+# files, add to sshd_config: Match User backup with ForceCommand internal-sftp and ChrootDirectory. In authorized_keys,
+# restrict automation keys with from="<addresses>",restrict before the key.
+- commonName: backup
+  keyType: ECDSA-256
+  # SSH ignores it. To rotate the key, delete ssh-user-backup.crt and ssh-user-backup.key, then run the spec again.
+  validity: 8760h
+  organization: Acme
+  sshPublicKey: true
+  filename: ssh-user-backup
+```
+
+## ftps
+
+A CA that signs an FTPS (FTP over TLS) server certificate and optional client certificates, for vsftpd, ProFTPD, and FileZilla Server.
+
+- `--hostnames`: the names clients connect to the FTP server by.
+- `--clients`: optional, the users that log in with a certificate.
+
+```bash
+certtool --scenario ftps --organization Acme --hostnames ftp.example.com --clients partner-upload --export-spec certs.yaml
+# CERTTOOL_PFX_PASSWORD must hold the password for the .pfx files
+certtool --spec certs.yaml --output-dir certs
+```
+
+```yaml
+# certtool spec for --scenario ftps, written by:
+#   certtool --scenario ftps --organization Acme --hostnames ftp.example.com --clients partner-upload --export-spec certs.yaml
+# Review it, then generate the certificates with:
+#   certtool --spec certs.yaml --output-dir certs
+# Running it again reuses the certificates already in the output directory,
+# so you can add entries later. Format: https://github.com/cloudfra/certtool/blob/main/docs/spec.md
+
+# Scenario ftps: A CA that signs an FTPS (FTP over TLS) server certificate and optional client certificates, for vsftpd, ProFTPD, and FileZilla Server.
+
+# CA. Clients trust ftps-ca.crt: curl --ssl-reqd --cacert ftps-ca.crt, lftp set ssl:ca-file, or WinSCP's TLS options.
+# For SFTP, which runs over SSH and uses no certificates, see --scenario ssh.
+# Its key signs every certificate below it: keep ftps-ca.key off the servers, and use it only to issue certificates.
+- commonName: Acme FTPS CA
+  certificateAuthority: true
+  keyType: ECDSA-384
+  # 10 years.
+  validity: 87600h
+  organization: Acme
+  filename: ftps-ca
+  # Name constraints: certificates below this CA may only use these names and their subdomains.
+  # Add a domain before you issue a certificate for it; changing them later means regenerating the CA and everything below it.
+  # IP addresses are not limited, so certtool still adds 127.0.0.1; add permittedIPRanges to limit them.
+  permittedDNSDomains:
+    - ftp.example.com
+  children:
+    # FTPS server certificate. vsftpd: ssl_enable=YES, rsa_cert_file and rsa_private_key_file, force_local_logins_ssl=YES and
+    # force_local_data_ssl=YES. ProFTPD mod_tls: TLSEngine on, TLSRSACertificateFile and TLSRSACertificateKeyFile, TLSRequired on.
+    # FileZilla Server: the certificate and key files under Server > Configure > FTP over TLS.
+    - commonName: ftp.example.com
+      keyType: RSA-2048
+      # To renew, delete ftps-server.crt and ftps-server.key, then run the spec again.
+      validity: 8760h
+      organization: Acme
+      hostnames:
+        - ftp.example.com
+      filename: ftps-server
+    # Client certificate for partner-upload. vsftpd: require_cert=YES, validate_cert=YES, and ca_certs_file ftps-ca.crt.
+    # ProFTPD: TLSVerifyClient on and TLSCACertificateFile ftps-ca.crt. curl: --cert ftps-client-partner-upload.crt --key ftps-client-partner-upload.key;
+    # WinSCP: Advanced > TLS/SSL > Client certificate file takes ftps-client-partner-upload.pfx.
+    - commonName: partner-upload
+      pfx: modern
+      pfxPasswordEnv: CERTTOOL_PFX_PASSWORD
+      keyType: RSA-2048
+      validity: 8760h
+      organization: Acme
+      filename: ftps-client-partner-upload
+```
+
 ## ios
 
 A development CA for iPhone and iPad apps, a backend certificate that meets Apple's TLS rules, and client identities.
@@ -866,6 +1195,13 @@ certtool --spec certs.yaml --output-dir certs
 ```
 
 ```yaml
+# certtool spec for --scenario ios, written by:
+#   certtool --scenario ios --organization Acme --hostnames api.dev.example.com --clients test-device --export-spec certs.yaml
+# Review it, then generate the certificates with:
+#   certtool --spec certs.yaml --output-dir certs
+# Running it again reuses the certificates already in the output directory,
+# so you can add entries later. Format: https://github.com/cloudfra/certtool/blob/main/docs/spec.md
+
 # Scenario ios: A development CA for iPhone and iPad apps, a backend certificate that meets Apple's TLS rules, and client identities.
 
 # CA. On a device, AirDrop or email ios-ca.crt, install the profile in Settings, then turn on full trust in
@@ -920,6 +1256,13 @@ certtool --spec certs.yaml --output-dir certs
 ```
 
 ```yaml
+# certtool spec for --scenario android, written by:
+#   certtool --scenario android --organization Acme --hostnames api.dev.example.com,10.0.2.2 --clients test-device --export-spec certs.yaml
+# Review it, then generate the certificates with:
+#   certtool --spec certs.yaml --output-dir certs
+# Running it again reuses the certificates already in the output directory,
+# so you can add entries later. Format: https://github.com/cloudfra/certtool/blob/main/docs/spec.md
+
 # Scenario android: A development CA that Android apps trust through a network security config, a backend certificate, and client certificates.
 
 # CA. Android apps do not trust user-installed CAs. Copy android-ca.crt to res/raw/android_ca.crt (resource names
@@ -975,6 +1318,13 @@ certtool --spec certs.yaml --output-dir certs
 ```
 
 ```yaml
+# certtool spec for --scenario android-signing, written by:
+#   certtool --scenario android-signing --organization Acme --export-spec certs.yaml
+# Review it, then generate the certificates with:
+#   certtool --spec certs.yaml --output-dir certs
+# Running it again reuses the certificates already in the output directory,
+# so you can add entries later. Format: https://github.com/cloudfra/certtool/blob/main/docs/spec.md
+
 # Scenario android-signing: An Android app signing (upload) key in a PKCS#12 keystore, valid for 25 years.
 
 # Android app signing key, in the PKCS#12 keystore android-signing.pfx. Sign with
@@ -1006,6 +1356,13 @@ certtool --spec certs.yaml --output-dir certs
 ```
 
 ```yaml
+# certtool spec for --scenario code-sign, written by:
+#   certtool --scenario code-sign --organization Acme --export-spec certs.yaml
+# Review it, then generate the certificates with:
+#   certtool --spec certs.yaml --output-dir certs
+# Running it again reuses the certificates already in the output directory,
+# so you can add entries later. Format: https://github.com/cloudfra/certtool/blob/main/docs/spec.md
+
 # Scenario code-sign: A code signing certificate for Windows (signtool) or Linux (osslsigncode).
 
 # Self-signed code signing certificate. Machines must trust code-sign.crt to accept what it signs.
@@ -1031,6 +1388,13 @@ certtool --spec certs.yaml --output-dir certs
 ```
 
 ```yaml
+# certtool spec for --scenario proxy, written by:
+#   certtool --scenario proxy --organization Acme --export-spec certs.yaml
+# Review it, then generate the certificates with:
+#   certtool --spec certs.yaml --output-dir certs
+# Running it again reuses the certificates already in the output directory,
+# so you can add entries later. Format: https://github.com/cloudfra/certtool/blob/main/docs/spec.md
+
 # Scenario proxy: A CA for a TLS-inspecting proxy (Squid, mitmproxy), which signs a certificate for each site on the fly.
 
 # CA for a TLS-inspecting proxy, which signs a certificate for every site its clients visit. Its key sits on the proxy
