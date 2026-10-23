@@ -30,6 +30,7 @@ var yamlFence = regexp.MustCompile("(?s)```yaml\\n(.*?)```")
 func TestSpecDocExamplesAreValid(t *testing.T) {
 	for _, path := range []string{
 		"docs/spec.md",
+		"docs/scenarios.md",
 		"skills/certtool/references/spec-format.md",
 	} {
 		t.Run(path, func(t *testing.T) {
@@ -67,11 +68,15 @@ func TestYAMLExamplesCRLF(t *testing.T) {
 // yamlExamples returns the contents of every fenced yaml block in a markdown
 // document, regardless of its line-ending style.
 func yamlExamples(doc []byte) [][]byte {
-	doc = bytes.ReplaceAll(doc, []byte("\r\n"), []byte("\n"))
+	doc = normalizeNewlines(doc)
 	matches := yamlFence.FindAllSubmatch(doc, -1)
 	blocks := make([][]byte, 0, len(matches))
 	for _, m := range matches {
 		blocks = append(blocks, m[1])
 	}
 	return blocks
+}
+
+func normalizeNewlines(b []byte) []byte {
+	return bytes.ReplaceAll(b, []byte("\r\n"), []byte("\n"))
 }

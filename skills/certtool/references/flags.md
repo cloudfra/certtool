@@ -34,8 +34,8 @@
 | Flag | Default | Description |
 | ---- | ------- | ----------- |
 | `--code-sign` | `false` | Make a code signing certificate instead of a TLS certificate. |
-| `--target` | `windows10` | `windows10`/`win10` and `windows11`/`win11`: ECDSA P-256 in an AES-256 `.pfx`. `windows7`/`win7`/`windows8`/`win8`: RSA-2048 in a 3DES `.pfx`. `linux`: PEM certificate and key for `osslsigncode`. |
-| `--pfx-output` | `codesign.pfx` | `.pfx` file for Windows targets. |
+| `--target` | `windows10` | `windows10`/`win10` and `windows11`/`win11`: ECDSA P-256 in an AES-256 `.pfx`. `windows7`/`win7`/`windows8`/`win8`: RSA-2048 in a 3DES `.pfx`. `linux`: PEM certificate and key for `osslsigncode`. `android`: RSA-4096 in an AES-256 `.pfx` keystore for `apksigner` and Gradle. |
+| `--pfx-output` | `codesign.pfx` | `.pfx` file for the Windows and Android targets. |
 | `--pfx-password` | `$CERTTOOL_PFX_PASSWORD` | `.pfx` password. Prefer the environment variable. Empty means no password. |
 
 ## Hierarchies and specs
@@ -47,7 +47,9 @@
 | `--spec` | | YAML spec to generate from. Cannot be combined with `--chain`. |
 | `--output-dir` | `.` | Directory for `--chain` and `--spec` output. Created if missing. |
 | `--overwrite` | `false` | With `--spec` or `--chain`, regenerate every certificate instead of reusing the `.crt` and `.key` files already in `--output-dir`. |
-| `--export-spec` | | Write the spec built from `--chain`, `--spec`, or plain flags to this YAML file and generate nothing. |
+| `--export-spec` | | Write the spec built from `--scenario`, `--chain`, `--spec`, or plain flags to this YAML file and generate nothing. `-` writes to standard output. |
+| `--scenario` | | Write a commented spec to `--output-dir`, as `<scenario>.yaml`, and generate its certificates; with `--export-spec`, only write the spec. Comma separated: `web`, `local-dev`, `mtls`, `microservices`, `database`, `active-directory`, `kubernetes`, `vpn`, `eap-tls`, `iot`, `kafka`, `docker`, `git`, `ssh`, `ftps`, `ios`, `android`, `android-signing`, `code-sign`, `proxy`. Running it again reuses the spec and certificates, and stops if the spec was edited. Each scenario's inputs are `--hostnames`, `--clients`, or `--target`; `docs/scenarios.md` says which. Uses the subject flags, `--key-type`, and `--validity` for the leaves; other flags are errors. With `--yubikey` the root is left out. `.pfx` passwords come from `CERTTOOL_PFX_PASSWORD`. |
+| `--clients` | | Common names of the client certificates, users, or devices a scenario makes, comma separated. |
 
 ## YubiKey
 

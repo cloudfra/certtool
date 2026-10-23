@@ -1,0 +1,39 @@
+{{- /*
+summary: A development CA for iPhone and iPad apps, a backend certificate that meets Apple's TLS rules, and client identities.
+hostnames: required
+hostnamesHelp: the names of the backend the app connects to
+clients: optional
+clientsHelp: client identities for apps that use mutual TLS
+*/ -}}
+
+{{- if .ExternalRoot }}
+{{ template "yubikey" }}
+{{- end }}
+# CA. On a device, AirDrop or email ios-ca.crt, install the profile in Settings, then turn on full trust in
+# Settings > General > About > Certificate Trust Settings. In the Simulator: xcrun simctl keychain booted add-root-cert ios-ca.crt.
+# App Transport Security then accepts the backend without exceptions. Apps themselves are signed with certificates from Apple.
+{{ template "ca-key" "ios-ca" }}
+{{ include "ca" (dict "o" . "name" (print .Organization " iOS Development CA") "file" "ios-ca" "keyType" "ECDSA-384") }}
+  {{- include "constraints" (constraints .Hostnames) | nindent 2 }}
+  children:
+    # Backend certificate. Apple platforms reject TLS server certificates that are valid for more than 825 days, lack the
+    # name in hostnames, or have RSA keys under 2048 bits; this one is valid for 397 days.
+    - commonName: {{ yaml (host (index .Hostnames 0)) }}
+      keyType: {{ .KeyTypeOr "ECDSA-256" }}
+      {{ template "renew" "ios-server" }}
+      validity: {{ .ValidityOr "9528h" }}
+      {{- include "subject" . | nindent 6 }}
+      hostnames:{{ include "items" .Hostnames | nindent 8 }}
+      filename: ios-server
+    {{- range .Clients }}
+    {{- $file := print "ios-client-" (slug .) }}
+    # Client identity for {{ . }}. The app loads {{ $file }}.pfx with SecPKCS12Import, or a configuration profile installs it.
+    # The .pfx uses the legacy format, which older iOS and macOS releases need to import it; give it a long random password.
+    - commonName: {{ yaml . }}
+      pfx: legacy
+      pfxPasswordEnv: {{ yaml $.PFXPasswordEnv }}
+      keyType: {{ $.KeyTypeOr "ECDSA-256" }}
+      validity: {{ $.ValidityOr "8760h" }}
+      {{- include "subject" $ | nindent 6 }}
+      filename: {{ $file }}
+    {{- end }}

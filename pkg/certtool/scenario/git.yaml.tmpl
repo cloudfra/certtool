@@ -1,0 +1,78 @@
+{{- /*
+summary: Certificates for a Git server over HTTPS, and identities that sign commits with S/MIME or SSH and log in with a certificate or an SSH key.
+hostnames: required
+hostnamesHelp: the names of the Git server (Gitea, GitLab, Bitbucket, or nginx in front of git http-backend)
+clients: optional
+clientsHelp: people, by email address such as `alice@example.com`, who sign commits; and machines, such as ci, that only log in
+*/ -}}
+
+{{- $host := host (index .Hostnames 0) }}
+{{- if .ExternalRoot }}
+{{ template "yubikey" }}
+{{- end }}
+# CA. Clients trust git-ca.crt for the server: git config --global http.https://{{ $host }}/.sslCAInfo git-ca.crt.
+# Subversion: ssl-authority-files in ~/.subversion/servers. Mercurial: {{ $host }}:verifycertsfile under [hostsecurity].
+{{ template "ca-key" "git-ca" }}
+{{ include "ca" (dict "o" . "name" (print .Organization " Git CA") "file" "git-ca" "keyType" "ECDSA-384") }}
+  {{- include "constraints" (constraints .Hostnames) | nindent 2 }}
+  children:
+    {{- range .Hostnames }}
+    {{- $name := host . }}
+    {{- $file := print "git-server-" (slug $name) }}
+    # Server certificate for {{ $name }}. Gitea: CERT_FILE {{ $file }}.crt and KEY_FILE {{ $file }}.key
+    # under [server] with PROTOCOL = https. GitLab: nginx['ssl_certificate'] and nginx['ssl_certificate_key'] in gitlab.rb.
+    # Bitbucket, or nginx in front of git http-backend: ssl_certificate and ssl_certificate_key.
+    - commonName: {{ yaml $name }}
+      keyType: {{ $.KeyTypeOr "ECDSA-256" }}
+      {{ template "renew" $file }}
+      validity: {{ $.ValidityOr "8760h" }}
+      {{- include "subject" $ | nindent 6 }}
+      hostnames:{{ include "items" (list .) | nindent 8 }}
+      filename: {{ $file }}
+    {{- end }}
+{{- if .Clients }}
+{{- if .ExternalRoot }}
+{{ template "yubikey" }}
+{{- end }}
+# CA. Signs the people and machines below, and has no name constraints because gpgsm refuses chains that have them.
+# S/MIME signing with gpgsm: gpgsm --import git-identity-ca.crt, add its fingerprint followed by "S relax" to
+# ~/.gnupg/trustlist.txt, and add disable-crl-checks to ~/.gnupg/gpgsm.conf, because certtool makes no CRLs. Then for each
+# person: gpgsm --import their .pfx, and git config gpg.format x509, gpg.x509.program gpgsm, and user.signingkey <their email>.
+# On Windows and macOS, import the .pfx into the certificate store or Keychain and use gpg.x509.program smimesign instead.
+# SSH signing: git config gpg.format ssh and user.signingkey <their .key>; verifiers list each person in
+# gpg.ssh.allowedSignersFile as <email> followed by the type and data in their .key.pub. GitHub marks S/MIME commits verified
+# only when a public CA issued the certificate, so use SSH signing there.
+# HTTPS logins with a certificate: git config http.sslCert <.crt> and http.sslKey <.key>, and on nginx ssl_verify_client on
+# with ssl_client_certificate git-identity-ca.crt.
+{{ template "ca-key" "git-identity-ca" }}
+{{ include "ca" (dict "o" . "name" (print .Organization " Git Identity CA") "file" "git-identity-ca" "keyType" "ECDSA-384") }}
+  children:
+    {{- range .Clients }}
+    {{- if isEmail . }}
+    {{- $file := print "git-person-" (slug .) }}
+    # {{ . }}, who signs commits as git config user.email {{ . }}. gpgsm imports {{ $file }}.pfx;
+    # for SSH, add {{ $file }}.key.pub to the Git server as both an authentication and a signing key.
+    - commonName: {{ yaml . }}
+      pfx: modern
+      pfxPasswordEnv: {{ yaml $.PFXPasswordEnv }}
+      keyType: {{ $.KeyTypeOr "ECDSA-256" }}
+      {{ template "renew" $file }}
+      validity: {{ $.ValidityOr "8760h" }}
+      {{- include "subject" $ | nindent 6 }}
+      emailAddresses:{{ include "items" (list .) | nindent 8 }}
+      sshPublicKey: true
+      filename: {{ $file }}
+    {{- else }}
+    {{- $file := print "git-machine-" (slug .) }}
+    # The machine {{ . }}, such as a CI runner, valid for 90 days. Add {{ $file }}.key.pub to the repository as a
+    # deploy key and clone with GIT_SSH_COMMAND="ssh -i {{ $file }}.key -o IdentitiesOnly=yes", or log in over HTTPS with the certificate.
+    - commonName: {{ yaml . }}
+      keyType: {{ $.KeyTypeOr "ECDSA-256" }}
+      {{ template "renew" $file }}
+      validity: {{ $.ValidityOr "2160h" }}
+      {{- include "subject" $ | nindent 6 }}
+      sshPublicKey: true
+      filename: {{ $file }}
+    {{- end }}
+    {{- end }}
+{{- end }}

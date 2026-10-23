@@ -24,6 +24,7 @@ const (
 	windows10Target = "windows10"
 	windows11Target = "windows11"
 	linuxTarget     = "linux"
+	androidTarget   = "android"
 )
 
 // TargetProfile holds cert generation defaults for a named platform target.
@@ -54,6 +55,13 @@ var targetProfiles = map[string]TargetProfile{
 		OutputPFX: false,
 		LegacyPFX: false,
 	},
+	// An Android app signing (upload) key in a PKCS#12 keystore, which
+	// apksigner, jarsigner, and Gradle read as storeType pkcs12.
+	androidTarget: {
+		KeyType:   KeyType{Algorithm: rsaAlgorithm, KeyLength: 4096},
+		OutputPFX: true,
+		LegacyPFX: false,
+	},
 }
 
 var profileAliases = map[string]string{
@@ -75,5 +83,5 @@ func GetProfile(target string) (TargetProfile, error) {
 	if profile, ok := targetProfiles[normalized]; ok {
 		return profile, nil
 	}
-	return TargetProfile{}, fmt.Errorf("unknown target %q: valid targets are windows7 (aliases: win7, windows8, win8, windows8.1, win8.1), windows10 (alias: win10), windows11 (alias: win11), linux", target)
+	return TargetProfile{}, fmt.Errorf("unknown target %q: valid targets are windows7 (aliases: win7, windows8, win8, windows8.1, win8.1), windows10 (alias: win10), windows11 (alias: win11), linux, android", target)
 }

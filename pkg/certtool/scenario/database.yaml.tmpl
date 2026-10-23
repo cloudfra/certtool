@@ -1,0 +1,40 @@
+{{- /*
+summary: A CA that signs a server certificate per database host and client certificates for database users (PostgreSQL, MySQL, Redis, MongoDB).
+hostnames: required
+hostnamesHelp: the name of each database server, one certificate each
+clients: optional
+clientsHelp: database users that log in with a certificate
+*/ -}}
+
+{{- if .ExternalRoot }}
+{{ template "yubikey" }}
+{{- end }}
+# CA. Clients verify the servers with database-ca.crt: PostgreSQL sslrootcert with sslmode=verify-full, MySQL ssl-ca
+# with ssl-mode=VERIFY_IDENTITY, Redis tls-ca-cert-file, MongoDB tlsCAFile.
+{{ template "ca-key" "database-ca" }}
+{{ include "ca" (dict "o" . "name" (print .Organization " Database CA") "file" "database-ca" "keyType" "ECDSA-384") }}
+  {{- include "constraints" (constraints .Hostnames) | nindent 2 }}
+  children:
+    {{- range .Hostnames }}
+    {{- $host := host . }}
+    {{- $file := print "database-" (slug $host) }}
+    # Server certificate for {{ $host }}. PostgreSQL: ssl_cert_file and ssl_key_file (the key must belong to the postgres user).
+    # MySQL: ssl_cert and ssl_key. Redis: tls-cert-file and tls-key-file. MongoDB: tlsCertificateKeyFile takes the
+    # certificate and key in one file: cat {{ $file }}.crt {{ $file }}.key > {{ $file }}.pem.
+    - commonName: {{ yaml $host }}
+      keyType: {{ $.KeyTypeOr "ECDSA-256" }}
+      {{ template "renew" $file }}
+      validity: {{ $.ValidityOr "8760h" }}
+      {{- include "subject" $ | nindent 6 }}
+      hostnames:{{ include "items" (list .) | nindent 8 }}
+      filename: {{ $file }}
+    {{- end }}
+    {{- range .Clients }}
+    # Client certificate for the database user {{ . }}, whose user name is the common name. PostgreSQL logs it in with
+    # the cert method in pg_hba.conf (hostssl all {{ . }} all cert); MySQL with CREATE USER ... REQUIRE SUBJECT.
+    - commonName: {{ yaml . }}
+      keyType: {{ $.KeyTypeOr "ECDSA-256" }}
+      validity: {{ $.ValidityOr "8760h" }}
+      {{- include "subject" $ | nindent 6 }}
+      filename: database-user-{{ slug . }}
+    {{- end }}

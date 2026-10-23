@@ -1,0 +1,58 @@
+{{- /*
+summary: An enterprise root CA and issuing CA that sign LDAPS certificates for Active Directory domain controllers, with .pfx files to import.
+hostnames: required
+hostnamesHelp: the FQDN of each domain controller, such as dc01.corp.example.com
+*/ -}}
+
+{{- define "active-directory.trust" -}}
+# Publish {{ .RootCert "active-directory-root-ca" }} to every domain member with Group Policy (Computer Configuration > Policies >
+# Windows Settings > Security Settings > Public Key Policies > Trusted Root Certification Authorities), or with
+# certutil -dspublish -f active-directory-root-ca.crt RootCA, and the issuing CA with
+# certutil -dspublish -f active-directory-issuing-ca.crt SubCA. RSA keys, because some LDAP clients do not accept ECDSA.
+{{- end }}
+
+{{- define "active-directory.issuing" }}
+{{- $domains := list }}
+{{- range .Hostnames }}{{ $domains = concat $domains (list (domainOf "active-directory" .)) }}{{ end }}
+{{- if .ExternalRoot }}
+{{ template "yubikey" }}
+{{ template "active-directory.trust" . }}
+{{- end }}
+{{ template "issuing-comment" }}
+{{ include "issuing-ca" (dict "o" . "name" (print .Organization " Enterprise Issuing CA") "file" "active-directory-issuing-ca" "keyType" "RSA-4096") }}
+  {{- if .ExternalRoot }}{{ include "constraints" (dnsConstraints (unique $domains)) | nindent 2 }}{{ end }}
+  children:
+    {{- range .Hostnames }}
+    {{- $host := host . }}
+    {{- $domain := domainOf "active-directory" . }}
+    {{- $file := print "active-directory-" (slug $host) }}
+    # LDAPS certificate for the domain controller {{ $host }}. On it, in an administrator PowerShell:
+    #   Import-PfxCertificate -FilePath {{ $file }}.pfx -CertStoreLocation Cert:\LocalMachine\My `
+    #     -Password (ConvertTo-SecureString $env:CERTTOOL_PFX_PASSWORD -AsPlainText -Force)
+    # The DC uses it for LDAPS on port 636, and 3269 for the global catalog, within minutes or after a restart.
+    # Check with: openssl s_client -connect {{ $host }}:636 -CAfile active-directory-root-ca.crt
+    - commonName: {{ yaml $host }}
+      pfx: modern
+      pfxPasswordEnv: {{ yaml $.PFXPasswordEnv }}
+      keyType: {{ $.KeyTypeOr "RSA-2048" }}
+      {{ template "renew" $file }}
+      # Then import the new .pfx and delete the old certificate from the store.
+      validity: {{ $.ValidityOr "8760h" }}
+      {{- include "subject" $ | nindent 6 }}
+      # The DC's name, and the domain name, so clients that connect to {{ $domain }} reach any DC.
+      hostnames:{{ include "items" (list $host $domain) | nindent 8 }}
+      filename: {{ $file }}
+    {{- end }}
+{{- end }}
+
+{{- $domains := list }}
+{{- range .Hostnames }}{{ $domains = concat $domains (list (domainOf "active-directory" .)) }}{{ end }}
+{{- if .ExternalRoot }}
+{{ include "active-directory.issuing" . }}
+{{- else }}
+# Root CA. {{ include "active-directory.trust" . | trimComment }}
+{{ include "root-key" (dict "file" "active-directory-root-ca" "scenario" "active-directory") }}
+{{ include "root-ca" (dict "o" . "name" (print .Organization " Enterprise Root CA") "file" "active-directory-root-ca" "keyType" "RSA-4096") }}
+  {{- include "constraints" (dnsConstraints (unique $domains)) | nindent 2 }}
+  children:{{ include "active-directory.issuing" . | nindent 4 }}
+{{- end }}

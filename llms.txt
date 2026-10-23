@@ -13,7 +13,8 @@ Install a release build from <https://github.com/cloudfra/certtool/releases/late
 ## Docs
 
 - [README](https://raw.githubusercontent.com/cloudfra/certtool/main/README.md): features, examples, flags, and downloads
-- [Certificate spec](https://raw.githubusercontent.com/cloudfra/certtool/main/docs/spec.md): spec fields, `--chain` naming, and examples for Kubernetes, LDAPS, mTLS, databases, and VPNs
+- [Certificate spec](https://raw.githubusercontent.com/cloudfra/certtool/main/docs/spec.md): spec fields, `--chain` naming, and reusing existing certificates
+- [Scenarios](https://raw.githubusercontent.com/cloudfra/certtool/main/docs/scenarios.md): `--scenario` templates for web, mTLS, microservices, databases, Active Directory, Kubernetes, VPN, EAP-TLS, IoT, Kafka, Docker, Git and commit signing, SSH and SFTP, FTPS, iOS, Android, code signing, and proxies
 - [Local development HTTPS](https://raw.githubusercontent.com/cloudfra/certtool/main/docs/use-cases/local-development.md)
 - [Private CA and mutual TLS](https://raw.githubusercontent.com/cloudfra/certtool/main/docs/use-cases/private-ca.md)
 - [Code signing](https://raw.githubusercontent.com/cloudfra/certtool/main/docs/use-cases/code-signing.md)

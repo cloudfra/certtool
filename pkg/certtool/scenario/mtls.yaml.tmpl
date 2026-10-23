@@ -1,0 +1,49 @@
+{{- /*
+summary: A root CA and an issuing CA that sign a server certificate and client certificates for mutual TLS, such as gRPC.
+hostnames: required
+hostnamesHelp: the names of the server certificate
+clients: required
+clientsHelp: the names of the client certificates, such as billing,orders
+*/ -}}
+
+{{- define "mtls.issuing" }}
+{{- if .ExternalRoot }}
+{{ template "yubikey" }}
+# Both sides trust {{ .RootCert "mtls-root-ca" }}: the server to verify clients, and the clients to verify the server.
+{{- end }}
+{{ template "issuing-comment" }}
+{{ include "issuing-ca" (dict "o" . "name" (print .Organization " mTLS Issuing CA") "file" "mtls-issuing-ca" "keyType" "ECDSA-256") }}
+  {{- if .ExternalRoot }}{{ include "constraints" (constraints .Hostnames) | nindent 2 }}{{ end }}
+  children:
+    # Server certificate. Require a client certificate that chains to the root: nginx ssl_verify_client on with
+    # ssl_client_certificate {{ .RootCert "mtls-root-ca" }}, or in Go tls.RequireAndVerifyClientCert with the root in ClientCAs.
+    {{ include "chain" (dict "file" "mtls-server" "issuer" "mtls-issuing-ca") }}
+    - commonName: {{ yaml (host (index .Hostnames 0)) }}
+      keyType: {{ .KeyTypeOr "ECDSA-256" }}
+      {{ template "renew" "mtls-server" }}
+      validity: {{ .ValidityOr "2160h" }}
+      {{- include "subject" . | nindent 6 }}
+      hostnames:{{ include "items" .Hostnames | nindent 8 }}
+      filename: mtls-server
+    {{- range .Clients }}
+    {{- $file := print "mtls-client-" (slug .) }}
+    # Client certificate for {{ . }}, valid for 90 days. The server sees {{ . }} as the subject common name:
+    # authorize on it, not just on the CA. To use it from a browser, add pfx: modern.
+    {{ include "chain" (dict "file" $file "issuer" "mtls-issuing-ca") }}
+    - commonName: {{ yaml . }}
+      keyType: {{ $.KeyTypeOr "ECDSA-256" }}
+      validity: {{ $.ValidityOr "2160h" }}
+      {{- include "subject" $ | nindent 6 }}
+      filename: {{ $file }}
+    {{- end }}
+{{- end }}
+
+{{- if .ExternalRoot }}
+{{ include "mtls.issuing" . }}
+{{- else }}
+# Root CA. Both sides trust mtls-root-ca.crt: the server to verify clients, and the clients to verify the server.
+{{ include "root-key" (dict "file" "mtls-root-ca" "scenario" "mtls") }}
+{{ include "root-ca" (dict "o" . "name" (print .Organization " mTLS Root CA") "file" "mtls-root-ca" "keyType" "ECDSA-384") }}
+  {{- include "constraints" (constraints .Hostnames) | nindent 2 }}
+  children:{{ include "mtls.issuing" . | nindent 4 }}
+{{- end }}

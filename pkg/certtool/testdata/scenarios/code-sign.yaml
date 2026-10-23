@@ -1,0 +1,20 @@
+# certtool spec for --scenario code-sign, written by:
+#   certtool --scenario code-sign --organization Acme --export-spec certs.yaml
+# Review it, then generate the certificates with:
+#   certtool --spec certs.yaml --output-dir certs
+# Running it again reuses the certificates already in the output directory,
+# so you can add entries later. Format: https://github.com/cloudfra/certtool/blob/main/docs/spec.md
+
+# Scenario code-sign: A code signing certificate for Windows (signtool) or Linux (osslsigncode).
+
+# Self-signed code signing certificate. Machines must trust code-sign.crt to accept what it signs.
+# Anyone who has its key can sign code as you; see docs/use-cases/code-signing.md for signing and verifying.
+# The key is also written to code-sign.pfx for signtool.
+- commonName: Acme Code Signing
+  codeSigning: true
+  # windows7, windows10, windows11, or linux. The key type comes from the target unless keyType is set.
+  target: windows10
+  pfxPasswordEnv: CERTTOOL_PFX_PASSWORD
+  validity: 26280h
+  organization: Acme
+  filename: code-sign

@@ -1,0 +1,45 @@
+{{- /*
+summary: "SSH keys for SSH, SFTP, SCP, and rsync: host keys that clients pin in known_hosts, and user keys for authorized_keys."
+hostnames: optional
+hostnamesHelp: the SSH or SFTP servers, one host key each
+clients: required
+clientsHelp: the users or automation accounts that log in, one key each
+*/ -}}
+
+{{- define "ssh.note" }}
+# SSH uses only the key: certtool writes a certificate too, which SSH ignores. certtool does not make OpenSSH certificates
+# (ssh-keygen -s), so each key is trusted on its own.
+{{- end }}
+
+{{- range $i, $hostname := .Hostnames }}
+{{- $host := host . }}
+{{- $file := print "ssh-host-" (slug $host) }}
+# Host key for {{ $host }}. sshd_config: HostKey /etc/ssh/{{ $file }}.key, owned by root with mode 0600.
+# Clients pin it, so the first connection is not a guess: add a line to ~/.ssh/known_hosts with {{ $host }} followed by the
+# type and data in {{ $file }}.key.pub. SFTP and SCP clients, such as WinSCP and FileZilla, show the same key's fingerprint:
+# ssh-keygen -lf {{ $file }}.key.pub.
+{{- if not $i }}{{ template "ssh.note" }}{{ end }}
+- commonName: {{ yaml $host }}
+  keyType: {{ $.KeyTypeOr "ECDSA-256" }}
+  # 10 years. SSH ignores it.
+  validity: {{ $.ValidityOr "87600h" }}
+  {{- include "subject" $ | nindent 2 }}
+  hostnames:{{ include "items" (list $hostname) | nindent 4 }}
+  sshPublicKey: true
+  filename: {{ $file }}
+{{- end }}
+{{- range $i, $name := .Clients }}
+{{- $file := print "ssh-user-" (slug .) }}
+# Key of {{ . }}. On each server, append {{ $file }}.key.pub to ~{{ . }}/.ssh/authorized_keys. Log in with
+# ssh -i {{ $file }}.key, sftp -i, scp -i, or rsync -e "ssh -i {{ $file }}.key". For an account that may only transfer
+# files, add to sshd_config: Match User {{ . }} with ForceCommand internal-sftp and ChrootDirectory. In authorized_keys,
+# restrict automation keys with from="<addresses>",restrict before the key.
+{{- if and (not $i) (not $.Hostnames) }}{{ template "ssh.note" }}{{ end }}
+- commonName: {{ yaml . }}
+  keyType: {{ $.KeyTypeOr "ECDSA-256" }}
+  # SSH ignores it. To rotate the key, delete {{ $file }}.crt and {{ $file }}.key, then run the spec again.
+  validity: {{ $.ValidityOr "8760h" }}
+  {{- include "subject" $ | nindent 2 }}
+  sshPublicKey: true
+  filename: {{ $file }}
+{{- end }}

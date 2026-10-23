@@ -1,6 +1,6 @@
 # certtool spec format
 
-A spec is a YAML list of certificates. An entry with `children` is a CA that signs each child. Generate with `certtool --spec certs.yaml --output-dir certs`. To get a starting file, run `certtool --chain 1,2,1 --organization Acme --export-spec certs.yaml`.
+A spec is a YAML list of certificates. An entry with `children` is a CA that signs each child. Generate with `certtool --spec certs.yaml --output-dir certs`. To get a starting file, run `certtool --scenario web --organization Acme --hostnames api.example.com --export-spec certs.yaml` (see the scenarios at the end of this page), or `certtool --chain 1,2,1 --organization Acme --export-spec certs.yaml` for a bare hierarchy.
 
 ## Fields
 
@@ -14,10 +14,13 @@ A spec is a YAML list of certificates. An entry with `children` is a CA that sig
 | `keyType` | `RSA-2048`, `RSA-4096`, `ECDSA-256`, `ECDSA-384`. |
 | `validity` | Go duration, for example `8760h`. Default `8760h`. |
 | `hostnames` | DNS names and IP addresses added as SANs. |
+| `emailAddresses` | Leaf only: email SANs for S/MIME and Git commit signing. Sets the email protection and TLS client usages and drops the automatic `localhost`/`127.0.0.1`. |
+| `sshPublicKey` | Leaf only: also write `<filename>.key.pub` in OpenSSH format, for SSH, SFTP, and Git SSH signing. |
 | `organization`, `organizationalUnit`, `country`, `locality`, `province` | Subject fields. |
 | `codeSigning` | `true` for a code signing certificate. Keep these at the top level of the spec: a child must have the same `codeSigning` value as its CA, so a TLS CA cannot hold code signing children. |
-| `target` | Code signing profile: `windows7`, `windows10` (default), `windows11`, `linux`. |
-| `pfxPasswordEnv` | Name of an environment variable holding the `.pfx` password (code signing only). Use this instead of `pfxPassword`, which stores the password in plain text. |
+| `target` | Code signing profile: `windows7`, `windows10` (default), `windows11`, `linux`, `android` (RSA-4096 app signing keystore). |
+| `pfx` | TLS certificates only: also write a `.pfx` of the certificate and key, `modern` (AES-256) or `legacy` (3DES, for Windows 7/8 and older Apple systems). |
+| `pfxPasswordEnv` | Name of an environment variable holding the `.pfx` password, for `pfx` or code signing. Use this instead of `pfxPassword`, which stores the password in plain text. |
 | `filename` | Output file name without extension. Directories, `..`, and absolute paths are rejected. |
 
 ## Running again
@@ -62,4 +65,4 @@ This writes `platform-ca`, `api`, and `billing-client` as `.crt` and `.key` file
 
 `certtool --yubikey --spec certs.yaml --output-dir certs` signs every top-level entry with the root CA on the YubiKey instead of self-signing it. Leave the root out of the spec, because it already lives on the YubiKey. Code signing entries may then be top-level entries signed by the YubiKey root.
 
-More examples (Kubernetes, LDAPS, mTLS, databases, VPN): <https://github.com/cloudfra/certtool/blob/main/docs/spec.md>.
+Ready-made, commented specs for Kubernetes, Active Directory, mTLS, databases, VPN, EAP-TLS, IoT, Kafka, Docker, Git and commit signing, SSH and SFTP keys, FTPS, iOS, Android, and more: `certtool --scenario NAME --export-spec -`, described at <https://github.com/cloudfra/certtool/blob/main/docs/scenarios.md>.

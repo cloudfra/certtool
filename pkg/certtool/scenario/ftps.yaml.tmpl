@@ -1,0 +1,41 @@
+{{- /*
+summary: A CA that signs an FTPS (FTP over TLS) server certificate and optional client certificates, for vsftpd, ProFTPD, and FileZilla Server.
+hostnames: required
+hostnamesHelp: the names clients connect to the FTP server by
+clients: optional
+clientsHelp: the users that log in with a certificate
+*/ -}}
+
+{{- if .ExternalRoot }}
+{{ template "yubikey" }}
+{{- end }}
+# CA. Clients trust ftps-ca.crt: curl --ssl-reqd --cacert ftps-ca.crt, lftp set ssl:ca-file, or WinSCP's TLS options.
+# For SFTP, which runs over SSH and uses no certificates, see --scenario ssh.
+{{ template "ca-key" "ftps-ca" }}
+{{ include "ca" (dict "o" . "name" (print .Organization " FTPS CA") "file" "ftps-ca" "keyType" "ECDSA-384") }}
+  {{- include "constraints" (constraints .Hostnames) | nindent 2 }}
+  children:
+    # FTPS server certificate. vsftpd: ssl_enable=YES, rsa_cert_file and rsa_private_key_file, force_local_logins_ssl=YES and
+    # force_local_data_ssl=YES. ProFTPD mod_tls: TLSEngine on, TLSRSACertificateFile and TLSRSACertificateKeyFile, TLSRequired on.
+    # FileZilla Server: the certificate and key files under Server > Configure > FTP over TLS.
+    # RSA, because some FTP servers only load RSA keys (vsftpd rsa_cert_file).
+    - commonName: {{ yaml (host (index .Hostnames 0)) }}
+      keyType: {{ .KeyTypeOr "RSA-2048" }}
+      {{ template "renew" "ftps-server" }}
+      validity: {{ .ValidityOr "8760h" }}
+      {{- include "subject" . | nindent 6 }}
+      hostnames:{{ include "items" .Hostnames | nindent 8 }}
+      filename: ftps-server
+    {{- range .Clients }}
+    {{- $file := print "ftps-client-" (slug .) }}
+    # Client certificate for {{ . }}. vsftpd: require_cert=YES, validate_cert=YES, and ca_certs_file ftps-ca.crt.
+    # ProFTPD: TLSVerifyClient on and TLSCACertificateFile ftps-ca.crt. curl: --cert {{ $file }}.crt --key {{ $file }}.key;
+    # WinSCP: Advanced > TLS/SSL > Client certificate file takes {{ $file }}.pfx.
+    - commonName: {{ yaml . }}
+      pfx: modern
+      pfxPasswordEnv: {{ yaml $.PFXPasswordEnv }}
+      keyType: {{ $.KeyTypeOr "RSA-2048" }}
+      validity: {{ $.ValidityOr "8760h" }}
+      {{- include "subject" $ | nindent 6 }}
+      filename: {{ $file }}
+    {{- end }}

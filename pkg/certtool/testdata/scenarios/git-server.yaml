@@ -1,0 +1,36 @@
+# certtool spec for --scenario git, written by:
+#   certtool --scenario git --organization Acme --hostnames git.example.com --export-spec certs.yaml
+# Review it, then generate the certificates with:
+#   certtool --spec certs.yaml --output-dir certs
+# Running it again reuses the certificates already in the output directory,
+# so you can add entries later. Format: https://github.com/cloudfra/certtool/blob/main/docs/spec.md
+
+# Scenario git: Certificates for a Git server over HTTPS, and identities that sign commits with S/MIME or SSH and log in with a certificate or an SSH key.
+
+# CA. Clients trust git-ca.crt for the server: git config --global http.https://git.example.com/.sslCAInfo git-ca.crt.
+# Subversion: ssl-authority-files in ~/.subversion/servers. Mercurial: git.example.com:verifycertsfile under [hostsecurity].
+# Its key signs every certificate below it: keep git-ca.key off the servers, and use it only to issue certificates.
+- commonName: Acme Git CA
+  certificateAuthority: true
+  keyType: ECDSA-384
+  # 10 years.
+  validity: 87600h
+  organization: Acme
+  filename: git-ca
+  # Name constraints: certificates below this CA may only use these names and their subdomains.
+  # Add a domain before you issue a certificate for it; changing them later means regenerating the CA and everything below it.
+  # IP addresses are not limited, so certtool still adds 127.0.0.1; add permittedIPRanges to limit them.
+  permittedDNSDomains:
+    - git.example.com
+  children:
+    # Server certificate for git.example.com. Gitea: CERT_FILE git-server-git-example-com.crt and KEY_FILE git-server-git-example-com.key
+    # under [server] with PROTOCOL = https. GitLab: nginx['ssl_certificate'] and nginx['ssl_certificate_key'] in gitlab.rb.
+    # Bitbucket, or nginx in front of git http-backend: ssl_certificate and ssl_certificate_key.
+    - commonName: git.example.com
+      keyType: ECDSA-256
+      # To renew, delete git-server-git-example-com.crt and git-server-git-example-com.key, then run the spec again.
+      validity: 8760h
+      organization: Acme
+      hostnames:
+        - git.example.com
+      filename: git-server-git-example-com

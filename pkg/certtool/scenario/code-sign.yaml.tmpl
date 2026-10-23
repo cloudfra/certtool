@@ -1,0 +1,32 @@
+{{- /*
+summary: A code signing certificate for Windows (signtool) or Linux (osslsigncode).
+target: true
+*/ -}}
+
+{{- $target := codeSignTarget .Target }}
+{{- if .ExternalRoot }}
+# Code signing certificate, signed by the root CA on the YubiKey: run this spec with certtool --yubikey --spec.
+# Machines that trust the YubiKey root accept what it signs.
+{{- else }}
+# Self-signed code signing certificate. Machines must trust code-sign.crt to accept what it signs.
+{{- end }}
+# Anyone who has its key can sign code as you; see docs/use-cases/code-signing.md for signing and verifying.
+{{- if $target.OutputPFX }}
+# The key is also written to code-sign.pfx for signtool.
+{{- end }}
+- commonName: {{ yaml (print .Organization " Code Signing") }}
+  codeSigning: true
+  # windows7, windows10, windows11, or linux. The key type comes from the target unless keyType is set.
+  {{- if $target.LegacyPFX }}
+  # windows7 writes a legacy .pfx (3DES with a SHA-1 MAC) that is easy to brute-force: use a long random password.
+  {{- end }}
+  target: {{ $target.Name }}
+  {{- if $target.OutputPFX }}
+  pfxPasswordEnv: {{ yaml .PFXPasswordEnv }}
+  {{- end }}
+  {{- with .KeyType }}
+  keyType: {{ . }}
+  {{- end }}
+  validity: {{ .ValidityOr "26280h" }}
+  {{- include "subject" . | nindent 2 }}
+  filename: code-sign

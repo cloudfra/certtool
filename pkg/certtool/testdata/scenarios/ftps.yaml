@@ -1,0 +1,47 @@
+# certtool spec for --scenario ftps, written by:
+#   certtool --scenario ftps --organization Acme --hostnames ftp.example.com --clients partner-upload --export-spec certs.yaml
+# Review it, then generate the certificates with:
+#   certtool --spec certs.yaml --output-dir certs
+# Running it again reuses the certificates already in the output directory,
+# so you can add entries later. Format: https://github.com/cloudfra/certtool/blob/main/docs/spec.md
+
+# Scenario ftps: A CA that signs an FTPS (FTP over TLS) server certificate and optional client certificates, for vsftpd, ProFTPD, and FileZilla Server.
+
+# CA. Clients trust ftps-ca.crt: curl --ssl-reqd --cacert ftps-ca.crt, lftp set ssl:ca-file, or WinSCP's TLS options.
+# For SFTP, which runs over SSH and uses no certificates, see --scenario ssh.
+# Its key signs every certificate below it: keep ftps-ca.key off the servers, and use it only to issue certificates.
+- commonName: Acme FTPS CA
+  certificateAuthority: true
+  keyType: ECDSA-384
+  # 10 years.
+  validity: 87600h
+  organization: Acme
+  filename: ftps-ca
+  # Name constraints: certificates below this CA may only use these names and their subdomains.
+  # Add a domain before you issue a certificate for it; changing them later means regenerating the CA and everything below it.
+  # IP addresses are not limited, so certtool still adds 127.0.0.1; add permittedIPRanges to limit them.
+  permittedDNSDomains:
+    - ftp.example.com
+  children:
+    # FTPS server certificate. vsftpd: ssl_enable=YES, rsa_cert_file and rsa_private_key_file, force_local_logins_ssl=YES and
+    # force_local_data_ssl=YES. ProFTPD mod_tls: TLSEngine on, TLSRSACertificateFile and TLSRSACertificateKeyFile, TLSRequired on.
+    # FileZilla Server: the certificate and key files under Server > Configure > FTP over TLS.
+    # RSA, because some FTP servers only load RSA keys (vsftpd rsa_cert_file).
+    - commonName: ftp.example.com
+      keyType: RSA-2048
+      # To renew, delete ftps-server.crt and ftps-server.key, then run the spec again.
+      validity: 8760h
+      organization: Acme
+      hostnames:
+        - ftp.example.com
+      filename: ftps-server
+    # Client certificate for partner-upload. vsftpd: require_cert=YES, validate_cert=YES, and ca_certs_file ftps-ca.crt.
+    # ProFTPD: TLSVerifyClient on and TLSCACertificateFile ftps-ca.crt. curl: --cert ftps-client-partner-upload.crt --key ftps-client-partner-upload.key;
+    # WinSCP: Advanced > TLS/SSL > Client certificate file takes ftps-client-partner-upload.pfx.
+    - commonName: partner-upload
+      pfx: modern
+      pfxPasswordEnv: CERTTOOL_PFX_PASSWORD
+      keyType: RSA-2048
+      validity: 8760h
+      organization: Acme
+      filename: ftps-client-partner-upload

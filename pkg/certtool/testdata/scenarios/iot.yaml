@@ -1,0 +1,59 @@
+# certtool spec for --scenario iot, written by:
+#   certtool --scenario iot --organization Acme --hostnames mqtt.example.com --clients sensor-0001,sensor-0002 --export-spec certs.yaml
+# Review it, then generate the certificates with:
+#   certtool --spec certs.yaml --output-dir certs
+# Running it again reuses the certificates already in the output directory,
+# so you can add entries later. Format: https://github.com/cloudfra/certtool/blob/main/docs/spec.md
+
+# Scenario iot: A root CA and a device CA that sign an MQTT broker certificate and long-lived device certificates.
+
+# Root CA. The broker trusts iot-root-ca.crt to verify devices, and every device carries it to verify the broker.
+# Its key can sign anything below it, so move iot-root-ca.key offline once the issuing CA exists,
+# or keep the root on a YubiKey: certtool --scenario iot --yubikey.
+- commonName: Acme Device Root CA
+  certificateAuthority: true
+  keyType: ECDSA-384
+  # 10 years.
+  validity: 87600h
+  organization: Acme
+  filename: iot-root-ca
+  # Name constraints: certificates below this CA may only use these names and their subdomains.
+  # Add a domain before you issue a certificate for it; changing them later means regenerating the CA and everything below it.
+  # IP addresses are not limited, so certtool still adds 127.0.0.1; add permittedIPRanges to limit them.
+  permittedDNSDomains:
+    - mqtt.example.com
+  children:
+    # Issuing CA: signs the day-to-day certificates. Renew it well before it expires, because a certificate is only valid
+    # while its issuers are.
+    - commonName: Acme Device Issuing CA
+      certificateAuthority: true
+      keyType: ECDSA-256
+      # 3 years.
+      validity: 26280h
+      organization: Acme
+      filename: iot-issuing-ca
+      children:
+        # MQTT broker certificate. In the broker's configuration: cafile iot-root-ca.crt, certfile (this certificate followed by iot-issuing-ca.crt),
+        # keyfile, require_certificate true, and use_identity_as_username true, which makes each device's common name its user.
+        - commonName: mqtt.example.com
+          keyType: ECDSA-256
+          # To renew, delete iot-broker.crt and iot-broker.key, then run the spec again.
+          validity: 8760h
+          organization: Acme
+          hostnames:
+            - mqtt.example.com
+          filename: iot-broker
+        # Device certificate for sensor-0001. Provision the device with iot-device-sensor-0001.crt, iot-device-sensor-0001.key, iot-issuing-ca.crt,
+        # and iot-root-ca.crt. Valid for 5 years, because devices are hard to reach; plan how to replace it before then.
+        - commonName: sensor-0001
+          keyType: ECDSA-256
+          validity: 43800h
+          organization: Acme
+          filename: iot-device-sensor-0001
+        # Device certificate for sensor-0002. Provision the device with iot-device-sensor-0002.crt, iot-device-sensor-0002.key, iot-issuing-ca.crt,
+        # and iot-root-ca.crt. Valid for 5 years, because devices are hard to reach; plan how to replace it before then.
+        - commonName: sensor-0002
+          keyType: ECDSA-256
+          validity: 43800h
+          organization: Acme
+          filename: iot-device-sensor-0002

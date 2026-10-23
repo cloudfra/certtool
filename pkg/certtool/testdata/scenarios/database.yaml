@@ -1,0 +1,55 @@
+# certtool spec for --scenario database, written by:
+#   certtool --scenario database --organization Acme --hostnames postgres.internal.example.com,redis.internal.example.com --clients app --export-spec certs.yaml
+# Review it, then generate the certificates with:
+#   certtool --spec certs.yaml --output-dir certs
+# Running it again reuses the certificates already in the output directory,
+# so you can add entries later. Format: https://github.com/cloudfra/certtool/blob/main/docs/spec.md
+
+# Scenario database: A CA that signs a server certificate per database host and client certificates for database users (PostgreSQL, MySQL, Redis, MongoDB).
+
+# CA. Clients verify the servers with database-ca.crt: PostgreSQL sslrootcert with sslmode=verify-full, MySQL ssl-ca
+# with ssl-mode=VERIFY_IDENTITY, Redis tls-ca-cert-file, MongoDB tlsCAFile.
+# Its key signs every certificate below it: keep database-ca.key off the servers, and use it only to issue certificates.
+- commonName: Acme Database CA
+  certificateAuthority: true
+  keyType: ECDSA-384
+  # 10 years.
+  validity: 87600h
+  organization: Acme
+  filename: database-ca
+  # Name constraints: certificates below this CA may only use these names and their subdomains.
+  # Add a domain before you issue a certificate for it; changing them later means regenerating the CA and everything below it.
+  # IP addresses are not limited, so certtool still adds 127.0.0.1; add permittedIPRanges to limit them.
+  permittedDNSDomains:
+    - postgres.internal.example.com
+    - redis.internal.example.com
+  children:
+    # Server certificate for postgres.internal.example.com. PostgreSQL: ssl_cert_file and ssl_key_file (the key must belong to the postgres user).
+    # MySQL: ssl_cert and ssl_key. Redis: tls-cert-file and tls-key-file. MongoDB: tlsCertificateKeyFile takes the
+    # certificate and key in one file: cat database-postgres-internal-example-com.crt database-postgres-internal-example-com.key > database-postgres-internal-example-com.pem.
+    - commonName: postgres.internal.example.com
+      keyType: ECDSA-256
+      # To renew, delete database-postgres-internal-example-com.crt and database-postgres-internal-example-com.key, then run the spec again.
+      validity: 8760h
+      organization: Acme
+      hostnames:
+        - postgres.internal.example.com
+      filename: database-postgres-internal-example-com
+    # Server certificate for redis.internal.example.com. PostgreSQL: ssl_cert_file and ssl_key_file (the key must belong to the postgres user).
+    # MySQL: ssl_cert and ssl_key. Redis: tls-cert-file and tls-key-file. MongoDB: tlsCertificateKeyFile takes the
+    # certificate and key in one file: cat database-redis-internal-example-com.crt database-redis-internal-example-com.key > database-redis-internal-example-com.pem.
+    - commonName: redis.internal.example.com
+      keyType: ECDSA-256
+      # To renew, delete database-redis-internal-example-com.crt and database-redis-internal-example-com.key, then run the spec again.
+      validity: 8760h
+      organization: Acme
+      hostnames:
+        - redis.internal.example.com
+      filename: database-redis-internal-example-com
+    # Client certificate for the database user app, whose user name is the common name. PostgreSQL logs it in with
+    # the cert method in pg_hba.conf (hostssl all app all cert); MySQL with CREATE USER ... REQUIRE SUBJECT.
+    - commonName: app
+      keyType: ECDSA-256
+      validity: 8760h
+      organization: Acme
+      filename: database-user-app

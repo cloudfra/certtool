@@ -1,0 +1,44 @@
+{{- /*
+summary: A CA that signs a certificate per Kafka broker, with PKCS#12 keystores, and client certificates.
+hostnames: required
+hostnamesHelp: the name of each broker, one certificate each
+clients: optional
+clientsHelp: the Kafka clients that authenticate with a certificate
+*/ -}}
+
+{{- if .ExternalRoot }}
+{{ template "yubikey" }}
+{{- end }}
+# CA. Brokers and clients trust kafka-ca.crt: ssl.truststore.type=PEM and ssl.truststore.location=kafka-ca.crt.
+{{ template "ca-key" "kafka-ca" }}
+{{ include "ca" (dict "o" . "name" (print .Organization " Kafka CA") "file" "kafka-ca" "keyType" "ECDSA-384") }}
+  {{- include "constraints" (constraints .Hostnames) | nindent 2 }}
+  children:
+    {{- range .Hostnames }}
+    {{- $host := host . }}
+    {{- $file := print "kafka-" (slug $host) }}
+    # Broker certificate for {{ $host }}. In server.properties: ssl.keystore.type=PKCS12, ssl.keystore.location={{ $file }}.pfx,
+    # ssl.keystore.password and ssl.key.password set to the .pfx password, and ssl.client.auth=required for mutual TLS.
+    - commonName: {{ yaml $host }}
+      pfx: modern
+      pfxPasswordEnv: {{ yaml $.PFXPasswordEnv }}
+      keyType: {{ $.KeyTypeOr "ECDSA-256" }}
+      {{ template "renew" $file }}
+      validity: {{ $.ValidityOr "8760h" }}
+      {{- include "subject" $ | nindent 6 }}
+      hostnames:{{ include "items" (list .) | nindent 8 }}
+      filename: {{ $file }}
+    {{- end }}
+    {{- range .Clients }}
+    {{- $file := print "kafka-client-" (slug .) }}
+    # Client certificate for {{ . }}, in {{ $file }}.pfx for the client's ssl.keystore.location. Kafka's principal is the
+    # whole subject (User:CN={{ . }},O=...); to use the common name in ACLs, set
+    # ssl.principal.mapping.rules=RULE:^CN=([^,]+).*$/$1/,DEFAULT on the brokers.
+    - commonName: {{ yaml . }}
+      pfx: modern
+      pfxPasswordEnv: {{ yaml $.PFXPasswordEnv }}
+      keyType: {{ $.KeyTypeOr "ECDSA-256" }}
+      validity: {{ $.ValidityOr "8760h" }}
+      {{- include "subject" $ | nindent 6 }}
+      filename: {{ $file }}
+    {{- end }}

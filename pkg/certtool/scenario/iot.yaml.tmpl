@@ -1,0 +1,47 @@
+{{- /*
+summary: A root CA and a device CA that sign an MQTT broker certificate and long-lived device certificates.
+hostnames: required
+hostnamesHelp: the names of the MQTT broker
+clients: required
+clientsHelp: the device IDs, one certificate each
+*/ -}}
+
+{{- define "iot.issuing" }}
+{{- if .ExternalRoot }}
+{{ template "yubikey" }}
+# The broker trusts {{ .RootCert "iot-root-ca" }} to verify devices, and every device carries it to verify the broker.
+{{- end }}
+{{ template "issuing-comment" }}
+{{ include "issuing-ca" (dict "o" . "name" (print .Organization " Device Issuing CA") "file" "iot-issuing-ca" "keyType" "ECDSA-256") }}
+  {{- if .ExternalRoot }}{{ include "constraints" (constraints .Hostnames) | nindent 2 }}{{ end }}
+  children:
+    # MQTT broker certificate. In the broker's configuration: cafile {{ .RootCert "iot-root-ca" }}, certfile (this certificate followed by iot-issuing-ca.crt),
+    # keyfile, require_certificate true, and use_identity_as_username true, which makes each device's common name its user.
+    - commonName: {{ yaml (host (index .Hostnames 0)) }}
+      keyType: {{ .KeyTypeOr "ECDSA-256" }}
+      {{ template "renew" "iot-broker" }}
+      validity: {{ .ValidityOr "8760h" }}
+      {{- include "subject" . | nindent 6 }}
+      hostnames:{{ include "items" .Hostnames | nindent 8 }}
+      filename: iot-broker
+    {{- range .Clients }}
+    {{- $file := print "iot-device-" (slug .) }}
+    # Device certificate for {{ . }}. Provision the device with {{ $file }}.crt, {{ $file }}.key, iot-issuing-ca.crt,
+    # and {{ $.RootCert "iot-root-ca" }}. Valid for 5 years, because devices are hard to reach; plan how to replace it before then.
+    - commonName: {{ yaml . }}
+      keyType: {{ $.KeyTypeOr "ECDSA-256" }}
+      validity: {{ $.ValidityOr "43800h" }}
+      {{- include "subject" $ | nindent 6 }}
+      filename: {{ $file }}
+    {{- end }}
+{{- end }}
+
+{{- if .ExternalRoot }}
+{{ include "iot.issuing" . }}
+{{- else }}
+# Root CA. The broker trusts iot-root-ca.crt to verify devices, and every device carries it to verify the broker.
+{{ include "root-key" (dict "file" "iot-root-ca" "scenario" "iot") }}
+{{ include "root-ca" (dict "o" . "name" (print .Organization " Device Root CA") "file" "iot-root-ca" "keyType" "ECDSA-384") }}
+  {{- include "constraints" (constraints .Hostnames) | nindent 2 }}
+  children:{{ include "iot.issuing" . | nindent 4 }}
+{{- end }}

@@ -16,6 +16,7 @@ package certtool
 
 import (
 	"crypto/rsa"
+	"slices"
 	"testing"
 
 	"software.sslmate.com/src/go-pkcs12"
@@ -88,5 +89,37 @@ func TestToPFX_Legacy(t *testing.T) {
 	}
 	if _, ok := decodedKey.(*rsa.PrivateKey); !ok {
 		t.Errorf("decoded key is %T, want *rsa.PrivateKey", decodedKey)
+	}
+}
+
+func TestGenerateFromSpec_TLSPFX(t *testing.T) {
+	t.Parallel()
+	specs, err := UnmarshalSpec([]byte("- commonName: modern.example.com\n  pfx: modern\n  pfxPassword: secret\n- commonName: legacy.example.com\n  pfx: legacy\n  pfxPassword: secret\n- commonName: none.example.com\n"))
+	if err != nil {
+		t.Fatalf("UnmarshalSpec() err = %v", err)
+	}
+	out, err := GenerateFromSpec(specs, t.TempDir())
+	if err != nil {
+		t.Fatalf("GenerateFromSpec() err = %v", err)
+	}
+	for _, o := range out {
+		wantPFX := o.CommonName != "none.example.com"
+		if (o.PFXPath != "") != wantPFX {
+			t.Errorf("%s: PFXPath = %q, want a .pfx: %t", o.CommonName, o.PFXPath, wantPFX)
+			continue
+		}
+		if !wantPFX {
+			continue
+		}
+		key, cert, err := pkcs12.Decode(o.KeyPair.PFX, "secret")
+		if err != nil {
+			t.Fatalf("%s: pkcs12.Decode() err = %v", o.CommonName, err)
+		}
+		if key == nil || cert.Subject.CommonName != o.CommonName {
+			t.Errorf("%s: .pfx holds key %T and certificate %q", o.CommonName, key, cert.Subject.CommonName)
+		}
+	}
+	if names := SpecsWithLegacyPFX(specs); !slices.Equal(names, []string{"legacy.example.com"}) {
+		t.Errorf("SpecsWithLegacyPFX() = %v, want [legacy.example.com]", names)
 	}
 }

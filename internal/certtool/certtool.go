@@ -110,8 +110,12 @@ type Args struct {
 	NamePrefix string
 	// OutputDir is --output-dir.
 	OutputDir string
-	// ExportSpec is --export-spec.
+	// ExportSpec is --export-spec. "-" writes the spec to standard output.
 	ExportSpec string
+	// Scenario is --scenario, comma separated.
+	Scenario string
+	// Clients is --clients, comma separated.
+	Clients string
 
 	// YubiKey is --yubikey.
 	YubiKey bool
@@ -170,6 +174,14 @@ func Run(ctx context.Context, args Args) error {
 	if args.Version {
 		fmt.Printf("certtool %s (built %s)\n", internal.Version(), internal.Buildstamp())
 		return nil
+	}
+
+	if args.Scenario != "" {
+		next, err := runScenario(ctx, args)
+		if err != nil || next == nil {
+			return err
+		}
+		args = *next
 	}
 
 	if args.Target != "" && !args.CodeSigning {
@@ -476,6 +488,15 @@ func writeSpecFile(ctx context.Context, specs []certlib.CertificateSpec, path st
 	if err != nil {
 		return err
 	}
+	return writeSpecData(ctx, data, path)
+}
+
+// writeSpecData writes a spec to path, or to standard output when path is "-".
+func writeSpecData(ctx context.Context, data []byte, path string) error {
+	if path == "-" {
+		_, err := os.Stdout.Write(data)
+		return err
+	}
 	if err := safefile.WritePrivate(filepath.Clean(path), data); err != nil {
 		return err
 	}
@@ -500,11 +521,14 @@ func generateAndLogResults(ctx context.Context, specs []certlib.CertificateSpec,
 		if r.Reused {
 			msg = "reused existing certificate"
 		}
+		attrs := []any{"cn", r.CommonName, "cert", r.CertPath, "key", r.KeyPath}
 		if r.PFXPath != "" {
-			logging.FromContext(ctx).Info(msg, "cn", r.CommonName, "cert", r.CertPath, "key", r.KeyPath, "pfx", r.PFXPath)
-		} else {
-			logging.FromContext(ctx).Info(msg, "cn", r.CommonName, "cert", r.CertPath, "key", r.KeyPath)
+			attrs = append(attrs, "pfx", r.PFXPath)
 		}
+		if r.SSHPublicKeyPath != "" {
+			attrs = append(attrs, "ssh", r.SSHPublicKeyPath)
+		}
+		logging.FromContext(ctx).Info(msg, attrs...)
 	}
 	return nil
 }
@@ -520,7 +544,7 @@ func runSpec(ctx context.Context, args Args, issuer *certlib.Issuer, enc *certli
 	}
 
 	if names := certlib.SpecsWithUnprotectedPFX(specs); len(names) > 0 && args.ExportSpec == "" && !enc.Encrypts() {
-		logging.FromContext(ctx).Warn("these specs make a .pfx without a password, so anyone who can read it can sign code with its key; set pfxPasswordEnv", "specs", names)
+		logging.FromContext(ctx).Warn("these specs make a .pfx without a password, so anyone who can read it has its key; set pfxPasswordEnv", "specs", names)
 	}
 
 	if names := certlib.SpecsWithLegacyPFX(specs); len(names) > 0 && args.ExportSpec == "" {

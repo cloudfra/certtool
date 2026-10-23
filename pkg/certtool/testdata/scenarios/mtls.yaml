@@ -1,0 +1,62 @@
+# certtool spec for --scenario mtls, written by:
+#   certtool --scenario mtls --organization Acme --hostnames api.internal.example.com --clients billing,orders --export-spec certs.yaml
+# Review it, then generate the certificates with:
+#   certtool --spec certs.yaml --output-dir certs
+# Running it again reuses the certificates already in the output directory,
+# so you can add entries later. Format: https://github.com/cloudfra/certtool/blob/main/docs/spec.md
+
+# Scenario mtls: A root CA and an issuing CA that sign a server certificate and client certificates for mutual TLS, such as gRPC.
+
+# Root CA. Both sides trust mtls-root-ca.crt: the server to verify clients, and the clients to verify the server.
+# Its key can sign anything below it, so move mtls-root-ca.key offline once the issuing CA exists,
+# or keep the root on a YubiKey: certtool --scenario mtls --yubikey.
+- commonName: Acme mTLS Root CA
+  certificateAuthority: true
+  keyType: ECDSA-384
+  # 10 years.
+  validity: 87600h
+  organization: Acme
+  filename: mtls-root-ca
+  # Name constraints: certificates below this CA may only use these names and their subdomains.
+  # Add a domain before you issue a certificate for it; changing them later means regenerating the CA and everything below it.
+  # IP addresses are not limited, so certtool still adds 127.0.0.1; add permittedIPRanges to limit them.
+  permittedDNSDomains:
+    - api.internal.example.com
+  children:
+    # Issuing CA: signs the day-to-day certificates. Renew it well before it expires, because a certificate is only valid
+    # while its issuers are.
+    - commonName: Acme mTLS Issuing CA
+      certificateAuthority: true
+      keyType: ECDSA-256
+      # 3 years.
+      validity: 26280h
+      organization: Acme
+      filename: mtls-issuing-ca
+      children:
+        # Server certificate. Require a client certificate that chains to the root: nginx ssl_verify_client on with
+        # ssl_client_certificate mtls-root-ca.crt, or in Go tls.RequireAndVerifyClientCert with the root in ClientCAs.
+        # Present mtls-server.crt followed by mtls-issuing-ca.crt, so the other side only needs to trust the root.
+        - commonName: api.internal.example.com
+          keyType: ECDSA-256
+          # To renew, delete mtls-server.crt and mtls-server.key, then run the spec again.
+          validity: 2160h
+          organization: Acme
+          hostnames:
+            - api.internal.example.com
+          filename: mtls-server
+        # Client certificate for billing, valid for 90 days. The server sees billing as the subject common name:
+        # authorize on it, not just on the CA. To use it from a browser, add pfx: modern.
+        # Present mtls-client-billing.crt followed by mtls-issuing-ca.crt, so the other side only needs to trust the root.
+        - commonName: billing
+          keyType: ECDSA-256
+          validity: 2160h
+          organization: Acme
+          filename: mtls-client-billing
+        # Client certificate for orders, valid for 90 days. The server sees orders as the subject common name:
+        # authorize on it, not just on the CA. To use it from a browser, add pfx: modern.
+        # Present mtls-client-orders.crt followed by mtls-issuing-ca.crt, so the other side only needs to trust the root.
+        - commonName: orders
+          keyType: ECDSA-256
+          validity: 2160h
+          organization: Acme
+          filename: mtls-client-orders

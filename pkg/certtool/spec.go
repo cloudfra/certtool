@@ -15,8 +15,10 @@
 package certtool
 
 import (
+	"bytes"
 	"crypto"
 	"crypto/x509"
+	"encoding/pem"
 	"errors"
 	"fmt"
 	"net"
@@ -28,7 +30,10 @@ import (
 	"strings"
 	"time"
 
+	"golang.org/x/crypto/ssh"
 	"gopkg.in/yaml.v3"
+
+	"github.com/cloudfra/certtool/internal/safefile"
 )
 
 // CertificateSpec defines a certificate to generate. Specs form a tree: each
@@ -58,10 +63,17 @@ type CertificateSpec struct {
 	Target string `yaml:"target,omitempty"`
 
 	// PFXPassword sets the password on the PKCS#12 (.pfx) bundle produced
-	// for code signing certificates on Windows targets. An empty string
+	// for code signing certificates on Windows targets, or by pfx. An empty string
 	// means no password. Ignored when CodeSigning is false or the target
 	// does not produce PFX output.
 	PFXPassword string `yaml:"pfxPassword,omitempty"`
+
+	// PFX adds a PKCS#12 (.pfx) bundle to a TLS certificate, for systems that
+	// import a certificate and key as one file, such as Windows, Java
+	// keystores, and phones: "modern" (AES-256) or "legacy" (3DES, for
+	// Windows 7 and 8 and older Apple systems). Code signing certificates get
+	// theirs from Target instead.
+	PFX string `yaml:"pfx,omitempty"`
 
 	// PFXPasswordEnv names an environment variable that holds the PKCS#12
 	// password, so the spec file does not have to contain it. The variable
@@ -99,6 +111,19 @@ type CertificateSpec struct {
 	// Alternative Names (SANs). A port suffix (e.g. "app.example.com:443")
 	// is removed, because SANs cannot hold ports.
 	Hostnames []string `yaml:"hostnames,omitempty"`
+
+	// EmailAddresses makes a leaf a person's certificate, for S/MIME and Git
+	// commit signing: the addresses become subject alternative names, the
+	// extended key usages are email protection and TLS client, and
+	// localhost and 127.0.0.1 are not added. The CAs above it allow email
+	// protection.
+	EmailAddresses []string `yaml:"emailAddresses,omitempty"`
+
+	// SSHPublicKey also writes the certificate's public key in OpenSSH
+	// format to <filename>.key.pub, next to the key where OpenSSH looks for
+	// it, for SSH and SFTP logins and Git commit signing with gpg.format
+	// ssh. OpenSSH reads the .key as it is. Leaf certificates only.
+	SSHPublicKey bool `yaml:"sshPublicKey,omitempty"`
 
 	// Filename overrides the default output filename (without extension).
 	// By default filenames are derived from the slugified common name path
@@ -165,11 +190,28 @@ func validateSpec(spec *CertificateSpec) error {
 	if err := validateFilename(spec); err != nil {
 		return err
 	}
+	if spec.PFX != "" && spec.CodeSigning {
+		return fmt.Errorf("spec %q sets pfx on a code signing certificate, whose target decides its .pfx; remove pfx", spec.CommonName)
+	}
+	if _, _, err := specPFX(spec); err != nil {
+		return fmt.Errorf("spec %q: %w", spec.CommonName, err)
+	}
 	if spec.PFXPassword != "" && spec.PFXPasswordEnv != "" {
 		return fmt.Errorf("spec %q sets both pfxPassword and pfxPasswordEnv; keep only pfxPasswordEnv", spec.CommonName)
 	}
 	for _, hostname := range spec.Hostnames {
 		if err := ValidateHostname(hostname); err != nil {
+			return fmt.Errorf("spec %q: %w", spec.CommonName, err)
+		}
+	}
+	if len(spec.EmailAddresses) > 0 && (spec.CertificateAuthority || spec.CodeSigning) {
+		return fmt.Errorf("spec %q sets emailAddresses, which only apply to a leaf TLS certificate; remove certificateAuthority and codeSigning, or emailAddresses", spec.CommonName)
+	}
+	if spec.SSHPublicKey && spec.CertificateAuthority {
+		return fmt.Errorf("spec %q sets sshPublicKey on a CA, whose key should only sign certificates; set it on a leaf", spec.CommonName)
+	}
+	for _, email := range spec.EmailAddresses {
+		if err := ValidateEmailAddress(email); err != nil {
 			return fmt.Errorf("spec %q: %w", spec.CommonName, err)
 		}
 	}
@@ -235,13 +277,22 @@ func SpecsWithPFXPassword(specs []CertificateSpec) []string {
 	return names
 }
 
-// SpecsWithLegacyPFX returns the common names of the code signing specs in the
-// tree whose target writes a legacy .pfx (3DES with a SHA-1 MAC), which is far
-// easier to brute-force than the default.
+// specPFX reports whether spec makes a .pfx, and whether it is legacy.
+func specPFX(spec *CertificateSpec) (output, legacy bool, err error) {
+	target := spec.Target
+	if target == "" {
+		target = windows10Target
+	}
+	return pfxFormat(&Args{CodeSigning: spec.CodeSigning, Target: target, PFX: spec.PFX})
+}
+
+// SpecsWithLegacyPFX returns the common names of the specs in the tree that
+// write a legacy .pfx (3DES with a SHA-1 MAC), which is far easier to
+// brute-force than the default.
 func SpecsWithLegacyPFX(specs []CertificateSpec) []string {
 	var names []string
 	for i := range specs {
-		if profile, err := GetProfile(specs[i].Target); err == nil && specs[i].CodeSigning && profile.LegacyPFX {
+		if _, legacy, err := specPFX(&specs[i]); err == nil && legacy {
 			names = append(names, specs[i].CommonName)
 		}
 		names = append(names, SpecsWithLegacyPFX(specs[i].Children)...)
@@ -250,17 +301,13 @@ func SpecsWithLegacyPFX(specs []CertificateSpec) []string {
 }
 
 // SpecsWithUnprotectedPFX returns the common names of the specs in the tree
-// that produce a .pfx bundle without a password, which anyone who can read
-// the file can use to sign code.
+// that produce a .pfx bundle without a password, which gives its key to
+// anyone who can read the file.
 func SpecsWithUnprotectedPFX(specs []CertificateSpec) []string {
 	var names []string
 	for i := range specs {
 		s := &specs[i]
-		target := s.Target
-		if target == "" {
-			target = windows10Target
-		}
-		if profile, err := GetProfile(target); err == nil && s.CodeSigning && profile.OutputPFX && s.PFXPassword == "" && s.PFXPasswordEnv == "" {
+		if output, _, err := specPFX(s); err == nil && output && s.PFXPassword == "" && s.PFXPasswordEnv == "" {
 			names = append(names, s.CommonName)
 		}
 		names = append(names, SpecsWithUnprotectedPFX(s.Children)...)
@@ -472,6 +519,9 @@ type GenerationOutput struct {
 	// PFXPath is the filesystem path where the PKCS#12 bundle was written.
 	// Empty when the certificate does not produce PFX output.
 	PFXPath string
+	// SSHPublicKeyPath is where the OpenSSH public key was written. Empty
+	// unless the spec sets sshPublicKey.
+	SSHPublicKeyPath string
 	// Reused is set when the certificate and key already existed in the
 	// output directory and were kept instead of generated.
 	Reused bool
@@ -596,6 +646,7 @@ func generateSpec(spec *CertificateSpec, parentKP *KeyPair, issuer *Issuer, outp
 		}
 		args.PermittedDNSDomains = spec.PermittedDNSDomains
 		args.PermittedIPRanges = ranges
+		args.EmailProtection = signsEmail(spec)
 	}
 
 	enc := opts.Encryption
@@ -651,6 +702,17 @@ func generateSpec(spec *CertificateSpec, parentKP *KeyPair, issuer *Issuer, outp
 		output.PFXPath = existing
 	}
 
+	if spec.SSHPublicKey {
+		comment := spec.CommonName
+		if len(spec.EmailAddresses) > 0 {
+			comment = spec.EmailAddresses[0]
+		}
+		output.SSHPublicKeyPath = keyPath + ".pub"
+		if err := writeSSHPublicKey(kp, output.SSHPublicKeyPath, comment); err != nil {
+			return nil, fmt.Errorf("cannot write the SSH public key of %q: %w", spec.CommonName, err)
+		}
+	}
+
 	results := []GenerationOutput{output}
 
 	childAncestors := append(append([]string{}, ancestorCNs...), spec.CommonName)
@@ -669,7 +731,7 @@ func generateSpec(spec *CertificateSpec, parentKP *KeyPair, issuer *Issuer, outp
 // when neither file exists. The pair must still fit spec and its place in the
 // hierarchy described by args; anything else is an error wrapping
 // ErrExistingFiles, because reusing it would break the chain or ignore the
-// spec. For a code signing spec whose .pfx is missing, the .pfx is rebuilt
+// spec. For a spec whose .pfx is missing, the .pfx is rebuilt
 // from the reused key.
 func reuseKeyPair(spec *CertificateSpec, args *Args, certPath, keyPath, pfxPath string, enc *KeyEncryption) (*KeyPair, string, error) {
 	existingKey, err := existingPrivateFile(keyPath)
@@ -721,6 +783,9 @@ func checkReusedKeyPair(spec *CertificateSpec, args *Args, kp *KeyPair, certPath
 	if time.Now().After(cert.NotAfter) {
 		return nil, problem("expired at %s", cert.NotAfter.Format(time.RFC3339))
 	}
+	if args.EmailProtection && len(cert.ExtKeyUsage) > 0 && !slices.Contains(cert.ExtKeyUsage, x509.ExtKeyUsageEmailProtection) {
+		return nil, problem("does not allow email protection, which the certificates with emailAddresses below it need")
+	}
 
 	var parent *x509.Certificate
 	switch {
@@ -743,15 +808,8 @@ func checkReusedKeyPair(spec *CertificateSpec, args *Args, kp *KeyPair, certPath
 		return nil, problem("is not signed by %q, which issues it in the spec, probably because that certificate was regenerated", parent.Subject.CommonName)
 	}
 
-	if !spec.CodeSigning {
-		return kp, nil
-	}
-	target := args.Target
-	if target == "" {
-		target = windows10Target
-	}
-	profile, err := GetProfile(target)
-	if err != nil || !profile.OutputPFX {
+	outputPFX, legacyPFX, err := specPFX(spec)
+	if err != nil || !outputPFX {
 		return kp, err
 	}
 	existingPFX, err := existingPrivateFile(pfxPath)
@@ -764,10 +822,41 @@ func checkReusedKeyPair(spec *CertificateSpec, args *Args, kp *KeyPair, certPath
 		}
 		return kp, nil
 	}
-	if kp.PFX, err = toPFX(cert, key, args.PFXPassword, profile.LegacyPFX); err != nil {
+	if kp.PFX, err = toPFX(cert, key, args.PFXPassword, legacyPFX); err != nil {
 		return nil, fmt.Errorf("cannot rebuild the PFX for %q from %s: %w", spec.CommonName, keyPath, err)
 	}
 	return kp, nil
+}
+
+// writeSSHPublicKey writes the public key of kp to path in the OpenSSH
+// authorized_keys format, ending with comment. It is derived from the
+// certificate, so it is rewritten on every run.
+func writeSSHPublicKey(kp *KeyPair, path, comment string) error {
+	block, _ := pem.Decode(kp.PublicCertificate)
+	if block == nil {
+		return errors.New("the certificate is not PEM encoded")
+	}
+	cert, err := x509.ParseCertificate(block.Bytes)
+	if err != nil {
+		return err
+	}
+	pub, err := ssh.NewPublicKey(cert.PublicKey)
+	if err != nil {
+		return err
+	}
+	line := bytes.TrimSuffix(ssh.MarshalAuthorizedKey(pub), []byte("\n"))
+	return safefile.WritePublic(path, append(line, []byte(" "+strings.ReplaceAll(comment, " ", "_")+"\n")...))
+}
+
+// signsEmail reports whether a certificate below the CA spec has email
+// addresses, so the CA must allow email protection.
+func signsEmail(spec *CertificateSpec) bool {
+	for i := range spec.Children {
+		if len(spec.Children[i].EmailAddresses) > 0 || signsEmail(&spec.Children[i]) {
+			return true
+		}
+	}
+	return false
 }
 
 func fileExists(path string) bool {
@@ -781,6 +870,7 @@ func specToArgs(spec *CertificateSpec) *Args {
 		CodeSigning:        spec.CodeSigning,
 		Target:             spec.Target,
 		PFXPassword:        spec.PFXPassword,
+		PFX:                spec.PFX,
 		CommonName:         spec.CommonName,
 		Organization:       spec.Organization,
 		OrganizationalUnit: spec.OrganizationalUnit,
@@ -788,6 +878,7 @@ func specToArgs(spec *CertificateSpec) *Args {
 		Locality:           spec.Locality,
 		Province:           spec.Province,
 		Hostnames:          spec.Hostnames,
+		EmailAddresses:     spec.EmailAddresses,
 	}
 
 	if spec.Validity != "" {

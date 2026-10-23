@@ -1,0 +1,70 @@
+# certtool spec for --scenario microservices, written by:
+#   certtool --scenario microservices --organization Acme --hostnames api.platform.svc.cluster.local,orders.platform.svc.cluster.local,payments.platform.svc.cluster.local --export-spec certs.yaml
+# Review it, then generate the certificates with:
+#   certtool --spec certs.yaml --output-dir certs
+# Running it again reuses the certificates already in the output directory,
+# so you can add entries later. Format: https://github.com/cloudfra/certtool/blob/main/docs/spec.md
+
+# Scenario microservices: A root CA and an issuing CA that sign one certificate per service, used both to serve and to call the other services.
+
+# Root CA. Every service trusts microservices-root-ca.crt to verify its peers, and requires a client certificate from them.
+# Its key can sign anything below it, so move microservices-root-ca.key offline once the issuing CA exists,
+# or keep the root on a YubiKey: certtool --scenario microservices --yubikey.
+- commonName: Acme Services Root CA
+  certificateAuthority: true
+  keyType: ECDSA-384
+  # 10 years.
+  validity: 87600h
+  organization: Acme
+  filename: microservices-root-ca
+  # Name constraints: certificates below this CA may only use these names and their subdomains.
+  # Add a domain before you issue a certificate for it; changing them later means regenerating the CA and everything below it.
+  # IP addresses are not limited, so certtool still adds 127.0.0.1; add permittedIPRanges to limit them.
+  permittedDNSDomains:
+    - api.platform.svc.cluster.local
+    - orders.platform.svc.cluster.local
+    - payments.platform.svc.cluster.local
+  children:
+    # Issuing CA: signs the day-to-day certificates. Renew it well before it expires, because a certificate is only valid
+    # while its issuers are.
+    - commonName: Acme Services Issuing CA
+      certificateAuthority: true
+      keyType: ECDSA-256
+      # 3 years.
+      validity: 26280h
+      organization: Acme
+      filename: microservices-issuing-ca
+      children:
+        # Certificate for the service api.platform.svc.cluster.local. The service serves with it and presents it when it calls other services,
+        # because certtool's TLS certificates are valid for both. Authorize callers by name, not just by the CA.
+        # Present microservices-api-platform-svc-cluster-local.crt followed by microservices-issuing-ca.crt, so the other side only needs to trust the root.
+        - commonName: api.platform.svc.cluster.local
+          keyType: ECDSA-256
+          # To renew, delete microservices-api-platform-svc-cluster-local.crt and microservices-api-platform-svc-cluster-local.key, then run the spec again.
+          validity: 2160h
+          organization: Acme
+          hostnames:
+            - api.platform.svc.cluster.local
+          filename: microservices-api-platform-svc-cluster-local
+        # Certificate for the service orders.platform.svc.cluster.local. The service serves with it and presents it when it calls other services,
+        # because certtool's TLS certificates are valid for both. Authorize callers by name, not just by the CA.
+        # Present microservices-orders-platform-svc-cluster-local.crt followed by microservices-issuing-ca.crt, so the other side only needs to trust the root.
+        - commonName: orders.platform.svc.cluster.local
+          keyType: ECDSA-256
+          # To renew, delete microservices-orders-platform-svc-cluster-local.crt and microservices-orders-platform-svc-cluster-local.key, then run the spec again.
+          validity: 2160h
+          organization: Acme
+          hostnames:
+            - orders.platform.svc.cluster.local
+          filename: microservices-orders-platform-svc-cluster-local
+        # Certificate for the service payments.platform.svc.cluster.local. The service serves with it and presents it when it calls other services,
+        # because certtool's TLS certificates are valid for both. Authorize callers by name, not just by the CA.
+        # Present microservices-payments-platform-svc-cluster-local.crt followed by microservices-issuing-ca.crt, so the other side only needs to trust the root.
+        - commonName: payments.platform.svc.cluster.local
+          keyType: ECDSA-256
+          # To renew, delete microservices-payments-platform-svc-cluster-local.crt and microservices-payments-platform-svc-cluster-local.key, then run the spec again.
+          validity: 2160h
+          organization: Acme
+          hostnames:
+            - payments.platform.svc.cluster.local
+          filename: microservices-payments-platform-svc-cluster-local

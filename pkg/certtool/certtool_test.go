@@ -1135,6 +1135,20 @@ func TestSubjectAltNames(t *testing.T) {
 	}
 }
 
+func TestValidateEmailAddress(t *testing.T) {
+	t.Parallel()
+	for _, email := range []string{"alice@example.com", "a.b+git@sub.example.co.uk"} {
+		if err := ValidateEmailAddress(email); err != nil {
+			t.Errorf("ValidateEmailAddress(%q) err = %v", email, err)
+		}
+	}
+	for _, email := range []string{"", "alice", "Alice <alice@example.com>", " alice@example.com", "alice@", "alice@*.example.com", "alice@exa mple.com"} {
+		if err := ValidateEmailAddress(email); err == nil {
+			t.Errorf("ValidateEmailAddress(%q) err = nil, want an error", email)
+		}
+	}
+}
+
 func TestValidateHostname(t *testing.T) {
 	t.Parallel()
 	for _, hostname := range []string{

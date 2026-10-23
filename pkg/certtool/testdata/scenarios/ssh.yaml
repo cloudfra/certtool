@@ -1,0 +1,59 @@
+# certtool spec for --scenario ssh, written by:
+#   certtool --scenario ssh --organization Acme --hostnames sftp.example.com,bastion.example.com --clients alice,backup --export-spec certs.yaml
+# Review it, then generate the certificates with:
+#   certtool --spec certs.yaml --output-dir certs
+# Running it again reuses the certificates already in the output directory,
+# so you can add entries later. Format: https://github.com/cloudfra/certtool/blob/main/docs/spec.md
+
+# Scenario ssh: SSH keys for SSH, SFTP, SCP, and rsync: host keys that clients pin in known_hosts, and user keys for authorized_keys.
+
+# Host key for sftp.example.com. sshd_config: HostKey /etc/ssh/ssh-host-sftp-example-com.key, owned by root with mode 0600.
+# Clients pin it, so the first connection is not a guess: add a line to ~/.ssh/known_hosts with sftp.example.com followed by the
+# type and data in ssh-host-sftp-example-com.key.pub. SFTP and SCP clients, such as WinSCP and FileZilla, show the same key's fingerprint:
+# ssh-keygen -lf ssh-host-sftp-example-com.key.pub.
+# SSH uses only the key: certtool writes a certificate too, which SSH ignores. certtool does not make OpenSSH certificates
+# (ssh-keygen -s), so each key is trusted on its own.
+- commonName: sftp.example.com
+  keyType: ECDSA-256
+  # 10 years. SSH ignores it.
+  validity: 87600h
+  organization: Acme
+  hostnames:
+    - sftp.example.com
+  sshPublicKey: true
+  filename: ssh-host-sftp-example-com
+# Host key for bastion.example.com. sshd_config: HostKey /etc/ssh/ssh-host-bastion-example-com.key, owned by root with mode 0600.
+# Clients pin it, so the first connection is not a guess: add a line to ~/.ssh/known_hosts with bastion.example.com followed by the
+# type and data in ssh-host-bastion-example-com.key.pub. SFTP and SCP clients, such as WinSCP and FileZilla, show the same key's fingerprint:
+# ssh-keygen -lf ssh-host-bastion-example-com.key.pub.
+- commonName: bastion.example.com
+  keyType: ECDSA-256
+  # 10 years. SSH ignores it.
+  validity: 87600h
+  organization: Acme
+  hostnames:
+    - bastion.example.com
+  sshPublicKey: true
+  filename: ssh-host-bastion-example-com
+# Key of alice. On each server, append ssh-user-alice.key.pub to ~alice/.ssh/authorized_keys. Log in with
+# ssh -i ssh-user-alice.key, sftp -i, scp -i, or rsync -e "ssh -i ssh-user-alice.key". For an account that may only transfer
+# files, add to sshd_config: Match User alice with ForceCommand internal-sftp and ChrootDirectory. In authorized_keys,
+# restrict automation keys with from="<addresses>",restrict before the key.
+- commonName: alice
+  keyType: ECDSA-256
+  # SSH ignores it. To rotate the key, delete ssh-user-alice.crt and ssh-user-alice.key, then run the spec again.
+  validity: 8760h
+  organization: Acme
+  sshPublicKey: true
+  filename: ssh-user-alice
+# Key of backup. On each server, append ssh-user-backup.key.pub to ~backup/.ssh/authorized_keys. Log in with
+# ssh -i ssh-user-backup.key, sftp -i, scp -i, or rsync -e "ssh -i ssh-user-backup.key". For an account that may only transfer
+# files, add to sshd_config: Match User backup with ForceCommand internal-sftp and ChrootDirectory. In authorized_keys,
+# restrict automation keys with from="<addresses>",restrict before the key.
+- commonName: backup
+  keyType: ECDSA-256
+  # SSH ignores it. To rotate the key, delete ssh-user-backup.crt and ssh-user-backup.key, then run the spec again.
+  validity: 8760h
+  organization: Acme
+  sshPublicKey: true
+  filename: ssh-user-backup

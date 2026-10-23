@@ -1,0 +1,40 @@
+{{- /*
+summary: A CA that signs a VPN gateway certificate and client certificates, for OpenVPN and IKEv2/IPsec (strongSwan, Windows, macOS, iOS, Android).
+hostnames: required
+hostnamesHelp: the names and addresses clients connect to the gateway by
+clients: required
+clientsHelp: the users or devices that connect, one certificate each
+*/ -}}
+
+{{- if .ExternalRoot }}
+{{ template "yubikey" }}
+{{- end }}
+# CA. Gateways and clients trust vpn-ca.crt (OpenVPN: ca; strongSwan: /etc/swanctl/x509ca).
+# certtool does not make CRLs, so keep client certificates short-lived; OpenVPN needs a CRL to revoke one early.
+{{ template "ca-key" "vpn-ca" }}
+{{ include "ca" (dict "o" . "name" (print .Organization " VPN CA") "file" "vpn-ca" "keyType" "ECDSA-384") }}
+  {{- include "constraints" (constraints .Hostnames) | nindent 2 }}
+  children:
+    # Gateway certificate. OpenVPN: cert vpn-gateway.crt and key vpn-gateway.key. strongSwan: /etc/swanctl/x509 and private.
+    # IKEv2 clients on Windows, macOS, iOS, and Android check that the name they connect to is in hostnames.
+    # To add a gateway, copy this entry with a new commonName, hostnames, and filename.
+    - commonName: {{ yaml (host (index .Hostnames 0)) }}
+      keyType: {{ .KeyTypeOr "ECDSA-256" }}
+      {{ template "renew" "vpn-gateway" }}
+      validity: {{ .ValidityOr "8760h" }}
+      {{- include "subject" . | nindent 6 }}
+      hostnames:{{ include "items" .Hostnames | nindent 8 }}
+      filename: vpn-gateway
+    {{- range .Clients }}
+    {{- $file := print "vpn-client-" (slug .) }}
+    # Client certificate for {{ . }}, valid for 180 days. OpenVPN clients use the .crt and .key; Windows, macOS, iOS, and
+    # Android import {{ $file }}.pfx. Every certtool TLS certificate is also valid for server authentication, so make
+    # OpenVPN clients check the gateway's name with verify-x509-name {{ host (index $.Hostnames 0) }} name, not only remote-cert-tls server.
+    - commonName: {{ yaml . }}
+      pfx: modern
+      pfxPasswordEnv: {{ yaml $.PFXPasswordEnv }}
+      keyType: {{ $.KeyTypeOr "ECDSA-256" }}
+      validity: {{ $.ValidityOr "4380h" }}
+      {{- include "subject" $ | nindent 6 }}
+      filename: {{ $file }}
+    {{- end }}

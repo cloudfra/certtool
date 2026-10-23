@@ -27,6 +27,7 @@ import (
 	"fmt"
 	"math/big"
 	"net"
+	"net/mail"
 	"slices"
 	"sort"
 	"strings"
@@ -101,11 +102,53 @@ type Args struct {
 	// auto-SANs (localhost/127.0.0.1) are added.
 	CodeSigning bool
 	// Target selects a named platform profile when CodeSigning is true.
-	// Valid values: windows7, windows10, windows11, linux (and aliases).
+	// Valid values: windows7, windows10, windows11, linux, android (and aliases).
 	// Defaults to "windows10" when empty and CodeSigning is true.
 	Target string
 	// PFXPassword is the password for PKCS#12 output. Empty string = no password.
 	PFXPassword string
+	// PFX adds a PKCS#12 bundle to a TLS certificate: PFXModern or PFXLegacy.
+	// Empty means none. Code signing certificates take theirs from Target.
+	PFX string
+	// EmailAddresses makes a leaf certificate a person's: S/MIME and Git
+	// commit signing. The addresses become subject alternative names, the
+	// extended key usages are email protection and TLS client, and certtool
+	// does not add localhost and 127.0.0.1.
+	EmailAddresses []string
+	// EmailProtection lets a CA sign certificates with EmailAddresses, by
+	// adding email protection to its extended key usages.
+	EmailProtection bool
+}
+
+// PKCS#12 formats of a TLS certificate's .pfx.
+const (
+	// PFXModern encrypts with AES-256 and PBKDF2. Windows 10 and later, Java,
+	// Android, and OpenSSL 3 read it.
+	PFXModern = "modern"
+	// PFXLegacy encrypts with 3DES and a SHA-1 MAC, which is easier to
+	// brute-force, for importers that cannot read PFXModern, such as Windows
+	// 7 and 8 and older Apple systems.
+	PFXLegacy = "legacy"
+)
+
+// pfxFormat reports whether args makes a .pfx, and whether it is legacy.
+func pfxFormat(args *Args) (output, legacy bool, err error) {
+	if args.CodeSigning {
+		profile, err := GetProfile(args.Target)
+		if err != nil {
+			return false, false, err
+		}
+		return profile.OutputPFX, profile.LegacyPFX, nil
+	}
+	switch args.PFX {
+	case "":
+		return false, false, nil
+	case PFXModern:
+		return true, false, nil
+	case PFXLegacy:
+		return true, true, nil
+	}
+	return false, false, fmt.Errorf("unknown .pfx format %q: use %s or %s", args.PFX, PFXModern, PFXLegacy)
 }
 
 // GetKeyType returns the KeyType from the Args, or a default if nil.
@@ -153,6 +196,20 @@ func ValidateHostname(hostname string) error {
 	}
 	if err := validateDNSName(host); err != nil {
 		return fmt.Errorf("hostname %q is not a valid DNS name or IP address: %w", hostname, err)
+	}
+	return nil
+}
+
+// ValidateEmailAddress returns an error unless email is a bare address, such
+// as alice@example.com, that can be a certificate's subject alternative name.
+func ValidateEmailAddress(email string) error {
+	addr, err := mail.ParseAddress(email)
+	if err != nil || addr.Name != "" || addr.Address != email {
+		return fmt.Errorf("email address %q must be a bare address such as alice@example.com", email)
+	}
+	domain := email[strings.LastIndex(email, "@")+1:]
+	if err := validateDNSName(domain); err != nil || strings.HasPrefix(domain, "*") {
+		return fmt.Errorf("email address %q does not end in a valid domain", email)
 	}
 	return nil
 }
@@ -428,22 +485,20 @@ func createCertificateAndPrivateKeyPEM(args *Args) (*KeyPair, error) {
 		PrivateKey:        privateKeyPemBytes,
 	}
 
-	if args.CodeSigning {
-		profile, profileErr := GetProfile(args.Target)
-		if profileErr != nil {
-			return nil, profileErr
+	outputPFX, legacyPFX, err := pfxFormat(args)
+	if err != nil {
+		return nil, err
+	}
+	if outputPFX {
+		parsedCert, parseErr := x509.ParseCertificate(cert)
+		if parseErr != nil {
+			return nil, fmt.Errorf("cannot parse generated certificate for PKCS#12: %w", parseErr)
 		}
-		if profile.OutputPFX {
-			parsedCert, parseErr := x509.ParseCertificate(cert)
-			if parseErr != nil {
-				return nil, fmt.Errorf("cannot parse generated certificate for PKCS#12: %w", parseErr)
-			}
-			pfxBytes, pfxErr := toPFX(parsedCert, privateKey, args.PFXPassword, profile.LegacyPFX)
-			if pfxErr != nil {
-				return nil, fmt.Errorf("cannot generate PKCS#12: %w", pfxErr)
-			}
-			kp.PFX = pfxBytes
+		pfxBytes, pfxErr := toPFX(parsedCert, privateKey, args.PFXPassword, legacyPFX)
+		if pfxErr != nil {
+			return nil, fmt.Errorf("cannot generate PKCS#12: %w", pfxErr)
 		}
+		kp.PFX = pfxBytes
 	}
 
 	return kp, nil
@@ -474,6 +529,12 @@ func newCertificateTemplate(args *Args, pub crypto.PublicKey) (*x509.Certificate
 			keyUsage |= x509.KeyUsageKeyEncipherment
 		}
 		extKeyUsage = []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth, x509.ExtKeyUsageClientAuth}
+		switch {
+		case args.CA && args.EmailProtection:
+			extKeyUsage = append(extKeyUsage, x509.ExtKeyUsageEmailProtection)
+		case !args.CA && len(args.EmailAddresses) > 0:
+			extKeyUsage = []x509.ExtKeyUsage{x509.ExtKeyUsageEmailProtection, x509.ExtKeyUsageClientAuth}
+		}
 	}
 
 	certTemplate := &x509.Certificate{
@@ -513,7 +574,22 @@ func newCertificateTemplate(args *Args, pub crypto.PublicKey) (*x509.Certificate
 		return certTemplate, nil
 	}
 
-	if !args.CodeSigning {
+	if len(args.EmailAddresses) > 0 {
+		if args.CodeSigning {
+			return nil, fmt.Errorf("a code signing certificate cannot have email addresses")
+		}
+		for _, email := range args.EmailAddresses {
+			if err := ValidateEmailAddress(email); err != nil {
+				return nil, err
+			}
+		}
+		certTemplate.EmailAddresses = slices.Clone(args.EmailAddresses)
+		// A person's certificate names only what it was given.
+		certTemplate.DNSNames, certTemplate.IPAddresses, err = subjectAltNames(args.Hostnames)
+		if err != nil {
+			return nil, err
+		}
+	} else if !args.CodeSigning {
 		// Clone so the caller's Hostnames are never appended to in place.
 		hostnames := append(slices.Clone(args.Hostnames), "localhost", "127.0.0.1")
 		certTemplate.DNSNames, certTemplate.IPAddresses, err = subjectAltNames(hostnames)
@@ -559,9 +635,12 @@ func checkIssuer(issuer *x509.Certificate, template *x509.Certificate, now time.
 			continue
 		}
 		err := fmt.Errorf("parent certificate %q is limited to %s, so clients would reject a %s certificate it signs", cn, extKeyUsageNames(issuer.ExtKeyUsage), extKeyUsageName(usage))
-		if usage == x509.ExtKeyUsageCodeSigning {
+		switch usage {
+		case x509.ExtKeyUsageCodeSigning:
 			// CAs made by --ca, --chain, and --spec are limited to TLS.
 			err = fmt.Errorf("%w; sign code signing certificates with a CA that has no extended key usage limit, such as a YubiKey root, or leave them self-signed", err)
+		case x509.ExtKeyUsageEmailProtection:
+			err = fmt.Errorf("%w; a spec CA allows email protection when a certificate below it has emailAddresses, so regenerate the CA", err)
 		}
 		return err
 	}
@@ -699,6 +778,8 @@ func extKeyUsageName(usage x509.ExtKeyUsage) string {
 		return "TLS client"
 	case x509.ExtKeyUsageCodeSigning:
 		return "code signing"
+	case x509.ExtKeyUsageEmailProtection:
+		return "email protection"
 	}
 	return fmt.Sprintf("extended key usage %d", usage)
 }

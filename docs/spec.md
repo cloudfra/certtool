@@ -20,9 +20,10 @@ A spec file is a YAML list of `CertificateSpec` entries. Each entry defines one 
 | `commonName` | string | yes | Subject common name (CN). |
 | `certificateAuthority` | bool | | Must be `true` when the spec has `children`. |
 | `codeSigning` | bool | | Generate a code signing certificate instead of TLS. A child must have the same value as its parent CA, so put code signing certificates at the top level. |
-| `target` | string | | Platform profile for code signing (`windows7`, `windows10`, `windows11`, `linux`). Default: `windows10`. |
-| `pfxPassword` | string | | Password for the `.pfx` bundle (code signing only). Stored in plain text, so certtool warns about it; prefer `pfxPasswordEnv`. |
-| `pfxPasswordEnv` | string | | Name of an environment variable that holds the `.pfx` password. It must be set when the spec is generated. `--export-spec` writes this instead of a password. |
+| `target` | string | | Platform profile for code signing (`windows7`, `windows10`, `windows11`, `linux`, `android`). Default: `windows10`. |
+| `pfx` | string | | TLS certificates only. Also write the certificate and key as a `.pfx` bundle, for systems that import one file (Windows, Java keystores, phones): `modern` (AES-256) or `legacy` (3DES with a SHA-1 MAC, for Windows 7 and 8 and older Apple systems). Code signing certificates get their `.pfx` from `target`. |
+| `pfxPassword` | string | | Password for the `.pfx` bundle. Stored in plain text, so certtool warns about it; prefer `pfxPasswordEnv`. |
+| `pfxPasswordEnv` | string | | Name of an environment variable that holds the `.pfx` password, for `pfx` or code signing. It must be set when the spec is generated. `--export-spec` writes this instead of a password. |
 | `keyType` | string | | Key algorithm and size (`RSA-2048`, `RSA-4096`, `ECDSA-256`, `ECDSA-384`). |
 | `validity` | string | | Go duration (e.g. `8760h` for 1 year, `87600h` for 10 years). Default: `8760h`. |
 | `organization` | string | | Subject organization (O). |
@@ -31,6 +32,8 @@ A spec file is a YAML list of `CertificateSpec` entries. Each entry defines one 
 | `locality` | string | | Subject locality (L). |
 | `province` | string | | Subject state/province (ST). |
 | `hostnames` | list | | DNS names and IPs added as SANs. A port suffix is removed; a wildcard must be the leftmost label with at least two labels after it (`*.example.com`). |
+| `emailAddresses` | list | | Leaf TLS certificates only. Makes the certificate a person's, for S/MIME and Git commit signing: the addresses become SANs, the extended key usages are email protection and TLS client, and `localhost` and `127.0.0.1` are not added. The CAs above it allow email protection. |
+| `sshPublicKey` | bool | `false` | Leaf certificates only. Also write the key's public half in OpenSSH format to `<filename>.key.pub`, for `authorized_keys`, `known_hosts`, SFTP, and Git SSH signing. OpenSSH reads the `.key` as it is. Rewritten on every run. |
 | `filename` | string | | Override the output filename (without extension). Must be a plain file name: directories, `..`, and absolute paths are rejected so every file stays in `--output-dir`. |
 | `maxPathLen` | int | | CAs only. How many CAs may sit below this one. Default: the number of CA levels below it in the spec, so `--chain 1,2,3` gives the root 1 and the intermediates 0. `-1` means no limit. |
 | `permittedDNSDomains` | list | | CAs only. DNS domains that certificates below the CA may use, as critical name constraints. `example.com` permits it and its subdomains; `.example.com` only its subdomains. |
@@ -340,9 +343,21 @@ A reused certificate must still fit the spec. certtool stops with an error, befo
 
 A reused entry's other fields, such as `hostnames` or `validity`, are not compared. To regenerate one certificate, delete its `.crt` and `.key` files, along with those of everything below it. To regenerate everything, pass `--overwrite`. A code signing entry whose `.pfx` is missing gets a new `.pfx` built from its existing key.
 
+## Starting from a scenario
+
+`--scenario` writes a commented spec for a common situation to `--output-dir` and generates it; with `--export-spec` it only writes the spec. Scenarios cover web servers, local HTTPS, mutual TLS, microservices, databases, Active Directory LDAPS, Kubernetes, VPNs, 802.1X EAP-TLS, IoT and MQTT, Kafka, Docker, Git servers and commit signing, SSH and SFTP keys, FTPS, iOS and Android apps, Android app signing, code signing, and TLS-inspecting proxies.
+
+```bash
+certtool --scenario active-directory --organization Acme --hostnames dc01.corp.example.com,dc02.corp.example.com --output-dir certs
+# After editing certs/active-directory.yaml:
+certtool --spec certs/active-directory.yaml --output-dir certs
+```
+
+[Scenarios](scenarios.md) describes each one and shows the spec it writes.
+
 ## Exporting a spec with --export-spec
 
-`--export-spec <path>` writes the spec as YAML instead of generating certificates. It works with `--chain`, `--spec`, and plain flags, so you can start from a generated hierarchy and customise it.
+`--export-spec <path>` writes the spec as YAML instead of generating certificates, or to standard output when the path is `-`. It works with `--scenario`, `--chain`, `--spec`, and plain flags, so you can start from a generated hierarchy and customize it.
 
 ```bash
 certtool --chain 1,2,1 --common-name svc --organization Acme --export-spec certs.yaml
@@ -385,225 +400,4 @@ certtool --hostnames example.com --export-spec single.yaml
   province: WA
   hostnames:
     - example.com
-```
-
-## Real-World Use Cases
-
-### Active Directory / LDAPS
-
-Active Directory Domain Controllers require certificates for LDAP over TLS (LDAPS). In production these come from an enterprise CA like AD CS, but for lab environments or testing you can generate them with a spec. Each DC needs a certificate with its FQDN in the SANs.
-
-```yaml
-- commonName: "Contoso Enterprise Root CA"
-  certificateAuthority: true
-  keyType: "RSA-4096"
-  validity: "87600h"
-  organization: "Contoso Ltd"
-  country: "US"
-  filename: "contoso-root-ca"
-  children:
-    - commonName: "dc01.contoso.local"
-      keyType: "RSA-2048"
-      validity: "8760h"
-      hostnames:
-        - dc01.contoso.local
-        - contoso.local
-        - ldap.contoso.local
-      filename: "dc01"
-    - commonName: "dc02.contoso.local"
-      keyType: "RSA-2048"
-      validity: "8760h"
-      hostnames:
-        - dc02.contoso.local
-        - contoso.local
-        - ldap.contoso.local
-      filename: "dc02"
-```
-
-```bash
-certtool --spec ad-ldaps.yaml --output-dir certs/
-```
-
-Import `contoso-root-ca.crt` into the Trusted Root store on domain members, and install each DC's cert/key pair on the corresponding server.
-
-### Kubernetes Cluster
-
-A Kubernetes cluster uses TLS throughout: the API server, etcd, kubelets, and the front proxy each need certificates from a shared root. This mirrors what `kubeadm` generates, useful for testing or custom cluster bootstrapping.
-
-```yaml
-- commonName: "kubernetes-ca"
-  certificateAuthority: true
-  keyType: "RSA-4096"
-  validity: "87600h"
-  organization: "kubernetes"
-  filename: "ca"
-  children:
-    - commonName: "kube-apiserver"
-      keyType: "RSA-2048"
-      validity: "8760h"
-      hostnames:
-        - kubernetes
-        - kubernetes.default
-        - kubernetes.default.svc
-        - kubernetes.default.svc.cluster.local
-        - 10.96.0.1
-        - 192.168.1.100
-      filename: "apiserver"
-    - commonName: "kube-apiserver-kubelet-client"
-      keyType: "RSA-2048"
-      validity: "8760h"
-      organization: "system:masters"
-      filename: "apiserver-kubelet-client"
-    - commonName: "etcd-ca"
-      certificateAuthority: true
-      keyType: "RSA-4096"
-      validity: "87600h"
-      filename: "etcd-ca"
-      children:
-        - commonName: "kube-etcd"
-          keyType: "RSA-2048"
-          validity: "8760h"
-          hostnames:
-            - localhost
-            - 127.0.0.1
-            - 192.168.1.100
-          filename: "etcd-server"
-        - commonName: "kube-etcd-peer"
-          keyType: "RSA-2048"
-          validity: "8760h"
-          hostnames:
-            - localhost
-            - 127.0.0.1
-            - 192.168.1.100
-          filename: "etcd-peer"
-```
-
-```bash
-certtool --spec k8s-cluster.yaml --output-dir /etc/kubernetes/pki/
-```
-
-### Mutual TLS (mTLS) for Microservices
-
-Service-to-service authentication using mutual TLS. Both sides present certificates from the same CA, so each service can verify the other.
-
-```yaml
-- commonName: "Platform Services CA"
-  certificateAuthority: true
-  keyType: "ECDSA-256"
-  validity: "43800h"
-  organization: "platform"
-  filename: "platform-ca"
-  children:
-    - commonName: "api-gateway"
-      keyType: "ECDSA-256"
-      validity: "8760h"
-      hostnames:
-        - api-gateway
-        - api-gateway.platform.svc.cluster.local
-      filename: "api-gateway"
-    - commonName: "user-service"
-      keyType: "ECDSA-256"
-      validity: "8760h"
-      hostnames:
-        - user-service
-        - user-service.platform.svc.cluster.local
-      filename: "user-service"
-    - commonName: "order-service"
-      keyType: "ECDSA-256"
-      validity: "8760h"
-      hostnames:
-        - order-service
-        - order-service.platform.svc.cluster.local
-      filename: "order-service"
-    - commonName: "payment-service"
-      keyType: "ECDSA-256"
-      validity: "8760h"
-      hostnames:
-        - payment-service
-        - payment-service.platform.svc.cluster.local
-      filename: "payment-service"
-```
-
-```bash
-certtool --spec mtls-services.yaml --output-dir certs/
-```
-
-Each service loads its own cert/key and the shared `platform-ca.crt` as the trusted root for verifying peers.
-
-### PostgreSQL and Redis with TLS
-
-Database and cache servers that accept TLS connections, with a shared CA so application servers can verify them.
-
-```yaml
-- commonName: "Infrastructure CA"
-  certificateAuthority: true
-  keyType: "RSA-4096"
-  validity: "87600h"
-  organization: "infra"
-  filename: "infra-ca"
-  children:
-    - commonName: "postgres.internal"
-      keyType: "RSA-2048"
-      validity: "8760h"
-      hostnames:
-        - postgres.internal
-        - db-primary.internal
-        - db-replica.internal
-        - localhost
-      filename: "postgres"
-    - commonName: "redis.internal"
-      keyType: "RSA-2048"
-      validity: "8760h"
-      hostnames:
-        - redis.internal
-        - redis-sentinel.internal
-        - localhost
-      filename: "redis"
-```
-
-```bash
-certtool --spec infra-tls.yaml --output-dir /etc/ssl/infra/
-```
-
-Configure PostgreSQL with `ssl_cert_file` / `ssl_key_file` and Redis with `tls-cert-file` / `tls-key-file`, then distribute `infra-ca.crt` to application servers.
-
-### VPN / IPSec Gateway
-
-A VPN root CA that signs gateway and client certificates for site-to-site or remote-access VPN tunnels.
-
-```yaml
-- commonName: "VPN Root CA"
-  certificateAuthority: true
-  keyType: "RSA-4096"
-  validity: "87600h"
-  organization: "Network Operations"
-  filename: "vpn-ca"
-  children:
-    - commonName: "vpn-gateway.example.com"
-      keyType: "RSA-2048"
-      validity: "8760h"
-      hostnames:
-        - vpn-gateway.example.com
-        - vpn.example.com
-        - 203.0.113.10
-      filename: "vpn-gateway"
-    - commonName: "site-b-gateway.example.com"
-      keyType: "RSA-2048"
-      validity: "8760h"
-      hostnames:
-        - site-b-gateway.example.com
-        - 203.0.113.20
-      filename: "site-b-gateway"
-    - commonName: "remote-user-alice"
-      keyType: "RSA-2048"
-      validity: "4380h"
-      filename: "client-alice"
-    - commonName: "remote-user-bob"
-      keyType: "RSA-2048"
-      validity: "4380h"
-      filename: "client-bob"
-```
-
-```bash
-certtool --spec vpn.yaml --output-dir /etc/openvpn/pki/
 ```
