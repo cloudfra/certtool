@@ -885,7 +885,7 @@ func iotScenario(o *ScenarioOptions) ([]scenarioEntry, error) {
 		trust:     "The broker trusts " + ScenarioIoT + "-root-ca.crt to verify devices, and every device carries it to verify the broker.",
 	}
 	broker := o.server(ScenarioIoT+"-broker", scenarioLeafKeyType, validity1Year,
-		"MQTT broker certificate. Mosquitto: cafile "+plan.rootFile()+".crt, certfile (this certificate followed by "+plan.issuerFile()+".crt),\n"+
+		"MQTT broker certificate. In the broker's configuration: cafile "+plan.rootFile()+".crt, certfile (this certificate followed by "+plan.issuerFile()+".crt),\n"+
 			"keyfile, require_certificate true, and use_identity_as_username true, which makes each device's common name its user.")
 	devices := o.clients(o.Clients, ScenarioIoT, "device", scenarioLeafKeyType, validity5Years, "", func(name, filename string) string {
 		return "Device certificate for " + name + ". Provision the device with " + filename + ".crt, " + filename + ".key, " + plan.issuerFile() + ".crt,\n" +

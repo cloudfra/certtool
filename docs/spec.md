@@ -354,7 +354,7 @@ certtool --spec certs.yaml --output-dir certs
 
 ## Exporting a spec with --export-spec
 
-`--export-spec <path>` writes the spec as YAML instead of generating certificates, or to standard output when the path is `-`. It works with `--scenario`, `--chain`, `--spec`, and plain flags, so you can start from a generated hierarchy and customise it.
+`--export-spec <path>` writes the spec as YAML instead of generating certificates, or to standard output when the path is `-`. It works with `--scenario`, `--chain`, `--spec`, and plain flags, so you can start from a generated hierarchy and customize it.
 
 ```bash
 certtool --chain 1,2,1 --common-name svc --organization Acme --export-spec certs.yaml

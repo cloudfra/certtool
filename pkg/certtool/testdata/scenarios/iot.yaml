@@ -26,7 +26,7 @@
       organization: Acme
       filename: iot-issuing-ca
       children:
-        # MQTT broker certificate. Mosquitto: cafile iot-root-ca.crt, certfile (this certificate followed by iot-issuing-ca.crt),
+        # MQTT broker certificate. In the broker's configuration: cafile iot-root-ca.crt, certfile (this certificate followed by iot-issuing-ca.crt),
         # keyfile, require_certificate true, and use_identity_as_username true, which makes each device's common name its user.
         - commonName: mqtt.example.com
           keyType: ECDSA-256
