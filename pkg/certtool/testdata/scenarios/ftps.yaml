@@ -26,6 +26,7 @@
     # FTPS server certificate. vsftpd: ssl_enable=YES, rsa_cert_file and rsa_private_key_file, force_local_logins_ssl=YES and
     # force_local_data_ssl=YES. ProFTPD mod_tls: TLSEngine on, TLSRSACertificateFile and TLSRSACertificateKeyFile, TLSRequired on.
     # FileZilla Server: the certificate and key files under Server > Configure > FTP over TLS.
+    # RSA, because some FTP servers only load RSA keys (vsftpd rsa_cert_file).
     - commonName: ftp.example.com
       keyType: RSA-2048
       # To renew, delete ftps-server.crt and ftps-server.key, then run the spec again.

@@ -8,7 +8,7 @@
 # Scenario web: A root CA and an issuing CA, name constrained to the hostnames, and a server certificate for websites and APIs.
 
 # Signed by the root CA on the YubiKey: run this spec with certtool --yubikey --spec.
-# Install web-root-ca.crt in the trust store of every client: the operating system, the browser, or the HTTP client's CA bundle.
+# Install the YubiKey root's certificate in the trust store of every client: the operating system, the browser, or the HTTP client's CA bundle.
 # Issuing CA: signs the day-to-day certificates. Renew it well before it expires, because a certificate is only valid
 # while its issuers are.
 - commonName: Acme Web Issuing CA

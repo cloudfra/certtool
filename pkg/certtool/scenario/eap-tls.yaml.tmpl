@@ -1,0 +1,40 @@
+{{- /*
+summary: A CA that signs a RADIUS server certificate and client certificates for 802.1X EAP-TLS on Wi-Fi and wired networks.
+hostnames: required
+hostnamesHelp: the name of the RADIUS server, which supplicants check
+clients: required
+clientsHelp: the users or devices that join the network, one certificate each
+*/ -}}
+
+{{- if .ExternalRoot }}
+{{ template "yubikey" }}
+{{- end }}
+# CA. Configure every supplicant to trust only eap-tls-ca.crt for this network and to check the RADIUS server's name;
+# otherwise anyone with a certificate from another CA the device trusts could pose as the network.
+{{ template "ca-key" "eap-tls-ca" }}
+{{ include "ca" (dict "o" . "name" (print .Organization " Network Access CA") "file" "eap-tls-ca" "keyType" "ECDSA-384") }}
+  {{- include "constraints" (constraints .Hostnames) | nindent 2 }}
+  children:
+    # RADIUS server certificate. FreeRADIUS: certificate_file, private_key_file, and ca_file in mods-available/eap.
+    # Windows NPS: import eap-tls-radius.pfx into the computer's Personal store and choose it in the network policy.
+    - commonName: {{ yaml (host (index .Hostnames 0)) }}
+      pfx: modern
+      pfxPasswordEnv: {{ yaml .PFXPasswordEnv }}
+      keyType: {{ .KeyTypeOr "ECDSA-256" }}
+      {{ template "renew" "eap-tls-radius" }}
+      validity: {{ .ValidityOr "8760h" }}
+      {{- include "subject" . | nindent 6 }}
+      hostnames:{{ include "items" .Hostnames | nindent 8 }}
+      filename: eap-tls-radius
+    {{- range .Clients }}
+    {{- $file := print "eap-tls-client-" (slug .) }}
+    # Client certificate for {{ . }}. Windows, macOS, iOS, and Android import {{ $file }}.pfx, or an MDM pushes it
+    # with the Wi-Fi profile. Linux wpa_supplicant uses client_cert and private_key. RADIUS can authorize on the common name.
+    - commonName: {{ yaml . }}
+      pfx: modern
+      pfxPasswordEnv: {{ yaml $.PFXPasswordEnv }}
+      keyType: {{ $.KeyTypeOr "ECDSA-256" }}
+      validity: {{ $.ValidityOr "8760h" }}
+      {{- include "subject" $ | nindent 6 }}
+      filename: {{ $file }}
+    {{- end }}

@@ -1,0 +1,38 @@
+{{- /*
+summary: A development CA that Android apps trust through a network security config, a backend certificate, and client certificates.
+hostnames: required
+hostnamesHelp: the names of the backend the app connects to; add 10.0.2.2 to reach the host from the emulator
+clients: optional
+clientsHelp: client certificates for apps that use mutual TLS
+*/ -}}
+
+{{- if .ExternalRoot }}
+{{ template "yubikey" }}
+{{- end }}
+# CA. Android apps do not trust user-installed CAs. Copy android-ca.crt to res/raw/android_ca.crt (resource names
+# cannot contain hyphens) and trust it in res/xml/network_security_config.xml, inside <debug-overrides> to keep it
+# out of release builds: <trust-anchors><certificates src="@raw/android_ca"/></trust-anchors>.
+{{ template "ca-key" "android-ca" }}
+{{ include "ca" (dict "o" . "name" (print .Organization " Android Development CA") "file" "android-ca" "keyType" "ECDSA-384") }}
+  {{- include "constraints" (constraints .Hostnames) | nindent 2 }}
+  children:
+    # Backend certificate. The emulator reaches the host machine at 10.0.2.2: pass it in --hostnames to use this from the emulator.
+    - commonName: {{ yaml (host (index .Hostnames 0)) }}
+      keyType: {{ .KeyTypeOr "ECDSA-256" }}
+      {{ template "renew" "android-server" }}
+      validity: {{ .ValidityOr "8760h" }}
+      {{- include "subject" . | nindent 6 }}
+      hostnames:{{ include "items" .Hostnames | nindent 8 }}
+      filename: android-server
+    {{- range .Clients }}
+    {{- $file := print "android-client-" (slug .) }}
+    # Client certificate for {{ . }}. Load {{ $file }}.pfx into a KeyStore of type PKCS12 for the app's SSLContext or
+    # OkHttp client, or install it in Settings > Security > Encryption & credentials for the browser.
+    - commonName: {{ yaml . }}
+      pfx: modern
+      pfxPasswordEnv: {{ yaml $.PFXPasswordEnv }}
+      keyType: {{ $.KeyTypeOr "ECDSA-256" }}
+      validity: {{ $.ValidityOr "8760h" }}
+      {{- include "subject" $ | nindent 6 }}
+      filename: {{ $file }}
+    {{- end }}

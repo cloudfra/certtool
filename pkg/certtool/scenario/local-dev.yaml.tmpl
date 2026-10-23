@@ -1,0 +1,20 @@
+{{- /*
+summary: A self-signed certificate for localhost and development hostnames.
+hostnames: optional
+hostnamesHelp: development names to add to localhost, such as myapp.localhost
+*/ -}}
+
+{{- if .ExternalRoot }}
+# Certificate for this machine, signed by the root CA on the YubiKey: run this spec with certtool --yubikey --spec.
+# certtool adds localhost and 127.0.0.1 itself. Machines that trust the YubiKey root trust it.
+{{- else }}
+# Self-signed certificate for this machine. certtool adds localhost and 127.0.0.1 itself.
+# Trust local-dev.crt only on the machine that holds local-dev.key; see docs/use-cases/local-development.md.
+{{- end }}
+- commonName: {{ if .Hostnames }}{{ yaml (host (index .Hostnames 0)) }}{{ else }}localhost{{ end }}
+  keyType: {{ .KeyTypeOr "ECDSA-256" }}
+  validity: {{ .ValidityOr "8760h" }}
+  {{- include "subject" . | nindent 2 }}
+  # Add the names you browse to, such as myapp.localhost.
+  hostnames:{{ include "items" (concat .Hostnames (list "::1")) | nindent 4 }}
+  filename: local-dev

@@ -1,0 +1,88 @@
+{{- /*
+summary: "The certificates kubeadm puts in /etc/kubernetes/pki: the cluster, front proxy, and etcd CAs and the certificates they sign."
+hostnames: required
+hostnamesHelp: the control-plane node name first, then its IP addresses and any load balancer name
+*/ -}}
+
+{{- define "kubernetes.yubikey" }}
+{{- if .ExternalRoot }}
+# Signed by the root CA on the YubiKey: run this spec with certtool --yubikey --spec. Kubernetes components trust
+# the CA file directly, so they do not need the YubiKey root.
+{{- end }}
+{{- end }}
+
+{{- define "kubernetes.ca" -}}
+- commonName: {{ .name }}
+  certificateAuthority: true
+  keyType: RSA-2048
+  {{- if .o.ExternalRoot }}
+  validity: 26280h
+  {{- else }}
+  validity: 87600h
+  {{- end }}
+  {{- include "subject" .o | nindent 2 }}
+  filename: {{ .file }}
+{{- end }}
+
+{{- define "kubernetes.leaf" -}}
+- commonName: {{ yaml .name }}
+  keyType: {{ .o.KeyTypeOr "RSA-2048" }}
+  validity: {{ .o.ValidityOr "8760h" }}
+  {{- include "subject" .o | nindent 2 }}
+  {{- with .hostnames }}
+  hostnames:{{ include "items" . | nindent 4 }}
+  {{- end }}
+  filename: {{ .file }}
+{{- end }}
+
+{{- $node := host (index .Hostnames 0) }}
+# Cluster CA. The file names are kubeadm's: generate with --output-dir /etc/kubernetes/pki on the first control-plane
+# node, move the etcd files as the etcd CA says, then run kubeadm init. kubeadm uses these certificates and makes
+# the kubeconfig files, the service account key pair (sa.key, sa.pub), and anything else that is missing.
+# Kubernetes reads a client certificate's organization as a group, so do not bind RBAC roles to {{ .Organization }}.
+{{- include "kubernetes.yubikey" . }}
+{{ include "kubernetes.ca" (dict "o" . "name" "kubernetes" "file" "ca") }}
+  children:
+    # API server certificate.
+    - commonName: kube-apiserver
+      keyType: {{ .KeyTypeOr "RSA-2048" }}
+      validity: {{ .ValidityOr "8760h" }}
+      {{- include "subject" . | nindent 6 }}
+      # Every name and address clients use for the API server: the node, a load balancer, and the first address of
+      # the service CIDR (10.96.0.1 for kubeadm's default 10.96.0.0/12). Change cluster.local if the cluster domain differs.
+      hostnames:
+        {{- include "items" .Hostnames | nindent 8 }}
+        - kubernetes
+        - kubernetes.default
+        - kubernetes.default.svc
+        - kubernetes.default.svc.cluster.local
+        - 10.96.0.1
+      filename: apiserver
+    # The client certificate the API server presents to kubelets.
+    - commonName: kube-apiserver-kubelet-client
+      keyType: {{ .KeyTypeOr "RSA-2048" }}
+      validity: {{ .ValidityOr "8760h" }}
+      # A Kubernetes group: system:masters may always use the kubelet API.
+      organization: system:masters
+      {{- include "subject-rest" . | nindent 6 }}
+      filename: apiserver-kubelet-client
+# Front proxy CA for the aggregation layer (--requestheader-client-ca-file). kubeadm keeps it separate from the
+# cluster CA, so a front proxy certificate cannot be used as a user's client certificate.
+{{- include "kubernetes.yubikey" . }}
+{{ include "kubernetes.ca" (dict "o" . "name" "front-proxy-ca" "file" "front-proxy-ca") }}
+  children:
+    # The client certificate the API server presents to extension API servers.
+    {{- include "kubernetes.leaf" (dict "o" . "name" "front-proxy-client" "file" "front-proxy-client" "hostnames" (list)) | nindent 4 }}
+# etcd CA. kubeadm reads the etcd certificates from /etc/kubernetes/pki/etcd/: move etcd-ca, etcd-server, etcd-peer,
+# and etcd-healthcheck-client (.crt and .key) there as ca, server, peer, and healthcheck-client.
+{{- include "kubernetes.yubikey" . }}
+{{ include "kubernetes.ca" (dict "o" . "name" "etcd-ca" "file" "etcd-ca") }}
+  children:
+    # etcd server certificate, named after the node.
+    {{- include "kubernetes.leaf" (dict "o" . "name" $node "file" "etcd-server" "hostnames" (concat .Hostnames (list "::1"))) | nindent 4 }}
+    # etcd peer certificate, for the other members of the etcd cluster. Its hostnames are the node's addresses.
+    {{- include "kubernetes.leaf" (dict "o" . "name" $node "file" "etcd-peer" "hostnames" .Hostnames) | nindent 4 }}
+    # Client certificate for the etcd liveness probe.
+    {{- include "kubernetes.leaf" (dict "o" . "name" "kube-etcd-healthcheck-client" "file" "etcd-healthcheck-client" "hostnames" (list)) | nindent 4 }}
+    # The client certificate the API server presents to etcd. It stays in /etc/kubernetes/pki.
+    {{- include "kubernetes.leaf" (dict "o" . "name" "kube-apiserver-etcd-client" "file" "apiserver-etcd-client" "hostnames" (list)) | nindent 4 }}

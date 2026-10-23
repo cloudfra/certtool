@@ -177,7 +177,11 @@ func Run(ctx context.Context, args Args) error {
 	}
 
 	if args.Scenario != "" {
-		return runScenario(ctx, args)
+		next, err := runScenario(ctx, args)
+		if err != nil || next == nil {
+			return err
+		}
+		args = *next
 	}
 
 	if args.Target != "" && !args.CodeSigning {

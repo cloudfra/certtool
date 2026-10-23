@@ -1,0 +1,38 @@
+{{- /*
+summary: A CA that signs a Docker daemon certificate and client certificates, to protect the Docker API on port 2376.
+hostnames: required
+hostnamesHelp: the names and addresses of the Docker host
+clients: optional
+clientsHelp: the clients that may use the Docker API; one named docker-client when not given
+*/ -}}
+
+{{- $clients := .Clients }}
+{{- if not $clients }}{{ $clients = list "docker-client" }}{{ end }}
+{{- $host := host (index .Hostnames 0) }}
+{{- if .ExternalRoot }}
+{{ template "yubikey" }}
+{{- end }}
+# CA. The daemon trusts docker-ca.crt to verify clients, and clients trust it to verify the daemon.
+{{ template "ca-key" "docker-ca" }}
+{{ include "ca" (dict "o" . "name" (print .Organization " Docker CA") "file" "docker-ca" "keyType" "ECDSA-384") }}
+  {{- include "constraints" (constraints .Hostnames) | nindent 2 }}
+  children:
+    # Docker daemon certificate. dockerd --tlsverify --tlscacert=docker-ca.crt --tlscert=docker-daemon.crt
+    # --tlskey=docker-daemon.key -H=0.0.0.0:2376, or the same settings in /etc/docker/daemon.json.
+    - commonName: {{ yaml $host }}
+      keyType: {{ .KeyTypeOr "ECDSA-256" }}
+      {{ template "renew" "docker-daemon" }}
+      validity: {{ .ValidityOr "8760h" }}
+      {{- include "subject" . | nindent 6 }}
+      hostnames:{{ include "items" .Hostnames | nindent 8 }}
+      filename: docker-daemon
+    {{- range $clients }}
+    {{- $file := print "docker-client-" (slug .) }}
+    # Client certificate for {{ . }}. Anyone who has it controls the Docker host. Copy docker-ca.crt, {{ $file }}.crt,
+    # and {{ $file }}.key to ~/.docker as ca.pem, cert.pem, and key.pem, then run: docker --tlsverify -H={{ $host }}:2376 version
+    - commonName: {{ yaml . }}
+      keyType: {{ $.KeyTypeOr "ECDSA-256" }}
+      validity: {{ $.ValidityOr "8760h" }}
+      {{- include "subject" $ | nindent 6 }}
+      filename: {{ $file }}
+    {{- end }}

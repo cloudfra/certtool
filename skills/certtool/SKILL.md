@@ -38,7 +38,7 @@ YubiKey support is in the Windows downloads, and on Linux and macOS only in buil
 | A CA and certificates it signs, few files | `--ca`, then `--parent-public-certificate` with `--parent-private-key` |
 | A regular hierarchy (root, intermediates, leaves) | `--chain 1,2,3 --output-dir DIR` |
 | Specific names, hostnames, or mixed trees | `--spec FILE --output-dir DIR` ([references/spec-format.md](references/spec-format.md)) |
-| A spec for a common situation | `--scenario NAME --export-spec FILE` first (web, local-dev, mtls, microservices, database, active-directory, kubernetes, vpn, eap-tls, iot, kafka, docker, git, ssh, ftps, ios, android, android-signing, code-sign, proxy), then edit it and run `--spec FILE`. Prefer this to writing a spec from scratch: it picks key types, validities, and name constraints, and explains them in comments |
+| A spec for a common situation | `--scenario NAME --output-dir DIR`, which writes `DIR/NAME.yaml` and generates it; `--export-spec FILE` only writes the spec (web, local-dev, mtls, microservices, database, active-directory, kubernetes, vpn, eap-tls, iot, kafka, docker, git, ssh, ftps, ios, android, android-signing, code-sign, proxy). To change the result, edit the spec and run `--spec DIR/NAME.yaml --output-dir DIR`. Prefer this to writing a spec from scratch: it picks key types, validities, and name constraints, and explains them in comments |
 | A spec to start editing from | `--export-spec FILE` with `--chain` or plain flags; writes the YAML and no certificates |
 | Code signing | `--code-sign --target windows10\|windows11\|windows7\|linux\|android` |
 | A root CA whose key never leaves hardware | `--yubikey-generate-root` once, then `--yubikey` |
@@ -60,7 +60,7 @@ certtool --common-name api.example.com --organization Acme --hostnames api.examp
   --public-certificate api.crt --private-key api.key
 
 # Commented spec for web servers and code signing: review certs.yaml, then generate it
-certtool --scenario web,code-sign --organization Acme --hostnames api.example.com --export-spec certs.yaml
+certtool --scenario web,code-sign --organization Acme --hostnames api.example.com --output-dir certs
 certtool --spec certs.yaml --output-dir certs   # .pfx password from CERTTOOL_PFX_PASSWORD
 
 # Hierarchy: 1 root, 2 intermediates, 3 leaves under each (files named after each CN)

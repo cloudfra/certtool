@@ -1,0 +1,40 @@
+{{- /*
+summary: A root CA and an issuing CA that sign one certificate per service, used both to serve and to call the other services.
+hostnames: required
+hostnamesHelp: the DNS name of each service, one certificate each, such as api.platform.svc.cluster.local
+*/ -}}
+
+{{- define "microservices.issuing" }}
+{{- if .ExternalRoot }}
+{{ template "yubikey" }}
+# Every service trusts {{ .RootCert "microservices-root-ca" }} to verify its peers, and requires a client certificate from them.
+{{- end }}
+{{ template "issuing-comment" }}
+{{ include "issuing-ca" (dict "o" . "name" (print .Organization " Services Issuing CA") "file" "microservices-issuing-ca" "keyType" "ECDSA-256") }}
+  {{- if .ExternalRoot }}{{ include "constraints" (constraints .Hostnames) | nindent 2 }}{{ end }}
+  children:
+    {{- range .Hostnames }}
+    {{- $host := host . }}
+    {{- $file := print "microservices-" (slug $host) }}
+    # Certificate for the service {{ $host }}. The service serves with it and presents it when it calls other services,
+    # because certtool's TLS certificates are valid for both. Authorize callers by name, not just by the CA.
+    {{ include "chain" (dict "file" $file "issuer" "microservices-issuing-ca") }}
+    - commonName: {{ yaml $host }}
+      keyType: {{ $.KeyTypeOr "ECDSA-256" }}
+      {{ template "renew" $file }}
+      validity: {{ $.ValidityOr "2160h" }}
+      {{- include "subject" $ | nindent 6 }}
+      hostnames:{{ include "items" (list .) | nindent 8 }}
+      filename: {{ $file }}
+    {{- end }}
+{{- end }}
+
+{{- if .ExternalRoot }}
+{{ include "microservices.issuing" . }}
+{{- else }}
+# Root CA. Every service trusts microservices-root-ca.crt to verify its peers, and requires a client certificate from them.
+{{ include "root-key" (dict "file" "microservices-root-ca" "scenario" "microservices") }}
+{{ include "root-ca" (dict "o" . "name" (print .Organization " Services Root CA") "file" "microservices-root-ca" "keyType" "ECDSA-384") }}
+  {{- include "constraints" (constraints .Hostnames) | nindent 2 }}
+  children:{{ include "microservices.issuing" . | nindent 4 }}
+{{- end }}

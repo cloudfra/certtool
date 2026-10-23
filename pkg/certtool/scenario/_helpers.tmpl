@@ -1,0 +1,119 @@
+{{- /*
+Templates shared by the scenarios. Each scenario is <name>.yaml.tmpl: a
+comment with its description, then a YAML list of certificate specs. Its data
+is certtool.ScenarioOptions. certtool reformats what a template writes, so
+indentation only has to be valid YAML.
+*/ -}}
+
+{{- /* subject: the subject fields of a certificate, from the options. */ -}}
+{{- define "subject" -}}
+organization: {{ yaml .Organization }}
+{{- include "subject-rest" . }}
+{{- end -}}
+
+{{- /* subject-rest: the subject fields after the organization. */ -}}
+{{- define "subject-rest" -}}
+{{- with .OrganizationalUnit }}
+organizationalUnit: {{ yaml . }}
+{{- end }}
+{{- with .Country }}
+country: {{ yaml . }}
+{{- end }}
+{{- with .Locality }}
+locality: {{ yaml . }}
+{{- end }}
+{{- with .Province }}
+province: {{ yaml . }}
+{{- end }}
+{{- end -}}
+
+{{- /* items: a YAML list of strings. */ -}}
+{{- define "items" -}}
+{{- range $i, $item := . }}{{ if $i }}{{ "\n" }}{{ end }}- {{ yaml $item }}{{ end -}}
+{{- end -}}
+
+{{- /* constraints: the name constraints of a CA, from constraints or dnsConstraints. */ -}}
+{{- define "constraints" -}}
+# Name constraints: certificates below this CA may only use these names and their subdomains.
+# Add a domain before you issue a certificate for it; changing them later means regenerating the CA and everything below it.
+{{- if not .IP }}
+# IP addresses are not limited, so certtool still adds 127.0.0.1; add permittedIPRanges to limit them.
+{{- end }}
+{{- if .DNS }}
+permittedDNSDomains:{{ include "items" .DNS | nindent 2 }}
+{{- end }}
+{{- if .IP }}
+# The IP addresses certificates below this CA may use.
+permittedIPRanges:{{ include "items" .IP | nindent 2 }}
+{{- end }}
+{{- end -}}
+
+{{- /* renew: how to renew the certificate written to the file named by the data. */ -}}
+{{- define "renew" -}}
+# To renew, delete {{ . }}.crt and {{ . }}.key, then run the spec again.
+{{- end -}}
+
+{{- /* yubikey: the note on a CA the YubiKey root signs. */ -}}
+{{- define "yubikey" -}}
+# Signed by the root CA on the YubiKey: run this spec with certtool --yubikey --spec.
+{{- end -}}
+
+{{- /* root-ca: the fields of a root CA, from the dict: o, name, file, keyType. */ -}}
+{{- define "root-ca" -}}
+- commonName: {{ yaml .name }}
+  certificateAuthority: true
+  keyType: {{ .keyType }}
+  # 10 years.
+  validity: 87600h
+  {{- include "subject" .o | nindent 2 }}
+  filename: {{ .file }}
+{{- end -}}
+
+{{- /* root-key: the note on a root CA's key, from the dict: file, scenario. */ -}}
+{{- define "root-key" -}}
+# Its key can sign anything below it, so move {{ .file }}.key offline once the issuing CA exists,
+# or keep the root on a YubiKey: certtool --scenario {{ .scenario }} --yubikey.
+{{- end -}}
+
+{{- /* issuing-ca: the fields of an issuing CA, from the dict: o, name, file, keyType. */ -}}
+{{- define "issuing-ca" -}}
+- commonName: {{ yaml .name }}
+  certificateAuthority: true
+  keyType: {{ .keyType }}
+  # 3 years.
+  validity: 26280h
+  {{- include "subject" .o | nindent 2 }}
+  filename: {{ .file }}
+{{- end -}}
+
+{{- /* issuing-comment: the comment above an issuing CA. */ -}}
+{{- define "issuing-comment" -}}
+# Issuing CA: signs the day-to-day certificates. Renew it well before it expires, because a certificate is only valid
+# while its issuers are.
+{{- end -}}
+
+{{- /* ca: the fields of a CA that signs the leaves directly, from the dict: o, name, file, keyType. */ -}}
+{{- define "ca" -}}
+- commonName: {{ yaml .name }}
+  certificateAuthority: true
+  keyType: {{ .keyType }}
+  {{- if .o.ExternalRoot }}
+  # 3 years.
+  validity: 26280h
+  {{- else }}
+  # 10 years.
+  validity: 87600h
+  {{- end }}
+  {{- include "subject" .o | nindent 2 }}
+  filename: {{ .file }}
+{{- end -}}
+
+{{- /* ca-key: the note on the key of a CA that signs the leaves, written to the file named by the data. */ -}}
+{{- define "ca-key" -}}
+# Its key signs every certificate below it: keep {{ . }}.key off the servers, and use it only to issue certificates.
+{{- end -}}
+
+{{- /* chain: which certificates a leaf presents when the other side trusts only the root, from the dict: file, issuer. */ -}}
+{{- define "chain" -}}
+# Present {{ .file }}.crt followed by {{ .issuer }}.crt, so the other side only needs to trust the root.
+{{- end -}}

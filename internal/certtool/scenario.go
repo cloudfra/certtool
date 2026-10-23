@@ -15,32 +15,81 @@
 package certtool
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
+	"io/fs"
+	"os"
+	"path/filepath"
 	"slices"
 	"strings"
 	"time"
 
+	"github.com/cloudfra/certtool/internal/logging"
 	certlib "github.com/cloudfra/certtool/pkg/certtool"
 )
 
-// runScenario writes the spec of the --scenario values to --export-spec.
-func runScenario(ctx context.Context, args Args) error {
+// runScenario writes the spec of the --scenario values. With --export-spec
+// it only writes the spec there, and returns nil. Otherwise it writes the spec
+// to --output-dir, next to the certificates, and returns the arguments that
+// generate them from it as --spec would.
+func runScenario(ctx context.Context, args Args) (*Args, error) {
 	scenarios := splitStrings(args.Scenario)
 	if err := validateScenario(args, scenarios); err != nil {
-		return err
+		return nil, err
 	}
 
 	opts, err := scenarioOptions(args)
 	if err != nil {
-		return err
+		return nil, err
 	}
+	if args.ExportSpec != "" {
+		if args.ExportSpec != "-" {
+			opts.SpecPath = args.ExportSpec
+		}
+		body, err := certlib.ScenarioSpec(scenarios, opts)
+		if err != nil {
+			return nil, err
+		}
+		return nil, writeSpecData(ctx, body, args.ExportSpec)
+	}
+
+	path := filepath.Join(args.OutputDir, strings.Join(scenarios, "+")+".yaml")
+	opts.SpecPath, opts.OutputDir, opts.Generate = path, args.OutputDir, true
 	body, err := certlib.ScenarioSpec(scenarios, opts)
 	if err != nil {
+		return nil, err
+	}
+	if err := writeScenarioSpec(ctx, body, path, args.Overwrite); err != nil {
+		return nil, err
+	}
+
+	// Generate from the spec, which now holds every scenario input.
+	defaults := DefaultArgs()
+	args.Scenario, args.Spec = "", path
+	args.Hostnames, args.Clients, args.Target, args.KeyType, args.Validity = "", "", "", "", defaults.Validity
+	return &args, nil
+}
+
+// writeScenarioSpec writes the spec of a scenario to path, unless path
+// already holds it. A different spec there is an error, because it may hold
+// edits, unless overwrite is set.
+func writeScenarioSpec(ctx context.Context, data []byte, path string, overwrite bool) error {
+	existing, err := os.ReadFile(filepath.Clean(path))
+	switch {
+	case err == nil && bytes.Equal(existing, data):
+		logging.FromContext(ctx).Info("spec already written", "path", path)
+		return nil
+	case err == nil && !overwrite:
+		return fmt.Errorf("%s already exists and differs from the spec --scenario writes, perhaps because it was edited; to generate from it, run certtool --spec %s --output-dir %s instead; to replace it and every certificate, add --overwrite", path, path, filepath.Dir(path))
+	case err != nil && !errors.Is(err, fs.ErrNotExist):
 		return err
 	}
-	return writeSpecData(ctx, body, args.ExportSpec)
+	if err := os.MkdirAll(filepath.Dir(path), 0o750); err != nil {
+		return err
+	}
+	return writeSpecData(ctx, data, path)
 }
 
 // validateScenario rejects options that --scenario does not use, so a flag is
@@ -51,46 +100,49 @@ func validateScenario(args Args, scenarios []string) error {
 			return fmt.Errorf("--scenario %q is not a scenario; use one or more of %s, separated by commas", s, strings.Join(certlib.Scenarios(), ", "))
 		}
 	}
-	if args.ExportSpec == "" {
-		return errors.New("--scenario writes a spec instead of certificates: set --export-spec to the file to write, or - for standard output, then run it with --spec")
-	}
-
 	defaults := DefaultArgs()
 	unused := []struct {
 		flag string
 		set  bool
+		// generates is set for the options that apply when --scenario
+		// generates the certificates, rather than only writing the spec
+		// to --export-spec.
+		generates bool
 	}{
-		{"--public-certificate", args.PublicCertificate != defaults.PublicCertificate},
-		{"--private-key", args.PrivateKey != defaults.PrivateKey},
-		{"--ca", args.CA},
-		{"--max-path-len", args.MaxPathLen != defaults.MaxPathLen},
-		{"--permitted-dns-domains", args.PermittedDNSDomains != ""},
-		{"--permitted-ip-ranges", args.PermittedIPRanges != ""},
-		{"--common-name", args.CommonName != ""},
-		{"--parent-public-certificate", args.ParentPublicCertificate != ""},
-		{"--parent-private-key", args.ParentPrivateKey != ""},
-		{"--code-sign", args.CodeSigning},
-		{"--pfx-output", args.PFXOutput != defaults.PFXOutput},
-		{"--pfx-password", args.PFXPassword != ""},
-		{"--spec", args.Spec != ""},
-		{"--chain", args.Chain != ""},
-		{"--name-prefix", args.NamePrefix != ""},
-		{"--output-dir", args.OutputDir != defaults.OutputDir},
-		{"--overwrite", args.Overwrite},
-		{"--yubikey-generate-root", args.YubiKeyGenerateRoot},
-		{"--yubikey-serial", args.YubiKeySerial != ""},
-		{"--yubikey-slot", args.YubiKeySlot != defaults.YubiKeySlot},
-		{"--yubikey-pin", args.YubiKeyPIN != ""},
-		{"--yubikey-management-key", args.YubiKeyManagementKey != ""},
-		{"--yubikey-touch-policy", args.YubiKeyTouchPolicy != defaults.YubiKeyTouchPolicy},
-		{"--yubikey-overwrite", args.YubiKeyOverwrite},
-		{"--encrypt-to", args.EncryptTo != ""},
-		{"--age-identity-file", args.AgeIdentityFile != ""},
-		{"--age-yubikey", args.AgeYubiKey},
+		{"--public-certificate", args.PublicCertificate != defaults.PublicCertificate, false},
+		{"--private-key", args.PrivateKey != defaults.PrivateKey, false},
+		{"--ca", args.CA, false},
+		{"--max-path-len", args.MaxPathLen != defaults.MaxPathLen, false},
+		{"--permitted-dns-domains", args.PermittedDNSDomains != "", false},
+		{"--permitted-ip-ranges", args.PermittedIPRanges != "", false},
+		{"--common-name", args.CommonName != "", false},
+		{"--parent-public-certificate", args.ParentPublicCertificate != "", false},
+		{"--parent-private-key", args.ParentPrivateKey != "", false},
+		{"--code-sign", args.CodeSigning, false},
+		{"--pfx-output", args.PFXOutput != defaults.PFXOutput, false},
+		{"--pfx-password", args.PFXPassword != "", false},
+		{"--spec", args.Spec != "", false},
+		{"--chain", args.Chain != "", false},
+		{"--name-prefix", args.NamePrefix != "", false},
+		{"--output-dir", args.OutputDir != defaults.OutputDir, true},
+		{"--overwrite", args.Overwrite, true},
+		{"--yubikey-generate-root", args.YubiKeyGenerateRoot, false},
+		{"--yubikey-serial", args.YubiKeySerial != "", true},
+		{"--yubikey-slot", args.YubiKeySlot != defaults.YubiKeySlot, true},
+		{"--yubikey-pin", args.YubiKeyPIN != "", true},
+		{"--yubikey-management-key", args.YubiKeyManagementKey != "", true},
+		{"--yubikey-touch-policy", args.YubiKeyTouchPolicy != defaults.YubiKeyTouchPolicy, false},
+		{"--yubikey-overwrite", args.YubiKeyOverwrite, false},
+		{"--encrypt-to", args.EncryptTo != "", true},
+		{"--age-identity-file", args.AgeIdentityFile != "", true},
+		{"--age-yubikey", args.AgeYubiKey, true},
 	}
 	for _, u := range unused {
-		if u.set {
-			return fmt.Errorf("%s does not apply to --scenario, which only writes a spec; edit the spec instead", u.flag)
+		switch {
+		case u.set && !u.generates:
+			return fmt.Errorf("%s does not apply to --scenario; edit the spec it writes instead", u.flag)
+		case u.set && args.ExportSpec != "":
+			return fmt.Errorf("%s does not apply to --scenario with --export-spec, which only writes a spec; leave out --export-spec to generate the certificates too", u.flag)
 		}
 	}
 

@@ -345,11 +345,12 @@ A reused entry's other fields, such as `hostnames` or `validity`, are not compar
 
 ## Starting from a scenario
 
-`--scenario` writes a commented spec for a common situation, to review and then generate with `--spec`: web servers, local HTTPS, mutual TLS, microservices, databases, Active Directory LDAPS, Kubernetes, VPNs, 802.1X EAP-TLS, IoT and MQTT, Kafka, Docker, Git servers and commit signing, SSH and SFTP keys, FTPS, iOS and Android apps, Android app signing, code signing, and TLS-inspecting proxies.
+`--scenario` writes a commented spec for a common situation to `--output-dir` and generates it; with `--export-spec` it only writes the spec. Scenarios cover web servers, local HTTPS, mutual TLS, microservices, databases, Active Directory LDAPS, Kubernetes, VPNs, 802.1X EAP-TLS, IoT and MQTT, Kafka, Docker, Git servers and commit signing, SSH and SFTP keys, FTPS, iOS and Android apps, Android app signing, code signing, and TLS-inspecting proxies.
 
 ```bash
-certtool --scenario active-directory --organization Acme --hostnames dc01.corp.example.com,dc02.corp.example.com --export-spec certs.yaml
-certtool --spec certs.yaml --output-dir certs
+certtool --scenario active-directory --organization Acme --hostnames dc01.corp.example.com,dc02.corp.example.com --output-dir certs
+# After editing certs/active-directory.yaml:
+certtool --spec certs/active-directory.yaml --output-dir certs
 ```
 
 [Scenarios](scenarios.md) describes each one and shows the spec it writes.

@@ -18,6 +18,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -48,8 +49,9 @@ func TestRunScenario(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if want := "  certtool --spec " + path + " --output-dir certs\n"; !strings.Contains(string(data), want) {
-		t.Errorf("spec does not say how to run it (%q):\n%s", want, data)
+	// The path is quoted when it needs it, as Windows temporary paths do.
+	if plain, quoted := "  certtool --spec "+path+" --output-dir certs\n", "  certtool --spec '"+path+"' --output-dir certs\n"; !strings.Contains(string(data), plain) && !strings.Contains(string(data), quoted) {
+		t.Errorf("spec does not say how to run it (%q):\n%s", plain, data)
 	}
 	specs, err := certlib.UnmarshalSpec(data)
 	if err != nil {
@@ -110,11 +112,11 @@ func TestRunScenarioErrors(t *testing.T) {
 		want string
 	}{
 		{"unknown scenario", func(a *Args) { a.Scenario = "web,nomad" }, `--scenario "nomad"`},
-		{"no export spec", func(a *Args) { a.ExportSpec = "" }, "--export-spec"},
 		{"common name", func(a *Args) { a.CommonName = "x" }, "--common-name does not apply"},
 		{"ca", func(a *Args) { a.CA = true }, "--ca does not apply"},
 		{"pfx password", func(a *Args) { a.PFXPassword = "secret" }, "--pfx-password does not apply"},
-		{"output dir", func(a *Args) { a.OutputDir = "certs" }, "--output-dir does not apply"},
+		{"output dir with export spec", func(a *Args) { a.OutputDir = "certs" }, "--output-dir does not apply to --scenario with --export-spec"},
+		{"spec", func(a *Args) { a.Spec = "certs.yaml" }, "--spec does not apply"},
 		{"chain", func(a *Args) { a.Chain = "1,1" }, "--chain does not apply"},
 		{"yubikey pin", func(a *Args) { a.YubiKey = true; a.YubiKeyPIN = "123456" }, "--yubikey-pin does not apply"},
 		{"encrypt to", func(a *Args) { a.EncryptTo = "age1..." }, "--encrypt-to does not apply"},
@@ -180,5 +182,64 @@ func TestWriteSpecStdout(t *testing.T) {
 	}
 	if _, err := os.Stat("-"); err == nil {
 		t.Error(`Run() wrote a file named "-"`)
+	}
+}
+
+// TestRunScenarioGenerates checks that --scenario without --export-spec
+// writes the spec next to the certificates and generates them, and that it
+// can run again.
+func TestRunScenarioGenerates(t *testing.T) {
+	t.Setenv(PFXPasswordEnv, "correct horse battery staple")
+	dir := filepath.Join(t.TempDir(), "certs")
+	args := DefaultArgs()
+	args.Scenario = "android-signing"
+	args.Organization = "Acme"
+	args.OrganizationalUnit = "Mobile"
+	args.OutputDir = dir
+	if err := Run(t.Context(), args); err != nil {
+		t.Fatalf("Run() err = %v", err)
+	}
+
+	specPath := filepath.Join(dir, "android-signing.yaml")
+	data, err := os.ReadFile(filepath.Clean(specPath))
+	if err != nil {
+		t.Fatalf("the spec was not written: %v", err)
+	}
+	for _, want := range []string{
+		"#   certtool --scenario android-signing --organization Acme --organizational-unit Mobile --output-dir ",
+		"# which also generated the certificates. To change them, edit this file, then run:\n#   certtool --spec ",
+	} {
+		if !strings.Contains(string(data), want) {
+			t.Errorf("spec header does not contain %q:\n%s", want, data)
+		}
+	}
+	for _, name := range []string{"android-signing.crt", "android-signing.key", "android-signing.pfx"} {
+		if _, err := os.Stat(filepath.Join(dir, name)); err != nil {
+			t.Errorf("%s was not generated: %v", name, err)
+		}
+	}
+
+	// The same command again reuses everything.
+	if err := Run(t.Context(), args); err != nil {
+		t.Fatalf("second Run() err = %v", err)
+	}
+
+	// An edited spec is never replaced.
+	edited := slices.Concat(data, []byte("- commonName: extra\n  filename: extra\n"))
+	if err := os.WriteFile(specPath, edited, 0o600); err != nil { //nolint:gosec // specPath is a file the test created.
+		t.Fatal(err)
+	}
+	if err := Run(t.Context(), args); err == nil || !strings.Contains(err.Error(), "certtool --spec "+specPath) {
+		t.Errorf("Run() with an edited spec err = %v, want one that says to run --spec", err)
+	}
+
+	// Which --spec then generates.
+	specArgs := DefaultArgs()
+	specArgs.Spec, specArgs.OutputDir = specPath, dir
+	if err := Run(t.Context(), specArgs); err != nil {
+		t.Fatalf("Run(--spec) err = %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "extra.crt")); err != nil {
+		t.Errorf("the edited entry was not generated: %v", err)
 	}
 }

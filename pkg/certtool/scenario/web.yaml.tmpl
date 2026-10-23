@@ -1,0 +1,36 @@
+{{- /*
+summary: A root CA and an issuing CA, name constrained to the hostnames, and a server certificate for websites and APIs.
+hostnames: required
+hostnamesHelp: the names of the server certificate, which also become the CA's name constraints
+*/ -}}
+
+{{- define "web.issuing" }}
+{{- if .ExternalRoot }}
+{{ template "yubikey" }}
+# Install {{ .RootCert "web-root-ca" }} in the trust store of every client: the operating system, the browser, or the HTTP client's CA bundle.
+{{- end }}
+{{ template "issuing-comment" }}
+{{ include "issuing-ca" (dict "o" . "name" (print .Organization " Web Issuing CA") "file" "web-issuing-ca" "keyType" "ECDSA-256") }}
+  {{- if .ExternalRoot }}{{ include "constraints" (constraints .Hostnames) | nindent 2 }}{{ end }}
+  children:
+    # Server certificate for the hostnames, valid for 90 days. nginx: ssl_certificate takes web-server.crt followed by
+    # web-issuing-ca.crt in one file, and ssl_certificate_key takes web-server.key.
+    # To add a server, copy this entry with a new commonName, hostnames, and filename.
+    - commonName: {{ yaml (host (index .Hostnames 0)) }}
+      keyType: {{ .KeyTypeOr "ECDSA-256" }}
+      {{ template "renew" "web-server" }}
+      validity: {{ .ValidityOr "2160h" }}
+      {{- include "subject" . | nindent 6 }}
+      hostnames:{{ include "items" .Hostnames | nindent 8 }}
+      filename: web-server
+{{- end }}
+
+{{- if .ExternalRoot }}
+{{ include "web.issuing" . }}
+{{- else }}
+# Root CA. Install web-root-ca.crt in the trust store of every client: the operating system, the browser, or the HTTP client's CA bundle.
+{{ include "root-key" (dict "file" "web-root-ca" "scenario" "web") }}
+{{ include "root-ca" (dict "o" . "name" (print .Organization " Web Root CA") "file" "web-root-ca" "keyType" "ECDSA-384") }}
+  {{- include "constraints" (constraints .Hostnames) | nindent 2 }}
+  children:{{ include "web.issuing" . | nindent 4 }}
+{{- end }}

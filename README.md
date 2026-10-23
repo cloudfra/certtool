@@ -4,21 +4,63 @@
 
 [![CI](https://github.com/cloudfra/certtool/actions/workflows/deploy.yaml/badge.svg)](https://github.com/cloudfra/certtool/actions/workflows/deploy.yaml) [![Go Reference](https://pkg.go.dev/badge/github.com/cloudfra/certtool.svg)](https://pkg.go.dev/github.com/cloudfra/certtool) [![codecov](https://codecov.io/gh/cloudfra/certtool/graph/badge.svg?token=UVApxhg6z7)](https://codecov.io/gh/cloudfra/certtool)
 
-A simple tool for generating self-signed X.509 certificates and private keys for TLS and code signing, available as a standalone CLI and Go library.
+A tool for generating X.509 certificates and private keys for TLS, code signing, and app signing, available as a standalone CLI and Go library. One command sets up a common situation: certtool writes a commented spec and generates every certificate in it.
 
 ```bash
 # Download (Linux amd64, see Downloads for other builds)
 curl -fLo certtool https://github.com/cloudfra/certtool/releases/latest/download/certtool-linux_amd64 && chmod +x certtool
 
-# Self-signed TLS certificate for localhost (writes app.crt and app.key)
-./certtool
-
-# Code signing certificate for Windows 10/11 (writes codesign.pfx)
-./certtool --code-sign
+# An Android app signing key: writes certs/android-signing.yaml, the certificate and key, and the
+# android-signing.pfx keystore, whose password comes from CERTTOOL_PFX_PASSWORD
+export CERTTOOL_PFX_PASSWORD="$KEYSTORE_PASSWORD"
+./certtool --scenario android-signing --output-dir certs
 ```
+
+## Quick start
+
+`--scenario` picks the certificates for a situation, writes them as a commented spec to `--output-dir`, and generates them there. The comments say what each certificate is for and how to install it.
+
+Set your own subject fields, hostnames, and clients on the same command line:
+
+```bash
+# Websites: a root CA, an issuing CA name constrained to the hostnames, and a server certificate
+./certtool --scenario web --organization "Acme Corp" --organizational-unit Platform \
+  --hostnames www.example.com,example.com --output-dir certs
+
+# Combine scenarios with commas: a VPN gateway with client certificates, and a code signing certificate
+./certtool --scenario vpn,code-sign --organization "Acme Corp" --country CA \
+  --hostnames vpn.example.com --clients alice,bob --output-dir certs
+```
+
+To change the certificates, edit the spec and generate again. Certificates already in `--output-dir` are reused, so new entries join the existing hierarchy; delete a certificate's files to regenerate it, or pass `--overwrite` to regenerate everything:
+
+```bash
+$EDITOR certs/web.yaml    # add a server, change a validity, ...
+./certtool --spec certs/web.yaml --output-dir certs
+```
+
+Running the same `--scenario` command again is safe in automation: it reuses the spec and the certificates. If the spec was edited, it stops and says to use `--spec`, so edits are never lost. To only write the spec, add `--export-spec certs.yaml` (or `-` for standard output).
+
+| Scenario | Makes |
+| -------- | ----- |
+| `web` | Root and issuing CA, name constrained to `--hostnames`, and a server certificate |
+| `local-dev` | A self-signed certificate for localhost and development names |
+| `mtls`, `microservices` | CAs, server certificates, and client certificates for mutual TLS and service-to-service calls |
+| `database` | Server certificates for PostgreSQL, MySQL, Redis, and MongoDB, and client certificates for database users |
+| `active-directory` | An enterprise root and issuing CA, and an LDAPS `.pfx` per domain controller |
+| `kubernetes` | Every certificate kubeadm expects in `/etc/kubernetes/pki` |
+| `vpn`, `eap-tls` | OpenVPN and IKEv2 gateways, 802.1X Wi-Fi, and their client certificates |
+| `iot`, `kafka`, `docker` | MQTT brokers and devices, Kafka brokers and clients, the Docker API |
+| `git`, `ssh`, `ftps` | Git servers and commit signing (S/MIME or SSH), SSH and SFTP keys, FTPS |
+| `ios`, `android` | Development CAs and backends for iPhone and Android apps |
+| `android-signing`, `code-sign` | An Android upload key, and Windows or Linux code signing |
+| `proxy` | A CA for a TLS-inspecting proxy |
+
+[Scenarios](docs/scenarios.md) lists each one's inputs and the spec it writes. `--yubikey` signs a scenario with a root CA on a YubiKey, and `--encrypt-to` encrypts its keys.
 
 ## Features
 
+* Set up a common situation in one command with `--scenario`: websites, mutual TLS, Kubernetes, Active Directory, VPNs, Git, SSH, iOS and Android apps, and more.
 * Generate self-signed X.509 public certificate and private key pairs in PEM format.
 * Generate code signing certificates as PKCS#12 (`.pfx`) files for Windows binary signing with `signtool.exe`.
 * Named platform profiles (`windows7`, `windows10`, `windows11`, `linux`, `android`) set secure defaults automatically.
@@ -93,13 +135,9 @@ export CERTTOOL_PFX_PASSWORD="$PFX_PASSWORD"   # or --pfx-password
 # Write the hierarchy as a YAML spec to edit, then generate from it
 ./certtool --chain 1,2,1 --export-spec certs.yaml
 ./certtool --spec certs.yaml --output-dir certs
-
-# Start from a commented spec for a common situation, such as web servers and code signing
-./certtool --scenario web,code-sign --organization Acme --hostnames www.example.com,example.com --export-spec certs.yaml
-./certtool --spec certs.yaml --output-dir certs
 ```
 
-[Scenarios](docs/scenarios.md) has a ready-made, commented spec for websites, local HTTPS, mutual TLS, microservices, databases, Active Directory LDAPS, Kubernetes, VPNs, Wi-Fi (802.1X EAP-TLS), IoT and MQTT, Kafka, Docker, Git servers and commit signing, SSH and SFTP keys, FTPS, iOS and Android apps, Android app signing, code signing, and TLS-inspecting proxies.
+For a common situation, start from a [scenario](#quick-start) instead.
 
 Every certificate gets a unique name (for example `Acme Root CA`, `Acme Intermediate CA 1`, `svc 1.2`), so files never overwrite each other. Running `--spec` or `--chain` again reuses the certificates already in `--output-dir`, so adding entries to a spec extends the hierarchy; `--overwrite` regenerates everything ([details](docs/spec.md#running-a-spec-again)). The [certificate spec documentation](docs/spec.md) covers naming, the spec format, and `--name-prefix`.
 
@@ -180,8 +218,8 @@ See [Encrypted private keys](docs/use-cases/encrypted-keys.md).
 | `--spec` | | Path to a YAML spec describing the certificates to generate |
 | `--output-dir` | `.` | Output directory for certificates generated by `--spec` or `--chain` |
 | `--overwrite` | `false` | With `--spec` or `--chain`, regenerate every certificate instead of reusing the files already in `--output-dir` |
-| `--export-spec` | | Write the resolved spec as YAML to this path instead of generating certificates. Works with `--scenario`, `--chain`, `--spec`, or plain flags. `-` writes to standard output |
-| `--scenario` | | Write a commented spec for common situations to `--export-spec`, comma separated: `web`, `local-dev`, `mtls`, `microservices`, `database`, `active-directory`, `kubernetes`, `vpn`, `eap-tls`, `iot`, `kafka`, `docker`, `git`, `ssh`, `ftps`, `ios`, `android`, `android-signing`, `code-sign`, `proxy`. With `--yubikey` the root CA is left out ([details](docs/scenarios.md)) |
+| `--export-spec` | | Write the resolved spec as YAML to this path instead of generating certificates. Works with `--scenario`, `--chain`, `--spec`, or plain flags; `--scenario` without it writes the spec to `--output-dir` and generates the certificates too. `-` writes to standard output |
+| `--scenario` | | Write a commented spec for a common situation to `--output-dir` and generate its certificates, or with `--export-spec` only write the spec. Comma separated: `web`, `local-dev`, `mtls`, `microservices`, `database`, `active-directory`, `kubernetes`, `vpn`, `eap-tls`, `iot`, `kafka`, `docker`, `git`, `ssh`, `ftps`, `ios`, `android`, `android-signing`, `code-sign`, `proxy`. With `--yubikey` the root CA is the one on the YubiKey ([details](docs/scenarios.md)) |
 | `--clients` | | Common names of the client certificates, users, or devices that `--scenario` makes, such as `--scenario vpn --clients alice,bob` |
 
 #### YubiKey flags
