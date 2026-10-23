@@ -26,6 +26,7 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"testing/fstest"
 )
 
 var updateGolden = flag.Bool("update", false, "rewrite the golden files in testdata and docs/scenarios.md")
@@ -520,5 +521,35 @@ func TestScenarioSpecHeader(t *testing.T) {
 		if !strings.Contains(string(data), want) {
 			t.Errorf("header does not contain %q:\n%s", want, data)
 		}
+	}
+}
+
+// TestLoadScenariosCRLF checks that templates checked out with Windows line
+// endings write the same specs.
+func TestLoadScenariosCRLF(t *testing.T) {
+	t.Parallel()
+	crlf := fstest.MapFS{}
+	files, err := fs.Glob(scenarioFiles, "scenario/*.tmpl")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, f := range files {
+		data, err := fs.ReadFile(scenarioFiles, f)
+		if err != nil {
+			t.Fatal(err)
+		}
+		crlf[f] = &fstest.MapFile{Data: bytes.ReplaceAll(data, []byte("\n"), []byte("\r\n"))}
+	}
+	tmpl, _, err := loadScenarios(crlf)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got bytes.Buffer
+	opts := &ScenarioOptions{Organization: "Acme", Hostnames: []string{"example.com"}}
+	if err := tmpl.ExecuteTemplate(&got, "web.yaml.tmpl", opts); err != nil {
+		t.Fatal(err)
+	}
+	if bytes.Contains(got.Bytes(), []byte("\r")) {
+		t.Errorf("a template with CRLF line endings wrote a carriage return:\n%q", got.String())
 	}
 }

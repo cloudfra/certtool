@@ -137,15 +137,30 @@ func mustLoadScenarios() (*template.Template, []ScenarioInfo) {
 func loadScenarios(fsys fs.FS) (*template.Template, []ScenarioInfo, error) {
 	tmpl := template.New("scenarios").Option("missingkey=error")
 	tmpl.Funcs(scenarioFuncs(tmpl))
-	if _, err := tmpl.ParseFS(fsys, "scenario/*.tmpl"); err != nil {
+	files, err := fs.Glob(fsys, "scenario/*.tmpl")
+	if err != nil {
 		return nil, nil, err
+	}
+	sources := make(map[string][]byte, len(files))
+	for _, file := range files {
+		data, err := fs.ReadFile(fsys, file)
+		if err != nil {
+			return nil, nil, err
+		}
+		// A Windows checkout may have CRLF line endings, which would end up
+		// in the specs.
+		data = bytes.ReplaceAll(data, []byte("\r\n"), []byte("\n"))
+		if _, err := tmpl.New(path.Base(file)).Parse(string(data)); err != nil {
+			return nil, nil, err
+		}
+		sources[path.Base(file)] = data
 	}
 
 	infos := make([]ScenarioInfo, 0, len(scenarioOrder))
 	for _, name := range scenarioOrder {
-		data, err := fs.ReadFile(fsys, path.Join("scenario", name+".yaml.tmpl"))
-		if err != nil {
-			return nil, nil, fmt.Errorf("scenario %q has no template: %w", name, err)
+		data, ok := sources[name+".yaml.tmpl"]
+		if !ok {
+			return nil, nil, fmt.Errorf("scenario %q has no template %s.yaml.tmpl", name, name)
 		}
 		m := scenarioMetadata.FindSubmatch(data)
 		if m == nil {
