@@ -538,6 +538,8 @@ func TestLoadScenariosCRLF(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
+		// A Windows checkout already has CRLF line endings.
+		data = bytes.ReplaceAll(data, []byte("\r\n"), []byte("\n"))
 		crlf[f] = &fstest.MapFile{Data: bytes.ReplaceAll(data, []byte("\n"), []byte("\r\n"))}
 	}
 	tmpl, _, err := loadScenarios(crlf)
