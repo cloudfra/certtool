@@ -491,6 +491,9 @@ type SpecOptions struct {
 	// exist is reused, so a spec can be extended without resetting the
 	// hierarchy it describes.
 	Overwrite bool
+	// Encryption, when not nil, encrypts the private key and .pfx files
+	// written, and decrypts the encrypted keys of reused certificates.
+	Encryption *KeyEncryption
 }
 
 // GenerateFromSpec generates certificates for all specs and writes them to
@@ -528,7 +531,7 @@ func GenerateFromSpecWithOptions(specs []CertificateSpec, outputDir string, opts
 	var results []GenerationOutput
 
 	for i := range specs {
-		out, err := generateSpec(&specs[i], nil, opts.Issuer, outputDir, nil, filenames, opts.Overwrite)
+		out, err := generateSpec(&specs[i], nil, opts.Issuer, outputDir, nil, filenames, &opts)
 		if err != nil {
 			return nil, err
 		}
@@ -558,7 +561,7 @@ func specFilename(ancestorCNs []string, spec *CertificateSpec) string {
 	return strings.Join(parts, "-")
 }
 
-func generateSpec(spec *CertificateSpec, parentKP *KeyPair, issuer *Issuer, outputDir string, ancestorCNs []string, filenames map[string]string, overwrite bool) ([]GenerationOutput, error) {
+func generateSpec(spec *CertificateSpec, parentKP *KeyPair, issuer *Issuer, outputDir string, ancestorCNs []string, filenames map[string]string, opts *SpecOptions) ([]GenerationOutput, error) {
 	basename := specFilename(ancestorCNs, spec)
 	certPath := filepath.Join(outputDir, basename+".crt")
 	keyPath := filepath.Join(outputDir, basename+".key")
@@ -595,11 +598,12 @@ func generateSpec(spec *CertificateSpec, parentKP *KeyPair, issuer *Issuer, outp
 		args.PermittedIPRanges = ranges
 	}
 
+	enc := opts.Encryption
 	var kp *KeyPair
 	reused := false
-	if !overwrite {
+	if !opts.Overwrite {
 		var err error
-		kp, err = reuseKeyPair(spec, args, certPath, keyPath, pfxPath)
+		kp, keyPath, err = reuseKeyPair(spec, args, certPath, keyPath, pfxPath, enc)
 		if err != nil {
 			return nil, err
 		}
@@ -611,7 +615,17 @@ func generateSpec(spec *CertificateSpec, parentKP *KeyPair, issuer *Issuer, outp
 		if err != nil {
 			return nil, fmt.Errorf("cannot generate certificate for %q: %w", spec.CommonName, err)
 		}
-		if err := WriteKeyPair(kp, certPath, keyPath); err != nil {
+		if opts.Overwrite {
+			// Remove the other form of the key, so the output directory never
+			// holds a stale key next to the new one.
+			if err := removeOtherForm(keyPath, enc); err != nil {
+				return nil, err
+			}
+			if err := removeOtherForm(pfxPath, enc); err != nil {
+				return nil, err
+			}
+		}
+		if keyPath, err = enc.WriteKeyPair(kp, certPath, keyPath); err != nil {
 			return nil, fmt.Errorf("cannot write certificate for %q: %w", spec.CommonName, err)
 		}
 	}
@@ -625,19 +639,23 @@ func generateSpec(spec *CertificateSpec, parentKP *KeyPair, issuer *Issuer, outp
 	}
 
 	if len(kp.PFX) > 0 {
-		if !reused || !fileExists(pfxPath) {
-			if err := WritePFX(kp, pfxPath); err != nil {
+		existing, err := existingPrivateFile(pfxPath)
+		if err != nil {
+			return nil, err
+		}
+		if !reused || existing == "" {
+			if existing, err = enc.WritePFX(kp, pfxPath); err != nil {
 				return nil, fmt.Errorf("cannot write PFX for %q: %w", spec.CommonName, err)
 			}
 		}
-		output.PFXPath = pfxPath
+		output.PFXPath = existing
 	}
 
 	results := []GenerationOutput{output}
 
 	childAncestors := append(append([]string{}, ancestorCNs...), spec.CommonName)
 	for i := range spec.Children {
-		childResults, err := generateSpec(&spec.Children[i], kp, nil, outputDir, childAncestors, filenames, overwrite)
+		childResults, err := generateSpec(&spec.Children[i], kp, nil, outputDir, childAncestors, filenames, opts)
 		if err != nil {
 			return nil, err
 		}
@@ -653,21 +671,33 @@ func generateSpec(spec *CertificateSpec, parentKP *KeyPair, issuer *Issuer, outp
 // ErrExistingFiles, because reusing it would break the chain or ignore the
 // spec. For a code signing spec whose .pfx is missing, the .pfx is rebuilt
 // from the reused key.
-func reuseKeyPair(spec *CertificateSpec, args *Args, certPath, keyPath, pfxPath string) (*KeyPair, error) {
-	hasCert, hasKey := fileExists(certPath), fileExists(keyPath)
+func reuseKeyPair(spec *CertificateSpec, args *Args, certPath, keyPath, pfxPath string, enc *KeyEncryption) (*KeyPair, string, error) {
+	existingKey, err := existingPrivateFile(keyPath)
+	if err != nil {
+		return nil, "", err
+	}
+	hasCert, hasKey := fileExists(certPath), existingKey != ""
 	switch {
 	case !hasCert && !hasKey:
-		return nil, nil
+		return nil, keyPath, nil
 	case !hasKey:
-		return nil, fmt.Errorf("%w: %s exists but its key %s does not; delete %s to regenerate %q", ErrExistingFiles, certPath, keyPath, certPath, spec.CommonName)
+		return nil, "", fmt.Errorf("%w: %s exists but its key %s does not; delete %s to regenerate %q", ErrExistingFiles, certPath, keyPath, certPath, spec.CommonName)
 	case !hasCert:
-		return nil, fmt.Errorf("%w: %s exists but its certificate %s does not; delete %s to regenerate %q", ErrExistingFiles, keyPath, certPath, keyPath, spec.CommonName)
+		return nil, "", fmt.Errorf("%w: %s exists but its certificate %s does not; delete %s to regenerate %q", ErrExistingFiles, existingKey, certPath, existingKey, spec.CommonName)
 	}
+	keyPath = existingKey
 
-	kp, err := ReadKeyPairFromFile(certPath, keyPath)
+	kp, err := enc.ReadKeyPairFromFile(certPath, keyPath)
 	if err != nil {
-		return nil, fmt.Errorf("%w: %v", ErrExistingFiles, err)
+		return nil, "", fmt.Errorf("%w: %w", ErrExistingFiles, err)
 	}
+	kp, err = checkReusedKeyPair(spec, args, kp, certPath, keyPath, pfxPath, enc)
+	return kp, keyPath, err
+}
+
+// checkReusedKeyPair returns kp if it still fits spec and its place in the
+// hierarchy described by args.
+func checkReusedKeyPair(spec *CertificateSpec, args *Args, kp *KeyPair, certPath, keyPath, pfxPath string, enc *KeyEncryption) (*KeyPair, error) {
 	cert, key, err := ReadKeyPair(kp.PublicCertificate, kp.PrivateKey)
 	if err != nil {
 		return nil, fmt.Errorf("%w: %s and %s: %v", ErrExistingFiles, certPath, keyPath, err)
@@ -724,9 +754,13 @@ func reuseKeyPair(spec *CertificateSpec, args *Args, certPath, keyPath, pfxPath 
 	if err != nil || !profile.OutputPFX {
 		return kp, err
 	}
-	if fileExists(pfxPath) {
-		if kp.PFX, err = os.ReadFile(filepath.Clean(pfxPath)); err != nil {
-			return nil, fmt.Errorf("%w: cannot read %s: %v", ErrExistingFiles, pfxPath, err)
+	existingPFX, err := existingPrivateFile(pfxPath)
+	if err != nil {
+		return nil, err
+	}
+	if existingPFX != "" {
+		if kp.PFX, err = enc.ReadPrivateFile(existingPFX); err != nil {
+			return nil, fmt.Errorf("%w: cannot read %s: %v", ErrExistingFiles, existingPFX, err)
 		}
 		return kp, nil
 	}

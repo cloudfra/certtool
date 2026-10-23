@@ -19,6 +19,7 @@ package yubikey
 import (
 	"bytes"
 	"crypto"
+	"crypto/ecdh"
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/rand"
@@ -67,6 +68,7 @@ type fakeCard struct {
 
 	generated []piv.Key
 	signs     int
+	decrypts  int
 	opens     int
 	closes    int
 }
@@ -122,6 +124,19 @@ func (c *fakeCard) Certificate(slot piv.Slot) (*x509.Certificate, error) {
 		return nil, fmt.Errorf("command failed: %w", piv.ErrNotFound)
 	}
 	return cert, nil
+}
+
+// KeyInfo returns the public key in slot. Like the PIV applet, firmware
+// before 5.3 has no key metadata.
+func (c *fakeCard) KeyInfo(slot piv.Slot) (piv.KeyInfo, error) {
+	if !versionAtLeast(c.version, 5, 3) {
+		return piv.KeyInfo{}, fmt.Errorf("command failed: %w", piv.ErrNotFound)
+	}
+	key, ok := c.keys[slot.Key]
+	if !ok {
+		return piv.KeyInfo{}, fmt.Errorf("command failed: %w", piv.ErrNotFound)
+	}
+	return piv.KeyInfo{PublicKey: key.Public()}, nil
 }
 
 func (c *fakeCard) SetCertificate(key []byte, slot piv.Slot, cert *x509.Certificate) error {
@@ -288,4 +303,32 @@ func putRoot(t *testing.T, card *fakeCard, slot piv.Slot, mutate func(*x509.Cert
 	card.certs[slot.Key] = cert
 	card.keys[slot.Key] = key
 	return cert
+}
+
+// ECDH computes a shared secret with an ECDSA slot key, needing the PIN like
+// Sign.
+func (k *fakeKey) ECDH(peer *ecdh.PublicKey) ([]byte, error) {
+	if k.card.signErr != nil {
+		return nil, k.card.signErr
+	}
+	pin := k.auth.PIN
+	if pin == "" {
+		var err error
+		if pin, err = k.auth.PINPrompt(); err != nil {
+			return nil, err
+		}
+	}
+	if err := k.card.verifyPIN(pin); err != nil {
+		return nil, err
+	}
+	ecKey, ok := k.key.(*ecdsa.PrivateKey)
+	if !ok {
+		return nil, fmt.Errorf("key of type %T cannot compute ECDH", k.key)
+	}
+	priv, err := ecKey.ECDH()
+	if err != nil {
+		return nil, err
+	}
+	k.card.decrypts++
+	return priv.ECDH(peer)
 }

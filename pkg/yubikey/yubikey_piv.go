@@ -19,7 +19,9 @@ package yubikey
 import (
 	"bytes"
 	"crypto"
+	"crypto/ecdh"
 	"crypto/ecdsa"
+	"crypto/elliptic"
 	"crypto/rsa"
 	"crypto/x509"
 	"encoding/hex"
@@ -30,6 +32,7 @@ import (
 	"strings"
 	"time"
 
+	"filippo.io/age"
 	"github.com/cloudfra/certtool/pkg/certtool"
 	"github.com/go-piv/piv-go/v2/piv"
 )
@@ -49,6 +52,7 @@ type pivCard interface {
 	Serial() (uint32, error)
 	Version() piv.Version
 	Certificate(slot piv.Slot) (*x509.Certificate, error)
+	KeyInfo(slot piv.Slot) (piv.KeyInfo, error)
 	SetCertificate(key []byte, slot piv.Slot, cert *x509.Certificate) error
 	GenerateKey(key []byte, slot piv.Slot, opts piv.Key) (crypto.PublicKey, error)
 	PrivateKey(slot piv.Slot, public crypto.PublicKey, auth piv.KeyAuth) (crypto.PrivateKey, error)
@@ -405,8 +409,13 @@ func (t *Token) FactoryDefaults() []string {
 // what failed, and, when the cause is recognized, says how to fix it. A nil
 // err produces an error with no cause.
 func (t *Token) errorf(err error, format string, args ...any) error {
+	return t.slotErrorf(t.slot, err, format, args...)
+}
+
+// slotErrorf is errorf for a slot other than the configured one.
+func (t *Token) slotErrorf(slot piv.Slot, err error, format string, args ...any) error {
 	v := t.yk.Version()
-	prefix := fmt.Sprintf("YubiKey %d (firmware %d.%d.%d), slot %s: ", t.serial, v.Major, v.Minor, v.Patch, t.slot)
+	prefix := fmt.Sprintf("YubiKey %d (firmware %d.%d.%d), slot %s: ", t.serial, v.Major, v.Minor, v.Patch, slot)
 	msg := fmt.Sprintf(format, args...)
 	if err == nil {
 		return errors.New(prefix + msg)
@@ -540,4 +549,94 @@ func pivTouchPolicy(p TouchPolicy) (piv.TouchPolicy, error) {
 		return piv.TouchPolicyCached, nil
 	}
 	return 0, fmt.Errorf("YubiKey touch policy %q is not valid, must be never, always, or cached", p)
+}
+
+// ageSlots are the slots searched for age keys: the retired key management
+// slots that age-plugin-yubikey uses, then the key management slot.
+var ageSlots = []uint32{0x82, 0x83, 0x84, 0x85, 0x86, 0x87, 0x88, 0x89, 0x8a, 0x8b, 0x8c, 0x8d, 0x8e, 0x8f, 0x90, 0x91, 0x92, 0x93, 0x94, 0x95, 0x9d}
+
+// AgeIdentities returns an age identity for each P-256 key in the slots that
+// age-plugin-yubikey uses (82 through 95) and the key management slot 9d. They
+// decrypt files encrypted to the key's age1yubikey or age1tag recipient, using
+// the PIN and, if the key's touch policy needs one, a touch.
+func (t *Token) AgeIdentities() ([]age.Identity, error) {
+	var identities []age.Identity
+	for _, key := range ageSlots {
+		slot, ok := piv.RetiredKeyManagementSlot(key)
+		if !ok {
+			slot = piv.SlotKeyManagement
+		}
+		pub := t.slotPublicKey(slot)
+		ecPub, ok := pub.(*ecdsa.PublicKey)
+		if !ok || ecPub.Curve != elliptic.P256() {
+			continue
+		}
+		ecdhPub, err := ecPub.ECDH()
+		if err != nil {
+			continue
+		}
+		identity, err := certtool.NewP256Identity(&slotKeyExchanger{token: t, slot: slot, pub: ecPub, ecdhPub: ecdhPub})
+		if err != nil {
+			return nil, err
+		}
+		identities = append(identities, identity)
+	}
+	if len(identities) == 0 {
+		return nil, fmt.Errorf("YubiKey %d: no slot from 82 to 95 or 9d holds a P-256 key to decrypt with; create one with age-plugin-yubikey --generate", t.serial)
+	}
+	return identities, nil
+}
+
+// slotPublicKey returns the public key in slot, or nil. It asks the key's
+// metadata, which firmware 5.3 and later have, then the slot's certificate.
+func (t *Token) slotPublicKey(slot piv.Slot) crypto.PublicKey {
+	if info, err := t.yk.KeyInfo(slot); err == nil && info.PublicKey != nil {
+		return info.PublicKey
+	}
+	if cert, err := t.yk.Certificate(slot); err == nil {
+		return cert.PublicKey
+	}
+	return nil
+}
+
+// slotKeyExchanger computes ECDH with the P-256 key in a slot.
+type slotKeyExchanger struct {
+	token   *Token
+	slot    piv.Slot
+	pub     *ecdsa.PublicKey
+	ecdhPub *ecdh.PublicKey
+}
+
+func (k *slotKeyExchanger) PublicKey() *ecdh.PublicKey { return k.ecdhPub }
+
+func (k *slotKeyExchanger) Curve() ecdh.Curve { return ecdh.P256() }
+
+func (k *slotKeyExchanger) ECDH(peer *ecdh.PublicKey) ([]byte, error) {
+	t := k.token
+	auth := piv.KeyAuth{PINPrompt: t.getPIN}
+	priv, err := t.yk.PrivateKey(k.slot, k.pub, auth)
+	if err != nil {
+		// As in signer, keys imported onto older firmware have no PIN policy
+		// to look up, so verify the PIN first.
+		auth.PINPolicy = piv.PINPolicyAlways
+		priv, err = t.yk.PrivateKey(k.slot, k.pub, auth)
+	}
+	if err != nil {
+		return nil, t.slotErrorf(k.slot, err, "cannot use the age key")
+	}
+	exchanger, ok := priv.(interface {
+		ECDH(*ecdh.PublicKey) ([]byte, error)
+	})
+	if !ok {
+		return nil, t.slotErrorf(k.slot, nil, "the key of type %T cannot decrypt", priv)
+	}
+	if t.cfg.BeforeDecrypt != nil {
+		t.cfg.BeforeDecrypt()
+	}
+	shared, err := exchanger.ECDH(peer)
+	if err != nil {
+		t.notePINFailure(err)
+		return nil, t.slotErrorf(k.slot, err, "cannot decrypt")
+	}
+	return shared, nil
 }

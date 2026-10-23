@@ -22,6 +22,7 @@ import (
 	"fmt"
 	"runtime"
 
+	"filippo.io/age"
 	"github.com/cloudfra/certtool/pkg/certtool"
 )
 
@@ -46,6 +47,9 @@ func (*Token) Issuer() (*certtool.Issuer, error) { return nil, errUnsupported }
 func (*Token) GenerateRoot(*certtool.Args, TouchPolicy, bool) (*x509.Certificate, error) {
 	return nil, errUnsupported
 }
+
+// AgeIdentities always fails because this build does not support YubiKeys.
+func (*Token) AgeIdentities() ([]age.Identity, error) { return nil, errUnsupported }
 
 // FactoryDefaults returns nothing, because this build cannot use YubiKeys.
 func (*Token) FactoryDefaults() []string { return nil }

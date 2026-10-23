@@ -41,6 +41,7 @@ YubiKey support is in the Windows downloads, and on Linux and macOS only in buil
 | A spec to start editing from | `--export-spec FILE` with `--chain` or plain flags; writes the YAML and no certificates |
 | Code signing | `--code-sign --target windows10\|windows11\|windows7\|linux` |
 | A root CA whose key never leaves hardware | `--yubikey-generate-root` once, then `--yubikey` |
+| Key files that need a YubiKey (or another age key) to read | `--encrypt-to age1yubikey1...,age1...`; later runs that reuse or sign with them add `--age-yubikey` or `--age-identity-file` |
 
 ## Recipes
 
@@ -93,7 +94,8 @@ certtool --yubikey --ca --common-name "Acme Issuing CA" --organization Acme \
 ## Rules
 
 - Never invent a PIN, management key, or `.pfx` password. If one is needed and not given, ask the user, or let certtool fail and report its error.
-- Pass secrets through `CERTTOOL_PFX_PASSWORD`, `CERTTOOL_YUBIKEY_PIN`, and `CERTTOOL_YUBIKEY_MANAGEMENT_KEY`, not on the command line. In specs, use `pfxPasswordEnv`, never `pfxPassword`.
+- Pass secrets through `CERTTOOL_PFX_PASSWORD`, `CERTTOOL_YUBIKEY_PIN`, `CERTTOOL_YUBIKEY_MANAGEMENT_KEY`, and `CERTTOOL_AGE_IDENTITY`, not on the command line.
+- With `--encrypt-to`, include a recovery recipient besides the YubiKey's, if the user has one; a key encrypted to a single YubiKey is lost with it. In specs, use `pfxPasswordEnv`, never `pfxPassword`.
 - Never commit generated `.key` or `.pfx` files. Add them to `.gitignore` when generating inside a repository.
 - Set `--organization` (and the other subject flags) for anything beyond a throwaway test. The defaults (`cloudfra`, `gows`, `Seattle`, `WA`, `US`) are placeholders.
 

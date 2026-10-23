@@ -85,6 +85,10 @@ func parseFlags(fs *flag.FlagSet, arguments []string) (certtool.Args, error) {
 	fs.StringVar(&args.YubiKeyTouchPolicy, "yubikey-touch-policy", args.YubiKeyTouchPolicy, "Whether the YubiKey must be touched to sign with a key made by --yubikey-generate-root: always (the default, a touch for every signature), cached (one touch allows signing for 15 seconds), or never.")
 	fs.BoolVar(&args.YubiKeyOverwrite, "yubikey-overwrite", args.YubiKeyOverwrite, "Allow --yubikey-generate-root to replace a slot that already holds a certificate. The old key is destroyed.")
 
+	fs.StringVar(&args.EncryptTo, "encrypt-to", args.EncryptTo, "Comma-separated age recipients to encrypt every private key and .pfx file to, written with an .age suffix: age1... (X25519), age1pq1..., age1tag1..., or age1yubikey1... (a key on a YubiKey, from age-plugin-yubikey). Encrypting needs neither the YubiKey nor the plugin.")
+	fs.StringVar(&args.AgeIdentityFile, "age-identity-file", args.AgeIdentityFile, "Comma-separated age identity files (AGE-SECRET-KEY-1...) that decrypt an encrypted --parent-private-key or the encrypted keys --spec and --chain reuse. The "+certtool.AgeIdentityEnv+" environment variable can hold identities too.")
+	fs.BoolVar(&args.AgeYubiKey, "age-yubikey", args.AgeYubiKey, "Decrypt keys encrypted to an age1yubikey or age1tag recipient with the YubiKey: certtool searches slots 82 through 95 and 9d. Needs the PIN, and a touch if the key requires one; uses --yubikey-serial.")
+
 	fs.BoolVar(&args.Version, "version", args.Version, "Print version and build information, then exit.")
 
 	err := fs.Parse(arguments)

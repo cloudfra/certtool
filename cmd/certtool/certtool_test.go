@@ -77,6 +77,9 @@ func TestParseFlags(t *testing.T) {
 		"--yubikey-management-key", "abcd",
 		"--yubikey-touch-policy", "always",
 		"--yubikey-overwrite",
+		"--encrypt-to", "age1a,age1b",
+		"--age-identity-file", "id.txt",
+		"--age-yubikey",
 		"--version",
 	})
 	if err != nil {
@@ -119,6 +122,9 @@ func TestParseFlags(t *testing.T) {
 		YubiKeyManagementKey:    "abcd",
 		YubiKeyTouchPolicy:      "always",
 		YubiKeyOverwrite:        true,
+		EncryptTo:               "age1a,age1b",
+		AgeIdentityFile:         "id.txt",
+		AgeYubiKey:              true,
 		Version:                 true,
 	}
 	if diff := cmp.Diff(want, args); diff != "" {

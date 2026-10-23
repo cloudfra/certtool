@@ -8,6 +8,7 @@ Step-by-step command lines for common jobs. Each guide starts from nothing and e
 | [Private CA and mutual TLS](private-ca.md) | Run your own root and issuing CA for internal services, and authenticate clients with certificates |
 | [Code signing](code-signing.md) | Sign Windows executables and scripts with `signtool.exe`, PowerShell, or `osslsigncode` |
 | [YubiKey root CA](yubikey-root-ca.md) | Keep the root CA private key on a YubiKey so it can never be copied |
+| [Encrypted private keys](encrypted-keys.md) | Encrypt the key files certtool writes to a YubiKey, so reading them needs the YubiKey instead of a password |
 
 For whole hierarchies described in YAML, see the [certificate spec documentation](../spec.md). It has more examples for Active Directory, Kubernetes, PostgreSQL, Redis, and VPN gateways.
 
@@ -17,4 +18,4 @@ For whole hierarchies described in YAML, see the [certificate spec documentation
 * Multi-line commands use `\` at the end of a line, as in bash and zsh. In PowerShell, end the line with a backtick (`` ` ``) instead, or put the whole command on one line.
 * Every certificate includes `localhost` and `127.0.0.1` as subject alternative names, in addition to `--hostnames`.
 * The subject defaults to `C=US, ST=WA, L=Seattle, O=cloudfra, OU=gows`. Set `--organization`, `--organizational-unit`, `--country`, `--province`, and `--locality` to your own values for anything other people will see.
-* Private keys are written with mode `0600`. Keep them out of source control.
+* Private keys are written with mode `0600`. Keep them out of source control, or encrypt them with `--encrypt-to` ([Encrypted private keys](encrypted-keys.md)).

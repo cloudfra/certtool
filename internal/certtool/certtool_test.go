@@ -215,7 +215,7 @@ func TestRunParentCertificate(t *testing.T) {
 }
 
 func TestCertificateArgs(t *testing.T) {
-	certArgs, err := certificateArgs(t.Context(), DefaultArgs())
+	certArgs, err := certificateArgs(t.Context(), DefaultArgs(), nil)
 	if err != nil {
 		t.Fatalf("certificateArgs() err = %v", err)
 	}
@@ -239,7 +239,7 @@ func TestCertificateArgsFields(t *testing.T) {
 	args.CommonName = "my-service.example.com"
 	args.Hostnames = "a.example.com, b.example.com"
 
-	certArgs, err := certificateArgs(t.Context(), args)
+	certArgs, err := certificateArgs(t.Context(), args, nil)
 	if err != nil {
 		t.Fatalf("certificateArgs() err = %v", err)
 	}
@@ -260,7 +260,7 @@ func TestCertificateArgsCodeSigningKeyType(t *testing.T) {
 			args := DefaultArgs()
 			args.CodeSigning, args.KeyType, args.Target = true, "ECDSA-256", target
 
-			certArgs, err := certificateArgs(t.Context(), args)
+			certArgs, err := certificateArgs(t.Context(), args, nil)
 			if err != nil {
 				t.Fatalf("certificateArgs() err = %v", err)
 			}
@@ -273,7 +273,7 @@ func TestCertificateArgsCodeSigningKeyType(t *testing.T) {
 	t.Run("profile default", func(t *testing.T) {
 		args := DefaultArgs()
 		args.CodeSigning = true
-		certArgs, err := certificateArgs(t.Context(), args)
+		certArgs, err := certificateArgs(t.Context(), args, nil)
 		if err != nil {
 			t.Fatalf("certificateArgs() err = %v", err)
 		}
@@ -298,7 +298,7 @@ func TestCertificateArgsErrors(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			args := DefaultArgs()
 			tc.set(t, &args)
-			if _, err := certificateArgs(t.Context(), args); err == nil {
+			if _, err := certificateArgs(t.Context(), args, nil); err == nil {
 				t.Error("certificateArgs() err = nil, want an error")
 			}
 		})
