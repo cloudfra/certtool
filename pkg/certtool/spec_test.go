@@ -1213,6 +1213,40 @@ func TestGenerateFromSpec_EmailAndSSH(t *testing.T) {
 	}
 }
 
+// TestGenerateFromSpec_SSHPublicKeyComment checks that a common name cannot
+// add lines or fields to the .key.pub file, which is appended to
+// authorized_keys.
+func TestGenerateFromSpec_SSHPublicKeyComment(t *testing.T) {
+	t.Parallel()
+	specs, err := UnmarshalSpec([]byte(`
+- commonName: "alice\nssh-ed25519\tAAAAC3NzaC1lZDI1NTE5AAAAIA attacker\r"
+  keyType: ECDSA-256
+  sshPublicKey: true
+  filename: alice
+`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	out, err := GenerateFromSpec(specs, t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(filepath.Clean(out[0].SSHPublicKeyPath))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if lines := bytes.Count(data, []byte("\n")); lines != 1 || bytes.ContainsRune(data, '\r') {
+		t.Fatalf(".key.pub = %q, want one line", data)
+	}
+	_, comment, _, rest, err := ssh.ParseAuthorizedKey(data)
+	if err != nil {
+		t.Fatalf("ParseAuthorizedKey() err = %v", err)
+	}
+	if want := "alice_ssh-ed25519_AAAAC3NzaC1lZDI1NTE5AAAAIA_attacker_"; comment != want || len(rest) > 0 {
+		t.Errorf("comment = %q, rest = %q; want %q and nothing else", comment, rest, want)
+	}
+}
+
 func TestGenerateFromSpec_ReusedCAWithoutEmailProtection(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
