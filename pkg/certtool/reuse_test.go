@@ -271,3 +271,63 @@ func mustRemove(t *testing.T, path string) {
 		t.Fatal(err)
 	}
 }
+
+// A reused CA must still have the name constraints and path length the spec
+// gives it, or it could issue for names, or chains, the spec no longer allows.
+func TestGenerateFromSpec_ReusedCAConstraintsChanged(t *testing.T) {
+	t.Parallel()
+	minusOne := -1
+	for _, tc := range []struct {
+		name string
+		edit func(root *CertificateSpec)
+		want string
+	}{
+		{"DNS domains added", func(root *CertificateSpec) { root.PermittedDNSDomains = []string{"example.com"} }, "permits the DNS domains none, but the spec permits example.com"},
+		{"IP ranges added", func(root *CertificateSpec) { root.PermittedIPRanges = []string{"10.0.0.0/8"} }, "permits the IP ranges none, but the spec permits 10.0.0.0/8"},
+		{"path length", func(root *CertificateSpec) { root.MaxPathLen = &minusOne }, "has maxPathLen 0, but the spec gives it -1"},
+		{"CA added below", func(root *CertificateSpec) {
+			root.Children = append(root.Children, CertificateSpec{CommonName: "Sub CA", CertificateAuthority: true, KeyType: testSpecECDSA256, Filename: "sub"})
+		}, "has maxPathLen 0, but the spec gives it 1"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			dir := t.TempDir()
+			if _, err := GenerateFromSpec(reuseSpec("api"), dir); err != nil {
+				t.Fatal(err)
+			}
+			specs := reuseSpec("api")
+			tc.edit(&specs[0])
+			_, err := GenerateFromSpec(specs, dir)
+			if !errors.Is(err, ErrExistingFiles) || !strings.Contains(err.Error(), tc.want) {
+				t.Errorf("GenerateFromSpec() err = %v, want ErrExistingFiles containing %q", err, tc.want)
+			}
+		})
+	}
+}
+
+// A CA that inherits its parent's name constraints is reused when nothing
+// changed.
+func TestGenerateFromSpec_ReusesInheritedConstraints(t *testing.T) {
+	t.Parallel()
+	spec := func() []CertificateSpec {
+		return []CertificateSpec{{
+			CommonName: "Root", CertificateAuthority: true, KeyType: testSpecECDSA256, Filename: "root",
+			PermittedDNSDomains: []string{"Example.com", "corp.example.org"}, PermittedIPRanges: []string{"10.0.0.0/8"},
+			Children: []CertificateSpec{{
+				CommonName: "Issuing", CertificateAuthority: true, KeyType: testSpecECDSA256, Filename: "issuing",
+				Children: []CertificateSpec{{CommonName: "api.example.com", KeyType: testSpecECDSA256, Hostnames: []string{"api.example.com"}, Filename: "api"}},
+			}},
+		}}
+	}
+	dir := t.TempDir()
+	if _, err := GenerateFromSpec(spec(), dir); err != nil {
+		t.Fatal(err)
+	}
+	out, err := GenerateFromSpec(spec(), dir)
+	if err != nil {
+		t.Fatalf("GenerateFromSpec() again err = %v", err)
+	}
+	if _, generated := reusedNames(out); len(generated) != 0 {
+		t.Errorf("generated %v, want everything reused", generated)
+	}
+}

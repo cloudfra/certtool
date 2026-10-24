@@ -338,6 +338,7 @@ A reused certificate must still fit the spec. certtool stops with an error, befo
 
 - only one of its `.crt` and `.key` files exists, or the key does not match the certificate;
 - its common name or `certificateAuthority` differs from the spec;
+- it is a CA whose name constraints (`permittedDNSDomains`, `permittedIPRanges`, or those inherited from its parent) or `maxPathLen` differ from what the spec gives it now. The default `maxPathLen` counts the CAs below it, so adding or removing a level of CAs changes it;
 - it has expired;
 - it is not signed by its parent in the spec, for example because the parent's files were deleted and the parent was regenerated.
 

@@ -808,6 +808,13 @@ func checkReusedKeyPair(spec *CertificateSpec, args *Args, kp *KeyPair, certPath
 	} else if err := cert.CheckSignatureFrom(parent); err != nil {
 		return nil, problem("is not signed by %q, which issues it in the spec, probably because that certificate was regenerated", parent.Subject.CommonName)
 	}
+	if spec.CertificateAuthority {
+		if msg, err := reusedCAConstraints(cert, parent, args); err != nil {
+			return nil, problem("cannot be checked against the spec: %v", err)
+		} else if msg != "" {
+			return nil, problem("%s", msg)
+		}
+	}
 
 	outputPFX, legacyPFX, err := specPFX(spec)
 	if err != nil || !outputPFX {
@@ -827,6 +834,65 @@ func checkReusedKeyPair(spec *CertificateSpec, args *Args, kp *KeyPair, certPath
 		return nil, fmt.Errorf("cannot rebuild the PFX for %q from %s: %w", spec.CommonName, keyPath, err)
 	}
 	return kp, nil
+}
+
+// reusedCAConstraints returns what differs between the name constraints and
+// path length of the CA certificate cert and those the spec gives it, or ""
+// when nothing does. A CA without constraints of its own inherits parent's,
+// as when it is generated. Reusing a CA with other constraints would leave it
+// able to issue for names, or chains, that the spec no longer allows.
+func reusedCAConstraints(cert, parent *x509.Certificate, args *Args) (string, error) {
+	want := &x509.Certificate{IsCA: true, PermittedDNSDomains: args.PermittedDNSDomains, PermittedIPRanges: args.PermittedIPRanges}
+	if parent != nil {
+		if err := inheritNameConstraints(parent, want); err != nil {
+			return "", err
+		}
+	}
+	if got, want := dnsDomainsName(cert.PermittedDNSDomains), dnsDomainsName(want.PermittedDNSDomains); got != want {
+		return fmt.Sprintf("permits the DNS domains %s, but the spec permits %s", got, want), nil
+	}
+	if got, want := ipRangesName(cert.PermittedIPRanges), ipRangesName(want.PermittedIPRanges); got != want {
+		return fmt.Sprintf("permits the IP ranges %s, but the spec permits %s", got, want), nil
+	}
+
+	wantPathLen := -1
+	if args.MaxPathLen != nil {
+		wantPathLen = *args.MaxPathLen
+	}
+	gotPathLen := cert.MaxPathLen
+	if gotPathLen == 0 && !cert.MaxPathLenZero {
+		gotPathLen = -1
+	}
+	if gotPathLen != wantPathLen {
+		return fmt.Sprintf("has maxPathLen %d, but the spec gives it %d (-1 is no limit), perhaps because CAs were added below it or removed", gotPathLen, wantPathLen), nil
+	}
+	return "", nil
+}
+
+// dnsDomainsName lists DNS name constraints in a canonical order, or "none".
+func dnsDomainsName(domains []string) string {
+	if len(domains) == 0 {
+		return "none"
+	}
+	names := make([]string, len(domains))
+	for i, d := range domains {
+		names[i] = strings.ToLower(d)
+	}
+	slices.Sort(names)
+	return strings.Join(slices.Compact(names), ", ")
+}
+
+// ipRangesName lists IP name constraints in a canonical order, or "none".
+func ipRangesName(ranges []*net.IPNet) string {
+	if len(ranges) == 0 {
+		return "none"
+	}
+	names := make([]string, len(ranges))
+	for i, r := range ranges {
+		names[i] = r.String()
+	}
+	slices.Sort(names)
+	return strings.Join(slices.Compact(names), ", ")
 }
 
 // writeSSHPublicKey writes the public key of kp to path in the OpenSSH
