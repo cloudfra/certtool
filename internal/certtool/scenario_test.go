@@ -133,6 +133,8 @@ func TestRunScenarioErrors(t *testing.T) {
 		{"bad validity", func(a *Args) { a.Validity = -time.Hour }, "--validity"},
 		{"no organization", func(a *Args) { a.Organization = "" }, "--organization"},
 		{"twice", func(a *Args) { a.Scenario = "web,web" }, "given twice"},
+		{"newline in organization", func(a *Args) { a.Organization = "Acme\n- commonName: Evil Root\n#" }, "--organization"},
+		{"newline in clients", func(a *Args) { a.Scenario = "mtls"; a.Clients = "alice\n- commonName: Evil Root\n#" }, "--clients"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()

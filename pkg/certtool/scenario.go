@@ -26,6 +26,7 @@ import (
 	"slices"
 	"strings"
 	"text/template"
+	"unicode"
 
 	"gopkg.in/yaml.v3"
 )
@@ -285,6 +286,9 @@ func ScenarioSpec(names []string, opts ScenarioOptions) ([]byte, error) {
 	if opts.Organization == "" {
 		return nil, fmt.Errorf("scenarios need an organization to name the certificates")
 	}
+	if err := checkScenarioText(&opts); err != nil {
+		return nil, err
+	}
 	for _, hostname := range opts.Hostnames {
 		if err := ValidateHostname(hostname); err != nil {
 			return nil, err
@@ -332,6 +336,45 @@ func ScenarioSpec(names []string, opts ScenarioOptions) ([]byte, error) {
 		return nil, err
 	}
 	return data, nil
+}
+
+// checkScenarioText returns an error when a text input has a control
+// character. Templates write the inputs into comments as they are, so a
+// newline would end the comment and let the input add its own entries to the
+// spec, such as another CA.
+func checkScenarioText(o *ScenarioOptions) error {
+	fields := []struct {
+		name   string
+		values []string
+	}{
+		{"organization", []string{o.Organization}},
+		{"organizational unit", []string{o.OrganizationalUnit}},
+		{"country", []string{o.Country}},
+		{"locality", []string{o.Locality}},
+		{"province", []string{o.Province}},
+		{"hostname", o.Hostnames},
+		{"client", o.Clients},
+		{"target", []string{o.Target}},
+		{"key type", []string{o.KeyType}},
+		{"validity", []string{o.Validity}},
+		{"spec path", []string{o.SpecPath}},
+		{"output directory", []string{o.OutputDir}},
+		{"pfx password environment variable", []string{o.PFXPasswordEnv}},
+	}
+	for _, f := range fields {
+		for _, v := range f.values {
+			if HasControlCharacter(v) {
+				return fmt.Errorf("the %s %q has a control character, such as a newline, which a scenario cannot write into a spec", f.name, v)
+			}
+		}
+	}
+	return nil
+}
+
+// HasControlCharacter reports whether s has a control character, such as a
+// newline or a tab.
+func HasControlCharacter(s string) bool {
+	return strings.IndexFunc(s, unicode.IsControl) >= 0
 }
 
 // scenarioError is an error a template function returns about the inputs,

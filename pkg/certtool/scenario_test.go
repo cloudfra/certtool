@@ -329,6 +329,13 @@ func TestScenarioSpecErrors(t *testing.T) {
 		{"ssh without clients", []string{ScenarioSSH}, web, "needs clients"},
 		{"duplicate git person", []string{ScenarioGit}, with(func(o *ScenarioOptions) { o.Clients = []string{"a@example.com", "A@example.com"} }), "would both be written"},
 		{"android signing on a YubiKey", []string{ScenarioAndroidSigning}, with(func(o *ScenarioOptions) { o.ExternalRoot = true }), "self-signed"},
+		// A newline would end the comment a template writes the input into,
+		// and let the input add entries to the spec.
+		{"newline in organization", []string{ScenarioKubernetes}, with(func(o *ScenarioOptions) {
+			o.Organization = "Acme\n- commonName: Evil Root\n  certificateAuthority: true\n#"
+		}), "control character"},
+		{"newline in client", []string{ScenarioSSH}, with(func(o *ScenarioOptions) { o.Clients = []string{"alice\n- commonName: Evil Root\n#"} }), "control character"},
+		{"tab in locality", []string{ScenarioWeb}, with(func(o *ScenarioOptions) { o.Locality = "a\tb" }), "control character"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
