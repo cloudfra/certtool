@@ -207,6 +207,23 @@ func scenarioOptions(args Args) (certlib.ScenarioOptions, error) {
 	if opts.Organization == "" {
 		return certlib.ScenarioOptions{}, errors.New("--scenario needs --organization to name the certificates")
 	}
+	// The scenario writes these into comments, where a newline would let the
+	// value add its own entries to the spec.
+	for _, f := range []struct{ flag, value string }{
+		{"--organization", args.Organization},
+		{"--organizational-unit", args.OrganizationalUnit},
+		{"--country", args.Country},
+		{"--locality", args.Locality},
+		{"--province", args.Province},
+		{"--clients", args.Clients},
+		{"--target", args.Target},
+		{"--output-dir", args.OutputDir},
+		{"--export-spec", args.ExportSpec},
+	} {
+		if certlib.HasControlCharacter(f.value) {
+			return certlib.ScenarioOptions{}, fmt.Errorf("%s %q has a control character, such as a newline; --scenario writes it into the spec, so it must be plain text", f.flag, f.value)
+		}
+	}
 	if args.KeyType != "" {
 		algorithm, length, err := stringToKeyType(args.KeyType)
 		if err != nil {
