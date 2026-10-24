@@ -29,6 +29,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode"
 
 	"golang.org/x/crypto/ssh"
 	"gopkg.in/yaml.v3"
@@ -830,7 +831,10 @@ func checkReusedKeyPair(spec *CertificateSpec, args *Args, kp *KeyPair, certPath
 
 // writeSSHPublicKey writes the public key of kp to path in the OpenSSH
 // authorized_keys format, ending with comment. It is derived from the
-// certificate, so it is rewritten on every run.
+// certificate, so it is rewritten on every run. Whitespace and control
+// characters in comment become underscores: the file is appended to
+// authorized_keys, where a newline would start a line of the comment's own,
+// such as another key, and a tab would end the comment.
 func writeSSHPublicKey(kp *KeyPair, path, comment string) error {
 	block, _ := pem.Decode(kp.PublicCertificate)
 	if block == nil {
@@ -845,7 +849,18 @@ func writeSSHPublicKey(kp *KeyPair, path, comment string) error {
 		return err
 	}
 	line := bytes.TrimSuffix(ssh.MarshalAuthorizedKey(pub), []byte("\n"))
-	return safefile.WritePublic(path, append(line, []byte(" "+strings.ReplaceAll(comment, " ", "_")+"\n")...))
+	return safefile.WritePublic(path, append(line, []byte(" "+sshComment(comment)+"\n")...))
+}
+
+// sshComment replaces the whitespace and control characters in comment with
+// underscores, so it stays one field of one line.
+func sshComment(comment string) string {
+	return strings.Map(func(r rune) rune {
+		if unicode.IsSpace(r) || unicode.IsControl(r) {
+			return '_'
+		}
+		return r
+	}, comment)
 }
 
 // signsEmail reports whether a certificate below the CA spec has email
