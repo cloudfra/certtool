@@ -35,7 +35,7 @@ A spec file is a YAML list of `CertificateSpec` entries. Each entry defines one 
 | `emailAddresses` | list | | Leaf TLS certificates only. Makes the certificate a person's, for S/MIME and Git commit signing: the addresses become SANs, the extended key usages are email protection and TLS client, and `localhost` and `127.0.0.1` are not added. The CAs above it allow email protection. |
 | `sshPublicKey` | bool | `false` | Leaf certificates only. Also write the key's public half in OpenSSH format to `<filename>.key.pub`, for `authorized_keys`, `known_hosts`, SFTP, and Git SSH signing. OpenSSH reads the `.key` as it is. Rewritten on every run. |
 | `filename` | string | | Override the output filename (without extension). Must be a plain file name: directories, `..`, and absolute paths are rejected so every file stays in `--output-dir`. |
-| `maxPathLen` | int | | CAs only. How many CAs may sit below this one. Default: the number of CA levels below it in the spec, so `--chain 1,2,3` gives the root 1 and the intermediates 0. `-1` means no limit. |
+| `maxPathLen` | int | | CAs only. How many CAs may sit below this one. Default: the number of CA levels below it in the spec, so `--chain 1,2,3` gives the root 1 and the intermediates 0. `-1` means no limit. Set it explicitly on a CA that may get more levels below it later; see [Planning for growth](#planning-for-growth). |
 | `permittedDNSDomains` | list | | CAs only. DNS domains that certificates below the CA may use, as critical name constraints. `example.com` permits it and its subdomains; `.example.com` only its subdomains. |
 | `permittedIPRanges` | list | | CAs only. IP ranges in CIDR notation, such as `10.0.0.0/8`, that certificates below the CA may use. |
 | `children` | list | | Child specs signed by this certificate. |
@@ -343,6 +343,42 @@ A reused certificate must still fit the spec. certtool stops with an error, befo
 - it is not signed by its parent in the spec, for example because the parent's files were deleted and the parent was regenerated.
 
 A reused entry's other fields, such as `hostnames` or `validity`, are not compared. To regenerate one certificate, delete its `.crt` and `.key` files, along with those of everything below it. To regenerate everything, pass `--overwrite`. A code signing entry whose `.pfx` is missing gets a new `.pfx` built from its existing key.
+
+### Planning for growth
+
+A CA's name constraints and `maxPathLen` are part of its signed certificate, so they cannot change while it is reused. Laying the hierarchy out for what may come later saves regenerating a CA, and redistributing the root, when it does:
+
+- **New hostnames** need no planning. `permittedDNSDomains: [example.com]` permits `example.com` and every name below it, such as `api.example.com` or `new.eu.example.com`, so certificates for new hosts are just new entries. A CA with no constraints permits any name.
+- **New domains** each get their own issuing CA. Keep the root's constraints broad, or leave them out, and give each domain an issuing CA constrained to it. A domain added later is a new issuing CA under the same root, which is reused, so clients keep trusting it. An issuing CA whose key leaks can then only issue for its own domain.
+- **New levels of CAs** need an explicit `maxPathLen` on the CAs above them. The default counts the CA levels below a CA today, so adding a level later changes it and the CA can no longer be reused. Set `maxPathLen` to the most levels you expect, or `-1` for no limit.
+
+```yaml
+- commonName: Acme Root CA
+  certificateAuthority: true
+  # Room for an issuing CA and one more level below it.
+  maxPathLen: 2
+  filename: root
+  children:
+    - commonName: Acme example.com CA
+      certificateAuthority: true
+      permittedDNSDomains: [example.com]
+      filename: example-com-ca
+      children:
+        - commonName: api.example.com
+          hostnames: [api.example.com]
+          filename: api
+    # Added later: the root and the example.com CA are reused.
+    - commonName: Acme example.org CA
+      certificateAuthority: true
+      permittedDNSDomains: [example.org]
+      filename: example-org-ca
+      children:
+        - commonName: shop.example.org
+          hostnames: [shop.example.org]
+          filename: shop
+```
+
+To give an existing CA another domain, add it to the CA's `permittedDNSDomains`, delete the files of that CA and everything below it, and run the spec again.
 
 ## Starting from a scenario
 
