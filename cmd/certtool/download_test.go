@@ -15,12 +15,15 @@
 package main
 
 import (
+	"path"
 	"regexp"
 	"testing"
 )
 
 var (
-	releaseAsset  = regexp.MustCompile(`build/release/(certtool-[A-Za-z0-9_.-]+)`)
+	// The release workflow lists its files as globs, such as
+	// build/release/*-linux_amd64, that match every app it builds.
+	releaseAsset  = regexp.MustCompile(`build/release/(\*-[A-Za-z0-9_.-]+)`)
 	downloadAsset = regexp.MustCompile(`releases/(?:latest/download|download/[^/\s]+)/([A-Za-z0-9_.-]+)`)
 	namedAsset    = regexp.MustCompile("`(certtool-[A-Za-z0-9_]+(?:\\.exe)?)`")
 )
@@ -28,23 +31,32 @@ var (
 // TestDownloadLinks keeps the documented download links pointing at files the
 // release workflow publishes, so they never return 404.
 func TestDownloadLinks(t *testing.T) {
-	published := map[string]bool{}
-	for _, m := range releaseAsset.FindAllStringSubmatch(readRepoFile(t, ".github/workflows/deploy.yaml"), -1) {
-		published[m[1]] = true
+	const workflow = ".github/workflows/create-release.yaml"
+	var globs []string
+	for _, m := range releaseAsset.FindAllStringSubmatch(readRepoFile(t, workflow), -1) {
+		globs = append(globs, m[1])
 	}
-	if len(published) == 0 {
-		t.Fatal("found no release assets in .github/workflows/deploy.yaml")
+	if len(globs) == 0 {
+		t.Fatalf("found no release assets in %s", workflow)
+	}
+	published := func(name string) bool {
+		for _, g := range globs {
+			if ok, _ := path.Match(g, name); ok {
+				return true
+			}
+		}
+		return false
 	}
 
 	for _, path := range []string{"README.md", "llms.txt", "skills/certtool/SKILL.md"} {
 		doc := readRepoFile(t, path)
 		for _, m := range downloadAsset.FindAllStringSubmatch(doc, -1) {
-			if !published[m[1]] {
+			if !published(m[1]) {
 				t.Errorf("%s links to %s, which the release workflow does not publish", path, m[1])
 			}
 		}
 		for _, m := range namedAsset.FindAllStringSubmatch(doc, -1) {
-			if !published[m[1]] {
+			if !published(m[1]) {
 				t.Errorf("%s names the release file %s, which the release workflow does not publish", path, m[1])
 			}
 		}

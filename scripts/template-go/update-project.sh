@@ -26,11 +26,16 @@
 #   5. move the Go modules to their latest releases through the repo's own
 #      `make deps` target, then verify the checksums
 #
-# Step 2 only touches pins that hold a concrete version. Pins set to `latest`
-# (actionlint, gofumpt, golangci-lint, revive, tflint, gocover-cobertura) are
-# already floating and are left alone. ANDROID_NDK_VERSION is skipped: Google
-# publishes the NDK without a versioned releases API, so there is nothing to
-# query it against.
+# Step 2 only touches pins that hold a concrete version; a pin set to `latest`
+# is left alone. Every tool is pinned, so builds are reproducible and an
+# installed tool is only replaced when its pin moves. The exception is
+# gocover-cobertura, whose upstream has no tagged release: it is pinned to a
+# pseudo-version and has to be bumped by hand.
+#
+# ANDROID_NDK_VERSION resolves from the android/ndk GitHub releases, whose tags
+# are the download-suffix the makefile builds its URL from (r28c, r29, r30).
+# Those tags are not semver, so the comparison below is the only place NDK
+# versions are ordered.
 #
 # Every candidate version is verified before the pin is rewritten. Tools whose
 # binaries are downloaded as archives (terraform, trivy, rumdl, shellcheck,
@@ -325,7 +330,16 @@ sync_template() {
 #   github:<owner>/<repo> | hashicorp:<name> | goproxy:<module> | skip
 # Pins absent from this list are reported as unmapped rather than guessed at.
 PIN_SOURCES=(
+  "ACTIONLINT:goproxy:github.com/rhysd/actionlint"
   "DOCKERCOMPOSE:github:docker/compose"
+  "GOCOVER_COBERTURA:skip"
+  "GOFUMPT:goproxy:mvdan.cc/gofumpt"
+  "GOLANGCI_LINT:goproxy:github.com/golangci/golangci-lint/v2"
+  "REVIVE:goproxy:github.com/mgechev/revive"
+  "TFLINT:goproxy:github.com/terraform-linters/tflint"
+  "GOLANG_GRPC:goproxy:google.golang.org/grpc/cmd/protoc-gen-go-grpc"
+  "GOLANG_PROTOBUF:goproxy:google.golang.org/protobuf"
+  "GRPC_GATEWAY:goproxy:github.com/grpc-ecosystem/grpc-gateway/v2"
   "TERRAFORM:hashicorp:terraform"
   "CERTTOOL:github:cloudfra/certtool"
   "HADOLINT:github:hadolint/hadolint"
@@ -335,7 +349,7 @@ PIN_SOURCES=(
   "TRIVY:github:aquasecurity/trivy"
   "VIZB:goproxy:github.com/goptics/vizb"
   "PROTOC:github:protocolbuffers/protobuf"
-  "ANDROID_NDK:skip"
+  "ANDROID_NDK:github:android/ndk"
 )
 
 # source_for PIN echoes the mapped source, or nothing when unmapped.
@@ -651,14 +665,15 @@ bump_terraform() {
 
 # --- step 5: re-vendor third_party ------------------------------------------
 
-# The vendored proto trees are produced by make targets that unzip upstream
-# archives. The archives are cached under build/archives, so they are removed
-# first to force a fresh download rather than re-vendoring a stale copy.
+# The vendored proto trees are produced by make targets that download and
+# unzip upstream archives (googleapis and grpc-gateway from their master
+# branches, protoc's includes from PROTOC_VERSION). Those targets have no
+# prerequisites, so a build keeps the checked-in trees; deleting a target's
+# LICENSE file is what makes make vendor it again.
 VENDOR_TARGETS=(
   "third_party/google_protobuf/include/google/LICENSE"
   "third_party/grpc_gateway/include/protoc-gen-openapiv2/LICENSE"
 )
-VENDOR_ARCHIVES=(protoc.zip googleapis.zip grpc-gateway.zip)
 
 refresh_vendored() {
   echo
@@ -683,9 +698,8 @@ refresh_vendored() {
     return 0
   fi
 
-  local archive
-  for archive in "${VENDOR_ARCHIVES[@]}"; do
-    rm -f "$TARGET/build/archives/$archive"
+  for t in "${targets[@]}"; do
+    rm -f "$TARGET/$t"
   done
   if ! make -C "$TARGET" "${targets[@]}"; then
     echo "  error: re-vendor failed" >&2
