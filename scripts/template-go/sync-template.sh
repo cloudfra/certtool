@@ -21,7 +21,7 @@
 #
 # In the target project it replaces:
 #   * every Makefile_*.mk        (Makefile and Makefile_testassets.mk are preserved)
-#   * every root dotfile config   (e.g. .gitignore, .golangci.yml, .yamllint.yml)
+#   * every root dotfile config   (e.g. .golangci.yml, .yamllint.yml)
 #   * the whole .github/ directory (.github/workflows/deploy-*.yaml are preserved)
 #   * the whole scripts/template-go/ directory (the standard scripts, this one
 #     included)
@@ -34,13 +34,14 @@
 # line is repeated once per app with exampleapp replaced by that app's name.
 #
 # Every other file directly under scripts/ (e.g. the CI hooks prepare-ci.sh
-# and Initialize-CI.ps1) is the exception: it is copied in only when the
-# target does not already have one and is never overwritten, because the
-# whole point of those is to be customized. A project can edit them freely and
+# and Initialize-CI.ps1), plus a few root dotfiles (.codespellignore and
+# .gitignore), is the exception: it is copied in only when the target does not
+# already have one and is never overwritten, because the whole point of those
+# is to be customized. A project can edit them freely and
 # re-running the sync keeps its version.
 #
 # This is a HARD replace: local edits to any of the managed files are
-# discarded and project-specific versions (e.g. a customized .gitignore) are
+# discarded and project-specific versions (e.g. a customized .golangci.yml) are
 # clobbered. Prefer running it on a branch/PR, or with --dry-run first, so the
 # change is reviewable.
 #
@@ -59,6 +60,9 @@ SCRIPT_SOURCE_REF="main"
 STANDARD_DIR="scripts/template-go"
 # Everything directly under here (outside STANDARD_DIR) is customizable.
 SEED_DIR="scripts"
+# Root dotfiles that are seeded like SEED_DIR rather than replaced like the
+# other root dotfiles.
+SEED_ROOT_FILES=(".codespellignore" ".gitignore")
 
 # --- argument parsing -------------------------------------------------------
 
@@ -70,8 +74,8 @@ Sync template-managed files (Makefile_*.mk, root dotfiles, .github/,
 scripts/template-go/) from upstream template-go into the target project. This
 is a hard replace and is safe to re-run. .github/workflows/deploy-*.yaml are
 preserved, and the other files directly under scripts/ (e.g.
-scripts/prepare-ci.sh, scripts/Initialize-CI.ps1) are added only when missing
-and never overwritten.
+scripts/prepare-ci.sh, scripts/Initialize-CI.ps1), .codespellignore and
+.gitignore are added only when missing and never overwritten.
 
 Options:
   -s, --source DIR   Read upstream files from local DIR instead of cloning
@@ -203,17 +207,28 @@ echo
 # list_managed_files ROOT prints the managed regular files directly under ROOT
 # as bare relative paths (no leading ./), one per line:
 #   Makefile_*.mk   (excluding Makefile_testassets.mk)
-#   root dotfiles    (e.g. .gitignore, .golangci.yml)
-# .git and .github are excluded (.github is synced as a directory instead).
+#   root dotfiles    (e.g. .golangci.yml, .yamllint.yml)
+# .git and .github are excluded (.github is synced as a directory instead),
+# as are SEED_ROOT_FILES (seeded instead).
 list_managed_files() {
-  local root="$1"
-  ( cd "$root" && find . -maxdepth 1 -type f \( -name 'Makefile_*.mk' -o -name '.*' \) ! -name 'Makefile_testassets.mk' ! -name '.git' ! -name '.github' )
+  local root="$1" f
+  local excludes=()
+  for f in "${SEED_ROOT_FILES[@]}"; do
+    excludes+=(! -name "$f")
+  done
+  ( cd "$root" && find . -maxdepth 1 -type f \( -name 'Makefile_*.mk' -o -name '.*' \) ! -name 'Makefile_testassets.mk' ! -name '.git' ! -name '.github' "${excludes[@]}" )
 }
 
-# list_seed_files ROOT prints the regular files directly under ROOT/SEED_DIR
-# (so not the standard scripts in STANDARD_DIR) as paths relative to ROOT.
+# list_seed_files ROOT prints the SEED_ROOT_FILES present in ROOT and the
+# regular files directly under ROOT/SEED_DIR (so not the standard scripts in
+# STANDARD_DIR) as paths relative to ROOT.
 list_seed_files() {
-  local root="$1"
+  local root="$1" f
+  for f in "${SEED_ROOT_FILES[@]}"; do
+    if [[ -f "$root/$f" ]]; then
+      echo "$f"
+    fi
+  done
   if [[ -d "$root/$SEED_DIR" ]]; then
     ( cd "$root" && find "$SEED_DIR" -maxdepth 1 -type f | LC_ALL=C sort )
   fi
