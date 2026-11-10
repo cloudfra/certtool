@@ -416,11 +416,35 @@ func scenarioDocs() ([]byte, error) {
 		"- With `--yubikey`, the root CA is left out because it is on the YubiKey: the CAs below it become top-level entries, which the YubiKey signs.\n" +
 		"- Each scenario is a template in [pkg/certtool/scenario](../pkg/certtool/scenario), whose data is the flags above.\n" +
 		"- Every `.pfx` reads its password from the `CERTTOOL_PFX_PASSWORD` environment variable when the spec is generated. The spec never holds a password.\n" +
-		"- Running the spec again reuses the certificates already in the output directory, so you can add entries later. See [Running a spec again](spec.md#running-a-spec-again).\n\n" +
-		"| Scenario | Makes |\n" +
-		"| -------- | ----- |\n")
-	for _, info := range ScenarioInfos() {
-		fmt.Fprintf(&b, "| [`%s`](#%s) | %s |\n", info.Name, info.Name, info.Summary)
+		"- Running the spec again reuses the certificates already in the output directory, so you can add entries later. See [Running a spec again](spec.md#running-a-spec-again).\n\n")
+
+	// `make lint` runs rumdl check --fix, whose MD060 rule pads every table
+	// column to its widest cell in place before TestScenarioDocs compares this
+	// file against what is written, so generate the table already aligned.
+	infos := ScenarioInfos()
+	link := func(info ScenarioInfo) string {
+		return fmt.Sprintf("[`%s`](#%s)", info.Name, info.Name)
+	}
+	widths := [2]int{len("Scenario"), len("Makes")}
+	for _, info := range infos {
+		if n := len(link(info)); n > widths[0] {
+			widths[0] = n
+		}
+		if n := len(info.Summary); n > widths[1] {
+			widths[1] = n
+		}
+	}
+	writeRow := func(cells [2]string) {
+		b.WriteString("|")
+		for i, cell := range cells {
+			fmt.Fprintf(&b, " %-*s |", widths[i], cell)
+		}
+		b.WriteString("\n")
+	}
+	writeRow([2]string{"Scenario", "Makes"})
+	writeRow([2]string{strings.Repeat("-", widths[0]), strings.Repeat("-", widths[1])})
+	for _, info := range infos {
+		writeRow([2]string{link(info), info.Summary})
 	}
 	b.WriteString("\nOther systems fit one of these: `web` for OpenLDAP, mail servers, and Elasticsearch over HTTPS; `git` for Subversion and Mercurial over HTTPS; `ssh` for SFTP-only accounts and rsync backups; `mtls` for gRPC; `microservices` for a service mesh without its own CA.\n")
 

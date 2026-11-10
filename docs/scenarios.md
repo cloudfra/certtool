@@ -19,28 +19,28 @@ certtool --spec certs/web.yaml --output-dir certs
 - Every `.pfx` reads its password from the `CERTTOOL_PFX_PASSWORD` environment variable when the spec is generated. The spec never holds a password.
 - Running the spec again reuses the certificates already in the output directory, so you can add entries later. See [Running a spec again](spec.md#running-a-spec-again).
 
-| Scenario | Makes |
-| -------- | ----- |
-| [`web`](#web) | A root CA and an issuing CA, name constrained to the hostnames, and a server certificate for websites and APIs. |
-| [`local-dev`](#local-dev) | A self-signed certificate for localhost and development hostnames. |
-| [`mtls`](#mtls) | A root CA and an issuing CA that sign a server certificate and client certificates for mutual TLS, such as gRPC. |
-| [`microservices`](#microservices) | A root CA and an issuing CA that sign one certificate per service, used both to serve and to call the other services. |
-| [`database`](#database) | A CA that signs a server certificate per database host and client certificates for database users (PostgreSQL, MySQL, Redis, MongoDB). |
-| [`active-directory`](#active-directory) | An enterprise root CA and issuing CA that sign LDAPS certificates for Active Directory domain controllers, with .pfx files to import. |
-| [`kubernetes`](#kubernetes) | The certificates kubeadm puts in /etc/kubernetes/pki: the cluster, front proxy, and etcd CAs and the certificates they sign. |
-| [`vpn`](#vpn) | A CA that signs a VPN gateway certificate and client certificates, for OpenVPN and IKEv2/IPsec (strongSwan, Windows, macOS, iOS, Android). |
-| [`eap-tls`](#eap-tls) | A CA that signs a RADIUS server certificate and client certificates for 802.1X EAP-TLS on Wi-Fi and wired networks. |
-| [`iot`](#iot) | A root CA and a device CA that sign an MQTT broker certificate and long-lived device certificates. |
-| [`kafka`](#kafka) | A CA that signs a certificate per Kafka broker, with PKCS#12 keystores, and client certificates. |
-| [`docker`](#docker) | A CA that signs a Docker daemon certificate and client certificates, to protect the Docker API on port 2376. |
-| [`git`](#git) | Certificates for a Git server over HTTPS, and identities that sign commits with S/MIME or SSH and log in with a certificate or an SSH key. |
-| [`ssh`](#ssh) | SSH keys for SSH, SFTP, SCP, and rsync: host keys that clients pin in known_hosts, and user keys for authorized_keys. |
-| [`ftps`](#ftps) | A CA that signs an FTPS (FTP over TLS) server certificate and optional client certificates, for vsftpd, ProFTPD, and FileZilla Server. |
-| [`ios`](#ios) | A development CA for iPhone and iPad apps, a backend certificate that meets Apple's TLS rules, and client identities. |
-| [`android`](#android) | A development CA that Android apps trust through a network security config, a backend certificate, and client certificates. |
-| [`android-signing`](#android-signing) | An Android app signing (upload) key in a PKCS#12 keystore, valid for 25 years. |
-| [`code-sign`](#code-sign) | A code signing certificate for Windows (signtool) or Linux (osslsigncode). |
-| [`proxy`](#proxy) | A CA for a TLS-inspecting proxy (Squid, mitmproxy), which signs a certificate for each site on the fly. |
+| Scenario                                | Makes                                                                                                                                      |
+| --------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
+| [`web`](#web)                           | A root CA and an issuing CA, name constrained to the hostnames, and a server certificate for websites and APIs.                            |
+| [`local-dev`](#local-dev)               | A self-signed certificate for localhost and development hostnames.                                                                         |
+| [`mtls`](#mtls)                         | A root CA and an issuing CA that sign a server certificate and client certificates for mutual TLS, such as gRPC.                           |
+| [`microservices`](#microservices)       | A root CA and an issuing CA that sign one certificate per service, used both to serve and to call the other services.                      |
+| [`database`](#database)                 | A CA that signs a server certificate per database host and client certificates for database users (PostgreSQL, MySQL, Redis, MongoDB).     |
+| [`active-directory`](#active-directory) | An enterprise root CA and issuing CA that sign LDAPS certificates for Active Directory domain controllers, with .pfx files to import.      |
+| [`kubernetes`](#kubernetes)             | The certificates kubeadm puts in /etc/kubernetes/pki: the cluster, front proxy, and etcd CAs and the certificates they sign.               |
+| [`vpn`](#vpn)                           | A CA that signs a VPN gateway certificate and client certificates, for OpenVPN and IKEv2/IPsec (strongSwan, Windows, macOS, iOS, Android). |
+| [`eap-tls`](#eap-tls)                   | A CA that signs a RADIUS server certificate and client certificates for 802.1X EAP-TLS on Wi-Fi and wired networks.                        |
+| [`iot`](#iot)                           | A root CA and a device CA that sign an MQTT broker certificate and long-lived device certificates.                                         |
+| [`kafka`](#kafka)                       | A CA that signs a certificate per Kafka broker, with PKCS#12 keystores, and client certificates.                                           |
+| [`docker`](#docker)                     | A CA that signs a Docker daemon certificate and client certificates, to protect the Docker API on port 2376.                               |
+| [`git`](#git)                           | Certificates for a Git server over HTTPS, and identities that sign commits with S/MIME or SSH and log in with a certificate or an SSH key. |
+| [`ssh`](#ssh)                           | SSH keys for SSH, SFTP, SCP, and rsync: host keys that clients pin in known_hosts, and user keys for authorized_keys.                      |
+| [`ftps`](#ftps)                         | A CA that signs an FTPS (FTP over TLS) server certificate and optional client certificates, for vsftpd, ProFTPD, and FileZilla Server.     |
+| [`ios`](#ios)                           | A development CA for iPhone and iPad apps, a backend certificate that meets Apple's TLS rules, and client identities.                      |
+| [`android`](#android)                   | A development CA that Android apps trust through a network security config, a backend certificate, and client certificates.                |
+| [`android-signing`](#android-signing)   | An Android app signing (upload) key in a PKCS#12 keystore, valid for 25 years.                                                             |
+| [`code-sign`](#code-sign)               | A code signing certificate for Windows (signtool) or Linux (osslsigncode).                                                                 |
+| [`proxy`](#proxy)                       | A CA for a TLS-inspecting proxy (Squid, mitmproxy), which signs a certificate for each site on the fly.                                    |
 
 Other systems fit one of these: `web` for OpenLDAP, mail servers, and Elasticsearch over HTTPS; `git` for Subversion and Mercurial over HTTPS; `ssh` for SFTP-only accounts and rsync backups; `mtls` for gRPC; `microservices` for a service mesh without its own CA.
 
